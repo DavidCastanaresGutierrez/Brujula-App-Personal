@@ -1,13 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
   <title id="title">Brújula</title>
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="12">
-    <path d="M128 22v192M46 128h188"/>
-    <path d="m108 44 20-22 20 22M212 108l22 20-22 20"/>
-    <path d="m18 108 20 20-20 20m10-40 20 20-20 20m10-40 20 20-20 20"/>
-    <path d="m108 208 20 20 20-20m-40 10 20 20 20-20m-40 10 20 20 20-20"/>
+  <g fill="none" stroke="#f8fafc" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M43 43 C83 82 169 168 216 214" stroke-width="11"/>
+    <path d="M42 47 C89 91 167 171 212 216" stroke-width="3" opacity=".65"/>
+    <path d="M40 211 C85 168 169 83 214 39" stroke-width="11"/>
+    <path d="M44 214 C90 168 170 86 217 42" stroke-width="3" opacity=".65"/>
+    <path d="M51 51 30 37 35 55M51 51 31 56" stroke-width="9"/>
+    <path d="M43 210 24 201M43 210 20 211M43 210 26 225M37 205 22 194M37 216 22 226" stroke-width="7"/>
+    <path d="M205 48 220 29 217 49M205 48 225 45" stroke-width="9"/>
+    <path d="M211 211 229 202M211 211 234 212M211 211 228 226M217 206 232 195M217 217 232 227" stroke-width="7"/>
   </g>
-  <circle cx="88" cy="88" r="16" fill="#3cc9ab"/>
-  <circle cx="168" cy="88" r="16" fill="#ffb51b"/>
-  <circle cx="88" cy="168" r="16" fill="#8b5cf6"/>
-  <circle cx="168" cy="168" r="16" fill="#ff3b6b"/>
+  <circle cx="128" cy="66" r="17" fill="#3cc9ab"/><circle cx="190" cy="128" r="17" fill="#ffb51b"/>
+  <circle cx="128" cy="190" r="17" fill="#ff3b6b"/><circle cx="66" cy="128" r="17" fill="#50b8e7"/>
 </svg>
