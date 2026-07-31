@@ -177,34 +177,32 @@ function Ring({ value }: { value: number }) {
   );
 }
 
-function TrendChart({ data }: { data: { label: string; value: number }[] }) {
-  const points = data.map((point, index) => {
-    const x = data.length <= 1 ? 60 : 60 + index * (900 / (data.length - 1));
-    const y = 220 - Math.min(100, Math.max(0, point.value)) * 1.8;
-    return { ...point, x, y };
-  });
-  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
-  const area = points.length ? `M ${points[0].x} 220 L ${points.map((point) => `${point.x} ${point.y}`).join(" L ")} L ${points[points.length - 1].x} 220 Z` : "";
-  const labelStep = data.length > 16 ? 3 : 1;
+type ChartSeries = { name: string; color: string; data: { label: string; value: number }[] };
+
+function TrendChart({ series }: { series: ChartSeries[] }) {
+  const plotted = series.map((item) => ({
+    ...item,
+    points: item.data.map((point, index) => ({
+      ...point,
+      x: item.data.length <= 1 ? 60 : 60 + index * (900 / (item.data.length - 1)),
+      y: 220 - Math.min(100, Math.max(0, point.value)) * 1.8,
+    })),
+  }));
+  const labels = series[0]?.data ?? [];
+  const labelStep = labels.length > 16 ? 3 : 1;
   return (
     <div className="trend-chart">
+      {series.length > 1 && <div className="chart-legend">{series.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name}</span>)}</div>}
       <svg viewBox="0 0 1000 260" role="img" aria-label="Evolución del porcentaje de cumplimiento">
-        <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3cc9ab" stopOpacity=".48" />
-            <stop offset="100%" stopColor="#3cc9ab" stopOpacity=".05" />
-          </linearGradient>
-        </defs>
         {[0, 25, 50, 75, 100].map((tick) => {
           const y = 220 - tick * 1.8;
           return <g key={tick}><line x1="60" y1={y} x2="960" y2={y} className="chart-grid" /><text x="49" y={y + 4} textAnchor="end" className="chart-y-label">{tick}%</text></g>;
         })}
-        {area && <path d={area} fill="url(#trendFill)" />}
-        {line && <polyline points={line} className="trend-line" />}
-        {points.map((point, index) => <g key={`${point.label}-${index}`}>
-          <circle cx={point.x} cy={point.y} r="4" className="trend-point"><title>{`${point.label}: ${Math.round(point.value)}%`}</title></circle>
-          {index % labelStep === 0 && <text x={point.x} y="245" textAnchor="middle" className="chart-x-label">{point.label}</text>}
+        {plotted.map((item) => <g key={item.name}>
+          <polyline points={item.points.map((point) => `${point.x},${point.y}`).join(" ")} className="trend-line" style={{ stroke: item.color }} />
+          {item.points.map((point, index) => <circle key={`${point.label}-${index}`} cx={point.x} cy={point.y} r={series.length > 1 ? 3 : 4} className="trend-point" style={{ stroke: item.color }}><title>{`${item.name} · ${point.label}: ${Math.round(point.value)}%`}</title></circle>)}
         </g>)}
+        {labels.map((point, index) => index % labelStep === 0 && <text key={`${point.label}-${index}`} x={labels.length <= 1 ? 60 : 60 + index * (900 / (labels.length - 1))} y="245" textAnchor="middle" className="chart-x-label">{point.label}</text>)}
       </svg>
     </div>
   );
@@ -334,6 +332,7 @@ export default function Home() {
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
   const [chartPeriod, setChartPeriod] = useState<"monthly" | "yearly">("monthly");
   const [chartScope, setChartScope] = useState<"general" | "category" | "habit">("general");
+  const [rankingView, setRankingView] = useState<"best" | "watch">("best");
   const [selectedChartCategory, setSelectedChartCategory] = useState<HabitCategory>("health");
   const [selectedHabitId, setSelectedHabitId] = useState<number>(initialDaily[0].id);
   const [newName, setNewName] = useState("");
@@ -510,7 +509,9 @@ export default function Home() {
   const weekScore = scoreFromPercent(weekGoal ? weekChecks / weekGoal * 100 : 0);
   const dayScore = scoreFromPercent(dayProgress);
   const monthScore = scoreFromPercent(globalProgress);
-  const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => (checksFor(b).length / (b.everyDay ? days : b.goal)) - (checksFor(a).length / (a.everyDay ? days : a.goal)));
+  const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
+  const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
+  const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
   const weeklyProgress = Array.from({ length: 5 }, (_, week) => {
     const start = week * 7 + 1;
     const end = Math.min(days, start + 6);
@@ -519,36 +520,35 @@ export default function Home() {
     return possible ? Math.round((count / possible) * 100) : 0;
   });
   const selectedHabit = activeDaily.find((habit) => habit.id === selectedHabitId) ?? activeDaily[0];
+  const allCategoriesSelected = selectedChartCategory === "__all__";
+  const allHabitsSelected = selectedHabitId === 0;
   const selectedCategoryMeta = habitCategories.find((category) => category.id === selectedChartCategory) ?? habitCategories[0] ?? defaultCategories[0];
-  const chartHabits = chartScope === "category"
-    ? activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === selectedCategoryMeta.id)
-    : activeDaily;
-  const chartData = (() => {
+  const dataForHabits = (habits: Habit[]) => {
     if (chartPeriod === "monthly") {
       return Array.from({ length: days }, (_, index) => {
         const day = index + 1;
-        if (chartScope === "habit" && selectedHabit) {
-          const completed = checksFor(selectedHabit).filter((value) => value <= day).length;
-          const target = selectedHabit.everyDay ? day : Math.min(selectedHabit.goal, day);
-          return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
-        }
-        const completed = chartHabits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
-        const target = chartHabits.reduce((sum, habit) => sum + (habit.everyDay ? day : Math.min(habit.goal, day)), 0);
+        const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
+        const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? day : Math.min(habit.goal, day)), 0);
         return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
       });
     }
     return monthNames.map((label, index) => {
       const key = `${year}-${String(index + 1).padStart(2, "0")}`;
       const monthDays = new Date(year, index + 1, 0).getDate();
-      if (chartScope === "habit" && selectedHabit) {
-        const target = selectedHabit.everyDay ? monthDays : selectedHabit.goal;
-        return { label: label.slice(0, 3), value: target ? Math.min(100, checksFor(selectedHabit, key).length / target * 100) : 0 };
-      }
-      const completed = chartHabits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
-      const target = chartHabits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.goal), 0);
+      const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
+      const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.goal), 0);
       return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
     });
-  })();
+  };
+  const chartSeries: ChartSeries[] = chartScope === "category" && allCategoriesSelected
+    ? habitCategories.map((category) => ({ name: category.label, color: category.color, data: dataForHabits(activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id)) }))
+    : chartScope === "habit" && allHabitsSelected
+      ? activeDaily.map((habit) => ({ name: habit.name, color: habit.color, data: dataForHabits([habit]) }))
+      : chartScope === "category"
+        ? [{ name: selectedCategoryMeta.label, color: selectedCategoryMeta.color, data: dataForHabits(activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === selectedCategoryMeta.id)) }]
+        : chartScope === "habit" && selectedHabit
+          ? [{ name: selectedHabit.name, color: selectedHabit.color, data: dataForHabits([selectedHabit]) }]
+          : [{ name: "General", color: "#3cc9ab", data: dataForHabits(activeDaily) }];
 
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
@@ -789,9 +789,13 @@ export default function Home() {
           </article>
 
           <article className="panel ranking">
-            <div className="panel-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>Hábitos destacados</h2></div><span className="trophy">✦</span></div>
+            <div className="panel-head ranking-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>{rankingView === "best" ? "Hábitos destacados" : "Hábitos a vigilar"}</h2></div><span className="trophy">{rankingView === "best" ? "✦" : "!"}</span></div>
+            <div className="tabs ranking-tabs" role="tablist" aria-label="Tipo de clasificación">
+              <button role="tab" aria-selected={rankingView === "best"} className={rankingView === "best" ? "active" : ""} onClick={() => setRankingView("best")}>Destacados</button>
+              <button role="tab" aria-selected={rankingView === "watch"} className={rankingView === "watch" ? "active" : ""} onClick={() => setRankingView("watch")}>A vigilar</button>
+            </div>
             <div className="rank-list">
-              {ranked.slice(0, 5).map((habit, index) => {
+              {rankingItems.slice(0, 5).map((habit, index) => {
                 const progress = Math.min(100, Math.round(checksFor(habit).length / goalFor(habit) * 100));
                 return <div className="rank-row" key={habit.id}>
                   <b>{String(index + 1).padStart(2, "0")}</b>
@@ -809,8 +813,8 @@ export default function Home() {
               <p className="eyebrow">ANÁLISIS DE CONSTANCIA</p>
               <h2>
                 {chartScope === "general" && "Evolución general"}
-                {chartScope === "category" && `Evolución de ${selectedCategoryMeta.label}`}
-                {chartScope === "habit" && `Evolución de ${selectedHabit?.name ?? "hábito"}`}
+                {chartScope === "category" && (allCategoriesSelected ? "Comparativa de bloques" : `Evolución de ${selectedCategoryMeta.label}`)}
+                {chartScope === "habit" && (allHabitsSelected ? "Comparativa de hábitos" : `Evolución de ${selectedHabit?.name ?? "hábito"}`)}
               </h2>
             </div>
             <div className="analytics-controls">
@@ -820,15 +824,15 @@ export default function Home() {
                 <button className={chartScope === "category" ? "active" : ""} onClick={() => setChartScope("category")}>Por bloque</button>
                 <button className={chartScope === "habit" ? "active" : ""} onClick={() => setChartScope("habit")}>Por hábito</button>
               </div>
-              {chartScope === "category" && <select aria-label="Seleccionar bloque" value={selectedCategoryMeta?.id ?? ""} onChange={(e) => setSelectedChartCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select>}
-              {chartScope === "habit" && <select aria-label="Seleccionar hábito" value={selectedHabit?.id ?? ""} onChange={(e) => setSelectedHabitId(Number(e.target.value))}>{activeDaily.map((habit) => <option key={habit.id} value={habit.id}>{habit.name}</option>)}</select>}
+              {chartScope === "category" && <select aria-label="Seleccionar bloque" value={allCategoriesSelected ? "__all__" : selectedCategoryMeta?.id ?? ""} onChange={(e) => setSelectedChartCategory(e.target.value)}><option value="__all__">Ver todos</option>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select>}
+              {chartScope === "habit" && <select aria-label="Seleccionar hábito" value={allHabitsSelected ? 0 : selectedHabit?.id ?? ""} onChange={(e) => setSelectedHabitId(Number(e.target.value))}><option value={0}>Ver todos</option>{activeDaily.map((habit) => <option key={habit.id} value={habit.id}>{habit.name}</option>)}</select>}
             </div>
           </div>
-          <TrendChart data={chartData} />
+          <TrendChart series={chartSeries} />
           <div className="chart-summary">
-            <span>Alcance: <strong>{chartScope === "general" ? "General" : chartScope === "category" ? selectedCategoryMeta.label : selectedHabit?.name ?? "Hábito"}</strong></span>
+            <span>Alcance: <strong>{chartScope === "general" ? "General" : chartScope === "category" ? allCategoriesSelected ? "Todos los bloques" : selectedCategoryMeta.label : allHabitsSelected ? "Todos los hábitos" : selectedHabit?.name ?? "Hábito"}</strong></span>
             <span>Periodo: <strong>{chartPeriod === "monthly" ? `${monthNames[month]} ${year}` : year}</strong></span>
-            <span>Último valor: <strong>{Math.round(chartData[chartData.length - 1]?.value ?? 0)}%</strong></span>
+            <span>{chartSeries.length > 1 ? <><strong>{chartSeries.length}</strong> series comparadas</> : <>Último valor: <strong>{Math.round(chartSeries[0]?.data.at(-1)?.value ?? 0)}%</strong></>}</span>
           </div>
         </section>
 
