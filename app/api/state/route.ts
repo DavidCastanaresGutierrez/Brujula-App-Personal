@@ -60,7 +60,9 @@ export async function GET(request: Request) {
       supabase.from("motivational_quotes").select("text,position").order("position"),
     ]);
 
-    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error ?? motivationsResult.error;
+    // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
+    // cargando aunque el despliegue llegue antes que la migración de Supabase.
+    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error;
     if (databaseError) throw databaseError;
 
     const categories = (categoriesResult.data as CategoryRow[]).map((category) => ({
@@ -98,10 +100,10 @@ export async function GET(request: Request) {
           daily: habits.filter((habit) => habit.kind === "daily").map(mapHabit),
           weekly: habits.filter((habit) => habit.kind === "weekly").map(mapHabit),
           categories,
-          motivations: (motivationsResult.data as MotivationRow[]).map((item) => item.text),
+          motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text),
         }
-      : (motivationsResult.data as MotivationRow[]).length
-        ? { daily: [], weekly: [], categories: [], motivations: (motivationsResult.data as MotivationRow[]).map((item) => item.text) }
+      : ((motivationsResult.data ?? []) as MotivationRow[]).length
+        ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text) }
         : null;
 
     return Response.json({ state });
