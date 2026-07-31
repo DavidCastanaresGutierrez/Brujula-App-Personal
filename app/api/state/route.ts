@@ -18,7 +18,6 @@ type HabitRow = {
   position: number;
   archived: boolean;
   every_day: boolean;
-  weekdays_only: boolean;
   celebrated_streak_30: string | null;
 };
 
@@ -27,6 +26,8 @@ type CompletionRow = {
   period_key: string;
   value: number;
 };
+
+type MotivationRow = { text: string; position: number };
 
 function validState(value: unknown): value is {
   daily: unknown[];
@@ -52,13 +53,14 @@ export async function GET(request: Request) {
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Usuario no autenticado");
 
-    const [categoriesResult, habitsResult, completionsResult] = await Promise.all([
+    const [categoriesResult, habitsResult, completionsResult, motivationsResult] = await Promise.all([
       supabase.from("categories").select("id,label,icon,color,position").order("position"),
-      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
+      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
+      supabase.from("motivational_quotes").select("text,position").order("position"),
     ]);
 
-    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error;
+    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error ?? motivationsResult.error;
     if (databaseError) throw databaseError;
 
     const categories = (categoriesResult.data as CategoryRow[]).map((category) => ({
@@ -85,7 +87,6 @@ export async function GET(request: Request) {
       checks: [],
       archived: habit.archived || undefined,
       everyDay: habit.kind === "daily" ? habit.every_day : undefined,
-      weekdaysOnly: habit.kind === "daily" ? habit.weekdays_only : undefined,
       history: historyByHabit.get(Number(habit.id)) ?? {},
       category: habit.category_id,
       celebratedStreak30: habit.celebrated_streak_30 ?? undefined,
@@ -97,8 +98,11 @@ export async function GET(request: Request) {
           daily: habits.filter((habit) => habit.kind === "daily").map(mapHabit),
           weekly: habits.filter((habit) => habit.kind === "weekly").map(mapHabit),
           categories,
+          motivations: (motivationsResult.data as MotivationRow[]).map((item) => item.text),
         }
-      : null;
+      : (motivationsResult.data as MotivationRow[]).length
+        ? { daily: [], weekly: [], categories: [], motivations: (motivationsResult.data as MotivationRow[]).map((item) => item.text) }
+        : null;
 
     return Response.json({ state });
   } catch (error) {
