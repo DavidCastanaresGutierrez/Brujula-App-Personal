@@ -119,10 +119,22 @@ function inferCategory(name: string): HabitCategory {
 }
 
 function normalizeState(state: TrackerState): Required<TrackerState> {
+  const categories = state.categories?.length
+    ? state.categories.map((category, index) => {
+        const fallback = defaultCategories.find((item) => item.id === category.id);
+        return {
+          id: category.id || fallback?.id || `block-${index}`,
+          label: category.label?.trim() || fallback?.label || `Bloque ${index + 1}`,
+          icon: category.icon?.trim() || fallback?.icon || "●",
+          color: category.color?.trim() || fallback?.color || palette[index % palette.length],
+        };
+      })
+    : defaultCategories;
+
   return {
     daily: (state.daily ?? []).map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) })),
     weekly: (state.weekly ?? []).map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) })),
-    categories: state.categories?.length ? state.categories : defaultCategories,
+    categories,
   };
 }
 
