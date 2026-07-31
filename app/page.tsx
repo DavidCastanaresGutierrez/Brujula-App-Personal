@@ -660,8 +660,8 @@ export default function Home() {
 
         <section className="metrics">
           <article className="metric primary">
-            <div><span>Nota del mes</span><strong>{monthScore.toFixed(1)}<small> / 10</small></strong><p>{Math.round(globalProgress)}% de cumplimiento</p></div>
-            <Ring value={globalProgress} />
+            <div><span>Nota del día</span><strong>{dailyScore.toFixed(1)}<small> / 10</small></strong><p>{completedToday} de {habitsDueToday.length} hábitos completados</p></div>
+            <Ring value={dailyScore * 10} />
           </article>
           <article className="metric">
             <span>Nota semanal</span>
@@ -669,9 +669,9 @@ export default function Home() {
             <p className="positive">Semana {currentWeekIndex + 1} · {weeklyProgress[currentWeekIndex] ?? 0}%</p>
           </article>
           <article className="metric">
-            <span>Nota del día</span>
-            <strong>{dailyScore.toFixed(1)} <small>/ 10</small></strong>
-            <p>{completedToday} de {habitsDueToday.length} hábitos completados</p>
+            <span>Nota del mes</span>
+            <strong>{monthScore.toFixed(1)} <small>/ 10</small></strong>
+            <p>{Math.round(globalProgress)}% de cumplimiento</p>
           </article>
           <article className="metric">
             <span>Hábito más sólido</span>
