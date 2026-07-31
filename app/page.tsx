@@ -626,9 +626,10 @@ export default function Home() {
           <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
           <button onClick={() => document.getElementById("analytics")?.scrollIntoView({ behavior: "smooth" })}>Análisis</button>
         </nav>
-        <button className="avatar" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => getSupabaseBrowserClient().auth.signOut()}>
-          {(session.user.email?.slice(0, 2) ?? "BR").toUpperCase()}
-        </button>
+        <div className="session-actions">
+          <span className="avatar" aria-hidden="true">{(session.user.email?.slice(0, 2) ?? "BR").toUpperCase()}</span>
+          <button className="logout-button" onClick={() => getSupabaseBrowserClient().auth.signOut()}>Cerrar sesión</button>
+        </div>
       </header>
 
       <div className="page-shell">
@@ -756,7 +757,10 @@ export default function Home() {
                   const categoryHabits = activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
                   if (!categoryHabits.length) return null;
                   return <div className="category-group" key={category.id}>
-                    <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}><span>{category.icon}</span><strong>{category.label}</strong><small>{categoryHabits.length}</small></div>
+                    <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}>
+                      <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
+                      <small>{categoryHabits.length}</small>
+                    </div>
                     {categoryHabits.map((habit) => {
                   const effectiveGoal = goalFor(habit);
                   const currentChecks = checksFor(habit);
@@ -780,7 +784,10 @@ export default function Home() {
                 const categoryHabits = activeWeekly.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
                 if (!categoryHabits.length) return null;
                 return <div className="weekly-category" key={category.id}>
-                  <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}><span>{category.icon}</span><strong>{category.label}</strong><small>{categoryHabits.length}</small></div>
+                  <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}>
+                    <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
+                    <small>{categoryHabits.length}</small>
+                  </div>
                   {categoryHabits.map((habit) => {
                 const currentChecks = weeklyChecksFor(habit);
                 const progress = Math.round(currentChecks.length / habit.goal * 100);
