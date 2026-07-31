@@ -139,17 +139,6 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
   };
 }
 
-function bestStreak(checks: number[]) {
-  const sorted = [...checks].sort((a, b) => a - b);
-  let max = 0;
-  let current = 0;
-  sorted.forEach((day, index) => {
-    current = index > 0 && day === sorted[index - 1] + 1 ? current + 1 : 1;
-    max = Math.max(max, current);
-  });
-  return max;
-}
-
 function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
 }
@@ -280,6 +269,7 @@ export default function Home() {
   const [actionHabit, setActionHabit] = useState<{ type: "daily" | "weekly"; habit: Habit } | null>(null);
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
   const [chartPeriod, setChartPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [rankingView, setRankingView] = useState<"best" | "watch">("best");
   const [chartScope, setChartScope] = useState<"general" | "category" | "habit">("general");
   const [selectedChartCategory, setSelectedChartCategory] = useState<HabitCategory>("health");
   const [selectedHabitId, setSelectedHabitId] = useState<number>(initialDaily[0].id);
@@ -449,6 +439,7 @@ export default function Home() {
   const totalGoal = activeDaily.reduce((sum, habit) => sum + goalFor(habit), 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => (checksFor(b).length / goalFor(b)) - (checksFor(a).length / goalFor(a)));
+  const watchlist = [...ranked].reverse();
   const weeklyProgress = Array.from({ length: 5 }, (_, week) => {
     const start = week * 7 + 1;
     const end = Math.min(days, start + 6);
@@ -456,6 +447,12 @@ export default function Home() {
     const possible = activeDaily.length * (end - start + 1);
     return possible ? Math.round((count / possible) * 100) : 0;
   });
+  const currentWeekIndex = Math.min(4, Math.floor(((todayNumber ?? days) - 1) / 7));
+  const monthScore = globalProgress / 10;
+  const weeklyScore = (weeklyProgress[currentWeekIndex] ?? 0) / 10;
+  const habitsDueToday = activeDaily.filter((habit) => !habit.weekdaysOnly || !todayNumber || isWeekday(year, month, todayNumber));
+  const completedToday = todayNumber ? habitsDueToday.filter((habit) => checksFor(habit).includes(todayNumber)).length : 0;
+  const dailyScore = habitsDueToday.length ? completedToday / habitsDueToday.length * 10 : 0;
   const selectedHabit = activeDaily.find((habit) => habit.id === selectedHabitId) ?? activeDaily[0];
   const selectedCategoryMeta = habitCategories.find((category) => category.id === selectedChartCategory) ?? habitCategories[0] ?? defaultCategories[0];
   const chartHabits = chartScope === "category"
@@ -663,21 +660,21 @@ export default function Home() {
 
         <section className="metrics">
           <article className="metric primary">
-            <div><span>Progreso mensual</span><strong>{totalChecks}<small> / {totalGoal}</small></strong><p>acciones completadas</p></div>
+            <div><span>Nota del mes</span><strong>{monthScore.toFixed(1)}<small> / 10</small></strong><p>{Math.round(globalProgress)}% de cumplimiento</p></div>
             <Ring value={globalProgress} />
           </article>
           <article className="metric">
-            <span>Mejor racha</span>
-            <strong>{Math.max(...activeDaily.map((h) => bestStreak(checksFor(h))), 0)} <small>días</small></strong>
-            <p className="positive">↑ Tu mejor registro del mes</p>
+            <span>Nota semanal</span>
+            <strong>{weeklyScore.toFixed(1)} <small>/ 10</small></strong>
+            <p className="positive">Semana {currentWeekIndex + 1} · {weeklyProgress[currentWeekIndex] ?? 0}%</p>
           </article>
           <article className="metric">
-            <span>Hábitos activos</span>
-            <strong>{activeDaily.length + activeWeekly.length}</strong>
-            <p>{activeDaily.length} diarios · {activeWeekly.length} semanales</p>
+            <span>Nota del día</span>
+            <strong>{dailyScore.toFixed(1)} <small>/ 10</small></strong>
+            <p>{completedToday} de {habitsDueToday.length} hábitos completados</p>
           </article>
           <article className="metric">
-            <span>Objetivo más sólido</span>
+            <span>Hábito más sólido</span>
             <strong className="compact">{ranked[0]?.name ?? "—"}</strong>
             <p className="positive">{ranked[0] ? Math.round(checksFor(ranked[0]).length / goalFor(ranked[0]) * 100) : 0}% completado</p>
           </article>
@@ -698,9 +695,10 @@ export default function Home() {
           </article>
 
           <article className="panel ranking">
-            <div className="panel-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>Hábitos destacados</h2></div><span className="trophy">✦</span></div>
+            <div className="panel-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>{rankingView === "best" ? "Hábitos destacados" : "Hábitos a vigilar"}</h2></div><span className="trophy">{rankingView === "best" ? "✦" : "!"}</span></div>
+            <div className="tabs ranking-tabs"><button className={rankingView === "best" ? "active" : ""} onClick={() => setRankingView("best")}>Destacados</button><button className={rankingView === "watch" ? "active" : ""} onClick={() => setRankingView("watch")}>A vigilar</button></div>
             <div className="rank-list">
-              {ranked.slice(0, 5).map((habit, index) => {
+              {(rankingView === "best" ? ranked : watchlist).slice(0, 5).map((habit, index) => {
                 const progress = Math.min(100, Math.round(checksFor(habit).length / goalFor(habit) * 100));
                 return <div className="rank-row" key={habit.id}>
                   <b>{String(index + 1).padStart(2, "0")}</b>
