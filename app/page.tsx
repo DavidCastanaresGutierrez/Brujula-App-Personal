@@ -339,7 +339,7 @@ export default function Home() {
           setDaily(normalized.daily);
           setWeekly(normalized.weekly);
           setHabitCategories(normalized.categories);
-          const savedMotivations = state.motivations?.filter((item) => item.trim()) ?? [];
+          const savedMotivations = (state.motivations?.length ? state.motivations : localState?.motivations)?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
         setSyncStatus("synced");
