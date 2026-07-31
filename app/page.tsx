@@ -211,7 +211,7 @@ function TrendChart({ data }: { data: { label: string; value: number }[] }) {
 }
 
 function Brand() {
-  return <div className="brand"><Image className="brand-logo" src="/brujula-logo.png" width={44} height={44} alt="" priority /><span>Brújula</span></div>;
+  return <div className="brand"><Image className="brand-logo" src="/brujula-logo-simple.svg" width={68} height={68} alt="" priority /><span>Brújula</span></div>;
 }
 
 function AuthGate() {
