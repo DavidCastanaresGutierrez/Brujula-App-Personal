@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 
@@ -209,10 +210,14 @@ function TrendChart({ data }: { data: { label: string; value: number }[] }) {
   );
 }
 
+function Brand() {
+  return <div className="brand"><Image className="brand-logo" src="/brujula-logo.png" width={44} height={44} alt="" priority /><span>Brújula</span></div>;
+}
+
 function AuthGate() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -222,6 +227,14 @@ function AuthGate() {
     setMessage("");
     try {
       const supabase = getSupabaseBrowserClient();
+      if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
+        setMessage("Te hemos enviado un enlace para restablecer la contraseña. Revisa también la carpeta de spam.");
+        return;
+      }
       const result = mode === "login"
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password });
@@ -239,19 +252,66 @@ function AuthGate() {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <div className="brand auth-brand"><span className="brand-mark">✦</span><span>Brújula</span></div>
+        <div className="auth-brand"><Brand /></div>
         <p className="eyebrow">TU RUMBO PERSONAL</p>
-        <h1>{mode === "login" ? "Continúa avanzando." : "Empieza tu recorrido."}</h1>
-        <p>Tus hábitos se guardarán de forma privada y estarán disponibles en todos tus dispositivos.</p>
+        <h1>{mode === "login" ? "Continúa avanzando." : mode === "register" ? "Empieza tu recorrido." : "Recupera el acceso."}</h1>
+        <p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : "Tus hábitos se guardarán de forma privada y estarán disponibles en todos tus dispositivos."}</p>
         <form onSubmit={submit}>
           <label>Correo<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label>Contraseña<span className="password-field"><input type={showPassword ? "text" : "password"} minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? "Ocultar" : "Mostrar"}</button></span></label>
+          {mode !== "forgot" && <label>Contraseña<span className="password-field"><input type={showPassword ? "text" : "password"} minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? "Ocultar" : "Mostrar"}</button></span></label>}
           {message && <p className="auth-message">{message}</p>}
-          <button className="add-button full" disabled={busy}>{busy ? "Procesando…" : mode === "login" ? "Entrar" : "Crear cuenta"}</button>
+          <button className="add-button full" disabled={busy}>{busy ? "Procesando…" : mode === "login" ? "Entrar" : mode === "register" ? "Crear cuenta" : "Enviar enlace"}</button>
         </form>
-        <button className="auth-switch" onClick={() => { setMode(mode === "login" ? "register" : "login"); setMessage(""); setShowPassword(false); }}>
-          {mode === "login" ? "¿Primera vez? Crear una cuenta" : "Ya tengo cuenta"}
+        {mode === "login" && <button className="auth-switch" onClick={() => { setMode("forgot"); setMessage(""); }}>¿Has olvidado tu contraseña?</button>}
+        <button className="auth-switch secondary" onClick={() => { setMode(mode === "login" ? "register" : "login"); setMessage(""); setShowPassword(false); }}>
+          {mode === "login" ? "¿Primera vez? Crear una cuenta" : "Volver al inicio de sesión"}
         </button>
+      </section>
+    </main>
+  );
+}
+
+function ResetPassword({ onComplete }: { onComplete: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    if (password !== confirmation) {
+      setMessage("Las contraseñas no coinciden.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      await supabase.auth.signOut();
+      onComplete();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo actualizar la contraseña.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="auth-brand"><Brand /></div>
+        <p className="eyebrow">NUEVA CONTRASEÑA</p>
+        <h1>Recupera tu rumbo.</h1>
+        <p>Elige una contraseña nueva de al menos 8 caracteres.</p>
+        <form onSubmit={submit}>
+          <label>Nueva contraseña<span className="password-field"><input type={showPassword ? "text" : "password"} minLength={8} autoComplete="new-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword}>{showPassword ? "Ocultar" : "Mostrar"}</button></span></label>
+          <label>Repite la contraseña<input type={showPassword ? "text" : "password"} minLength={8} autoComplete="new-password" required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+          {message && <p className="auth-message">{message}</p>}
+          <button className="add-button full" disabled={busy}>{busy ? "Guardando…" : "Guardar nueva contraseña"}</button>
+        </form>
       </section>
     </main>
   );
@@ -293,6 +353,7 @@ export default function Home() {
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -302,7 +363,8 @@ export default function Home() {
       setSession(data.session);
       setAuthReady(true);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setHydrated(false);
       setSyncStatus("loading");
       setSession(nextSession);
@@ -654,12 +716,13 @@ export default function Home() {
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
   }
+  if (passwordRecovery) return <ResetPassword onComplete={() => setPasswordRecovery(false)} />;
   if (!session) return <AuthGate />;
 
   return (
     <main>
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">✦</span><span>Brújula</span></div>
+        <Brand />
         <nav aria-label="Navegación principal">
           <button className="nav-active">Panel</button>
           <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
