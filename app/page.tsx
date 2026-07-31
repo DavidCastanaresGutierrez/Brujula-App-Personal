@@ -225,7 +225,7 @@ function TrendChart({ series }: { series: ChartSeries[] }) {
 }
 
 function Brand({ lightBackground = false }: { lightBackground?: boolean }) {
-  return <div className="brand"><Image className="brand-logo" src={lightBackground ? "/brujula-logo-light.svg" : "/brujula-logo-simple.svg"} width={68} height={68} alt="" priority /><span>Brújula</span></div>;
+  return <div className="brand"><Image className="brand-logo" src={lightBackground ? "/brujula-logo-artesanal.png" : "/brujula-logo-artesanal-dark.png"} width={68} height={68} alt="" priority /><span>Brújula</span></div>;
 }
 
 function AuthGate() {

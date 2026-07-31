@@ -19,9 +19,9 @@ export const metadata: Metadata = {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/brujula-logo-light.svg",
-    shortcut: "/brujula-logo-light.svg",
-    apple: "/brujula-logo-light.svg",
+    icon: "/brujula-logo-artesanal.png",
+    shortcut: "/brujula-logo-artesanal.png",
+    apple: "/brujula-logo-artesanal.png",
   },
 };
 
