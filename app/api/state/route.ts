@@ -18,6 +18,7 @@ type HabitRow = {
   position: number;
   archived: boolean;
   every_day: boolean;
+  weekdays_only: boolean;
   celebrated_streak_30: string | null;
 };
 
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
 
     const [categoriesResult, habitsResult, completionsResult] = await Promise.all([
       supabase.from("categories").select("id,label,icon,color,position").order("position"),
-      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,celebrated_streak_30").order("position"),
+      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
     ]);
 
@@ -84,6 +85,7 @@ export async function GET(request: Request) {
       checks: [],
       archived: habit.archived || undefined,
       everyDay: habit.kind === "daily" ? habit.every_day : undefined,
+      weekdaysOnly: habit.kind === "daily" ? habit.weekdays_only : undefined,
       history: historyByHabit.get(Number(habit.id)) ?? {},
       category: habit.category_id,
       celebratedStreak30: habit.celebrated_streak_30 ?? undefined,

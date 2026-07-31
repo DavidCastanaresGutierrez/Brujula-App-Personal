@@ -178,6 +178,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .day-grid button { width: 25px; height: 25px; padding: 0; border: 1px solid #34415c; background: #18243c; border-radius: 5px; cursor: pointer; color: #07131d; font-weight: 900; font-size: 13px; transition: .15s ease; }
 .day-grid button:hover { border-color: var(--teal); transform: scale(1.08); }
 .day-grid button.checked, .week-checks button.checked { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
+.day-grid button.weekend-disabled { cursor: not-allowed; opacity: .28; background: rgba(148,163,184,.1); transform: none; }
 .result-cell { justify-content: center; gap: 7px; border-left: 1px solid var(--line); }
 .result-cell strong { font-size: 11px; }
 .result-cell span { color: var(--muted); font-size: 9px; }

@@ -19,6 +19,7 @@ create table public.habits (
   position integer not null default 0,
   archived boolean not null default false,
   every_day boolean not null default false,
+  weekdays_only boolean not null default false,
   celebrated_streak_30 text,
   primary key (user_id, id),
   foreign key (user_id, category_id)
@@ -80,7 +81,7 @@ begin
 
   insert into habits (
     user_id, id, category_id, kind, name, goal, color, position,
-    archived, every_day, celebrated_streak_30
+    archived, every_day, weekdays_only, celebrated_streak_30
   )
   select current_user_id,
          (item->>'id')::bigint,
@@ -93,6 +94,9 @@ begin
          coalesce((item->>'archived')::boolean, false),
          case when habit_kind = 'daily'
               then coalesce((item->>'everyDay')::boolean, false)
+              else false end,
+         case when habit_kind = 'daily'
+              then coalesce((item->>'weekdaysOnly')::boolean, false)
               else false end,
          nullif(item->>'celebratedStreak30', '')
   from (
