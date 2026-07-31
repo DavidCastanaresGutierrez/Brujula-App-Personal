@@ -143,7 +143,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 }
 .category-band::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--category-color); }
 .category-band > span { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; background: color-mix(in srgb, var(--category-color) 18%, transparent); color: var(--category-color); font-size: 11px; font-weight: 850; }
-.category-band strong { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.category-band strong { color: #eef3fc; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .category-band small { min-width: 20px; height: 20px; display: grid; place-items: center; margin-left: auto; border-radius: 10px; background: rgba(255,255,255,.06); color: var(--muted); font-size: 8px; }
 .category-health { --category-color: #39c6a4; }
 .category-family { --category-color: #f472b6; }
