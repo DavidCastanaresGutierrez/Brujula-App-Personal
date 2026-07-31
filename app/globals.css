@@ -90,6 +90,9 @@ h1 em { font-style: normal; color: var(--teal); }
 .analytics-controls select { min-width: 150px; border: 1px solid #35435f; border-radius: 8px; background: #0c162a; color: var(--ink); padding: 8px 30px 8px 10px; font-size: 10px; }
 .scope-tabs button { white-space: nowrap; }
 .trend-chart { margin-top: 22px; width: 100%; overflow: hidden; }
+.chart-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; padding: 2px 20px 8px; color: #aeb9cf; font-size: 9px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-legend i { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
 .trend-chart svg { width: 100%; height: auto; min-height: 230px; display: block; }
 .chart-grid { stroke: rgba(160,177,212,.13); stroke-width: 1; }
 .chart-y-label, .chart-x-label { fill: #75829f; font-size: 10px; }
@@ -109,6 +112,9 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .bar-track div { width: 100%; border-radius: 6px 6px 0 0; transition: height .3s ease; }
 .bar-column strong { color: var(--muted); font-size: 9px; padding-bottom: 8px; }
 .trophy { color: #fbbf24; }
+.ranking-head { align-items: center; }
+.ranking-tabs { width: 100%; margin-top: 16px; }
+.ranking-tabs button { flex: 1; }
 .rank-list { margin-top: 16px; }
 .rank-row { display: grid; grid-template-columns: 28px 1fr 40px; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rank-row > b { color: #66738f; font-size: 10px; }
