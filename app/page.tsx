@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient } from "../lib/supabase/client";
 
 type Habit = {
   id: number;
@@ -67,6 +69,45 @@ const initialWeekly: WeeklyHabit[] = [
 
 const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const dayNames = ["D", "L", "M", "X", "J", "V", "S"];
+const dailyMotivations = [
+  "No necesitas hacerlo perfecto; necesitas volver a hacerlo hoy.",
+  "La dirección importa más que la velocidad.",
+  "Un día constante pesa más que una semana de intenciones.",
+  "Tu rutina de hoy está construyendo tu margen de mañana.",
+  "Empieza pequeño, pero termina el día habiendo avanzado.",
+  "Lo que repites acaba definiendo lo que puedes conseguir.",
+  "La motivación inicia; la constancia transforma.",
+  "No negocies con el hábito que te acerca a quien quieres ser.",
+  "Cada marca es un voto a favor de tu futuro.",
+  "Avanzar despacio sigue siendo avanzar.",
+  "Haz primero lo importante; lo urgente siempre sabe llamar.",
+  "La disciplina también consiste en saber volver.",
+  "Tu mejor racha comienza con la decisión de hoy.",
+  "Menos promesas. Más días cumplidos.",
+  "Cuida el sistema y el resultado llegará después.",
+  "No midas solo cuánto falta; mira cuánto has sostenido.",
+  "Hoy no tiene que ser extraordinario, solo coherente.",
+  "La repetición convierte el esfuerzo en identidad.",
+  "Una buena dirección corrige incluso los días difíciles.",
+  "Hazlo fácil de empezar y difícil de abandonar.",
+  "El progreso real suele parecer aburrido mientras ocurre.",
+  "Cumple contigo antes de pedirte más.",
+  "La constancia es paciencia puesta en movimiento.",
+  "Lo pequeño cuenta cuando se repite.",
+  "No esperes el momento ideal: protege el momento disponible.",
+  "Tu energía es limitada; dirige bien la primera parte.",
+  "La racha no es presión: es evidencia de que puedes.",
+  "El objetivo orienta; el hábito te lleva.",
+  "Volver después de fallar también forma parte del progreso.",
+  "Decide el rumbo y deja que los días hagan el trabajo.",
+  "Hoy es una oportunidad concreta, no una promesa abstracta.",
+];
+
+function motivationForToday() {
+  const now = new Date();
+  const dayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000);
+  return dailyMotivations[dayNumber % dailyMotivations.length];
+}
 
 function inferCategory(name: string): HabitCategory {
   const value = name.toLocaleLowerCase("es");
@@ -164,6 +205,56 @@ function TrendChart({ data }: { data: { label: string; value: number }[] }) {
   );
 }
 
+function AuthGate() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const motivation = motivationForToday();
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const result = mode === "login"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
+      if (result.error) throw result.error;
+      if (mode === "register" && !result.data.session) {
+        setMessage("Revisa tu correo para confirmar la cuenta y después inicia sesión.");
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo completar el acceso.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand auth-brand"><span className="brand-mark">✦</span><span>Brújula</span></div>
+        <p className="eyebrow">TU RUMBO PERSONAL</p>
+        <h1>{mode === "login" ? "Continúa avanzando." : "Empieza tu recorrido."}</h1>
+        <blockquote className="daily-motivation">“{motivation}”</blockquote>
+        <p>Tus hábitos se guardarán de forma privada y estarán disponibles en todos tus dispositivos.</p>
+        <form onSubmit={submit}>
+          <label>Correo<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label>Contraseña<input type="password" minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          {message && <p className="auth-message">{message}</p>}
+          <button className="add-button full" disabled={busy}>{busy ? "Procesando…" : mode === "login" ? "Entrar" : "Crear cuenta"}</button>
+        </form>
+        <button className="auth-switch" onClick={() => { setMode(mode === "login" ? "register" : "login"); setMessage(""); }}>
+          {mode === "login" ? "¿Primera vez? Crear una cuenta" : "Ya tengo cuenta"}
+        </button>
+      </section>
+    </main>
+  );
+}
+
 export default function Home() {
   const [daily, setDaily] = useState(initialDaily);
   const [weekly, setWeekly] = useState(initialWeekly);
@@ -194,12 +285,32 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline">("loading");
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setHydrated(false);
+      setSyncStatus("loading");
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !session) return;
+    const accessToken = session.access_token;
+    const storageKey = `brujula-state-v1:${session.user.id}`;
     let cancelled = false;
-    const localSaved = localStorage.getItem("habit-tracker-state-v3");
+    const localSaved = localStorage.getItem(storageKey);
     let localState: TrackerState | null = null;
     try {
       if (localSaved) localState = JSON.parse(localSaved);
@@ -209,7 +320,10 @@ export default function Home() {
 
     async function loadState() {
       try {
-        const response = await fetch("/api/state", { cache: "no-store" });
+        const response = await fetch("/api/state", {
+          cache: "no-store",
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
         if (!response.ok) throw new Error("No se pudo cargar la base de datos");
         const payload = await response.json() as { state: TrackerState | null };
         const state = payload.state ?? localState;
@@ -225,7 +339,10 @@ export default function Home() {
         if (!payload.state && localState) {
           await fetch("/api/state", {
             method: "PUT",
-            headers: { "content-type": "application/json" },
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${accessToken}`,
+            },
             body: JSON.stringify(localState),
           });
         }
@@ -243,19 +360,24 @@ export default function Home() {
     }
     loadState();
     return () => { cancelled = true; };
-  }, []);
+  }, [authReady, session]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !session) return;
+    const accessToken = session.access_token;
+    const storageKey = `brujula-state-v1:${session.user.id}`;
     const state = { daily, weekly, categories: habitCategories };
-    localStorage.setItem("habit-tracker-state-v3", JSON.stringify(state));
-    setSyncStatus("saving");
+    localStorage.setItem(storageKey, JSON.stringify(state));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
+      setSyncStatus("saving");
       try {
         const response = await fetch("/api/state", {
           method: "PUT",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${accessToken}`,
+          },
           body: JSON.stringify(state),
         });
         if (!response.ok) throw new Error("No se pudo guardar");
@@ -267,7 +389,7 @@ export default function Home() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [daily, weekly, habitCategories, hydrated]);
+  }, [daily, weekly, habitCategories, hydrated, session]);
 
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -302,7 +424,7 @@ export default function Home() {
   const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= days).length, 0);
   const totalGoal = activeDaily.reduce((sum, habit) => sum + goalFor(habit), 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
-  const ranked = useMemo(() => [...daily].filter((habit) => !habit.archived).sort((a, b) => (checksFor(b).length / (b.everyDay ? days : b.goal)) - (checksFor(a).length / (a.everyDay ? days : a.goal))), [daily, days, monthKey]);
+  const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => (checksFor(b).length / (b.everyDay ? days : b.goal)) - (checksFor(a).length / (a.everyDay ? days : a.goal)));
   const weeklyProgress = Array.from({ length: 5 }, (_, week) => {
     const start = week * 7 + 1;
     const end = Math.min(days, start + 6);
@@ -315,7 +437,7 @@ export default function Home() {
   const chartHabits = chartScope === "category"
     ? activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === selectedCategoryMeta.id)
     : activeDaily;
-  const chartData = useMemo(() => {
+  const chartData = (() => {
     if (chartPeriod === "monthly") {
       return Array.from({ length: days }, (_, index) => {
         const day = index + 1;
@@ -340,7 +462,7 @@ export default function Home() {
       const target = chartHabits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.goal), 0);
       return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
     });
-  }, [chartHabits, chartPeriod, chartScope, days, monthKey, selectedHabit, year]);
+  })();
 
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
@@ -478,16 +600,23 @@ export default function Home() {
     setDeletingCategoryId(null);
   }
 
+  if (!authReady) {
+    return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
+  }
+  if (!session) return <AuthGate />;
+
   return (
     <main>
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">✓</span><span>Brújula</span></div>
+        <div className="brand"><span className="brand-mark">✦</span><span>Brújula</span></div>
         <nav aria-label="Navegación principal">
           <button className="nav-active">Panel</button>
           <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
           <button onClick={() => document.getElementById("analytics")?.scrollIntoView({ behavior: "smooth" })}>Análisis</button>
         </nav>
-        <button className="avatar" aria-label="Perfil de David">DC</button>
+        <button className="avatar" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => getSupabaseBrowserClient().auth.signOut()}>
+          {(session.user.email?.slice(0, 2) ?? "BR").toUpperCase()}
+        </button>
       </header>
 
       <div className="page-shell">
