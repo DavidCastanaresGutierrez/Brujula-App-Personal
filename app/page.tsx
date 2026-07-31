@@ -13,6 +13,7 @@ type Habit = {
   checks: number[];
   archived?: boolean;
   everyDay?: boolean;
+  weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
   category?: HabitCategory;
   celebratedStreak30?: string;
@@ -144,6 +145,21 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
 
 function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+function isWeekday(year: number, monthIndex: number, day: number) {
+  const weekday = new Date(year, monthIndex, day).getDay();
+  return weekday >= 1 && weekday <= 5;
+}
+
+function weekdaysInMonth(year: number, monthIndex: number, throughDay?: number) {
+  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
+  const limit = Math.min(throughDay ?? monthDays, monthDays);
+  let count = 0;
+  for (let day = 1; day <= limit; day += 1) {
+    if (isWeekday(year, monthIndex, day)) count += 1;
+  }
+  return count;
 }
 
 function streakContaining(history: Record<string, number[]> | undefined, target: string) {
@@ -338,6 +354,7 @@ export default function Home() {
   const [newName, setNewName] = useState("");
   const [newGoal, setNewGoal] = useState(12);
   const [everyDay, setEveryDay] = useState(false);
+  const [weekdaysOnly, setWeekdaysOnly] = useState(false);
   const [selectedColor, setSelectedColor] = useState(palette[0]);
   const [selectedCategory, setSelectedCategory] = useState<HabitCategory>("health");
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
@@ -491,7 +508,7 @@ export default function Home() {
   const activeWeekly = weekly.filter((habit) => !habit.archived);
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
-  const goalFor = (habit: Habit) => habit.everyDay ? days : habit.goal;
+  const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
   const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= days).length, 0);
   const totalGoal = activeDaily.reduce((sum, habit) => sum + goalFor(habit), 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
@@ -528,7 +545,7 @@ export default function Home() {
       return Array.from({ length: days }, (_, index) => {
         const day = index + 1;
         const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
-        const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? day : Math.min(habit.goal, day)), 0);
+        const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? day : habit.weekdaysOnly ? weekdaysInMonth(year, month, day) : Math.min(habit.goal, day)), 0);
         return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
       });
     }
@@ -536,7 +553,7 @@ export default function Home() {
       const key = `${year}-${String(index + 1).padStart(2, "0")}`;
       const monthDays = new Date(year, index + 1, 0).getDate();
       const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
-      const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.goal), 0);
+      const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.weekdaysOnly ? weekdaysInMonth(year, index) : habit.goal), 0);
       return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
     });
   };
@@ -555,6 +572,8 @@ export default function Home() {
   }
 
   function toggleDaily(id: number, day: number) {
+    const habit = daily.find((item) => item.id === id);
+    if (habit?.weekdaysOnly && !isWeekday(year, month, day)) return;
     setDaily((items) => items.map((habit) => {
       if (habit.id !== id) return habit;
       const current = checksFor(habit);
@@ -585,13 +604,14 @@ export default function Home() {
     if (!newName.trim() || !modal) return;
     const color = palette[(daily.length + weekly.length) % palette.length];
     if (modal === "daily") {
-      setDaily((items) => [...items, { id: Date.now(), name: newName.trim(), goal: everyDay ? days : newGoal, everyDay, color, checks: [], category: selectedCategory }]);
+      setDaily((items) => [...items, { id: Date.now(), name: newName.trim(), goal: everyDay ? days : weekdaysOnly ? weekdaysInMonth(year, month) : newGoal, everyDay, weekdaysOnly, color, checks: [], category: selectedCategory }]);
     } else {
       setWeekly((items) => [...items, { id: Date.now(), name: newName.trim(), goal: Math.min(5, newGoal), color, checks: [], category: selectedCategory }]);
     }
     setNewName("");
     setNewGoal(12);
     setEveryDay(false);
+    setWeekdaysOnly(false);
     setSelectedCategory("health");
     setModal(null);
   }
@@ -601,6 +621,7 @@ export default function Home() {
     setNewName(habit.name);
     setNewGoal(habit.goal);
     setEveryDay(Boolean(habit.everyDay));
+    setWeekdaysOnly(Boolean(habit.weekdaysOnly));
     setSelectedColor(habit.color);
     setSelectedCategory(habit.category ?? inferCategory(habit.name));
     setActionHabit(null);
@@ -608,12 +629,13 @@ export default function Home() {
 
   function saveEdit() {
     if (!editing || !newName.trim()) return;
-    const update = (habit: Habit) => habit.id === editing.id ? { ...habit, name: newName.trim(), goal: everyDay && editing.type === "daily" ? days : newGoal, everyDay: editing.type === "daily" ? everyDay : false, color: selectedColor, category: selectedCategory } : habit;
+    const update = (habit: Habit) => habit.id === editing.id ? { ...habit, name: newName.trim(), goal: editing.type === "daily" && everyDay ? days : editing.type === "daily" && weekdaysOnly ? weekdaysInMonth(year, month) : newGoal, everyDay: editing.type === "daily" ? everyDay : false, weekdaysOnly: editing.type === "daily" ? weekdaysOnly : false, color: selectedColor, category: selectedCategory } : habit;
     if (editing.type === "daily") setDaily((items) => items.map(update));
     else setWeekly((items) => items.map(update));
     setEditing(null);
     setNewName("");
     setEveryDay(false);
+    setWeekdaysOnly(false);
     setSelectedColor(palette[0]);
     setSelectedCategory("health");
   }
@@ -848,7 +870,7 @@ export default function Home() {
                 <button className={activeTab === "daily" ? "active" : ""} onClick={() => setActiveTab("daily")}>Diarios</button>
                 <button className={activeTab === "weekly" ? "active" : ""} onClick={() => setActiveTab("weekly")}>Semanales</button>
               </div>
-              <button className="add-button" onClick={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 5); setEveryDay(false); setSelectedCategory("health"); }}>+ Añadir hábito</button>
+              <button className="add-button" onClick={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 5); setEveryDay(false); setWeekdaysOnly(false); setSelectedCategory("health"); }}>+ Añadir hábito</button>
             </div>
           </div>
 
@@ -877,9 +899,9 @@ export default function Home() {
                   const progress = Math.min(100, Math.round(currentChecks.filter((d) => d <= days).length / effectiveGoal * 100));
                   return <div className={`habit-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "daily" && reorderHabit("daily", dragging.id, habit.id)}>
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
-                    <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.goal}</div>
+                    <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => <button key={d.day} className={`${currentChecks.includes(d.day) ? "checked" : ""} ${d.day === todayNumber ? "today-column" : ""}`.trim()} onClick={() => toggleDaily(habit.id, d.day)} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}`}>{currentChecks.includes(d.day) ? "✓" : ""}</button>)}
+                      {calendar.map((d) => { const disabled = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); return <button key={d.day} disabled={disabled} className={`${currentChecks.includes(d.day) ? "checked" : ""} ${d.day === todayNumber ? "today-column" : ""} ${disabled ? "non-working-day" : ""}`.trim()} onClick={() => toggleDaily(habit.id, d.day)} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${disabled ? ", fin de semana" : ""}`}>{currentChecks.includes(d.day) ? "✓" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{currentChecks.filter((d) => d <= days).length}/{effectiveGoal}</span></div>
                   </div>;
@@ -928,8 +950,11 @@ export default function Home() {
           <h2 id="modal-title">Añadir hábito {modal === "daily" ? "diario" : "semanal"}</h2>
           <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ej. Caminar 30 minutos" /></label>
           <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-          {modal === "daily" && <label className="frequency-toggle"><input type="checkbox" checked={everyDay} onChange={(e) => setEveryDay(e.target.checked)} /><span><strong>Todos los días</strong><small>Se ajustará automáticamente a {days} días en {monthNames[month]}.</small></span></label>}
-          {!everyDay && <label>Objetivo del mes<input type="number" min="1" max={modal === "daily" ? days : 5} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} /></label>}
+          {modal === "daily" && <div className="frequency-options">
+            <label className="frequency-toggle"><input type="checkbox" checked={everyDay} onChange={(e) => { setEveryDay(e.target.checked); if (e.target.checked) setWeekdaysOnly(false); }} /><span><strong>Todos los días</strong><small>Objetivo automático de {days} días en {monthNames[month]}.</small></span></label>
+            <label className="frequency-toggle"><input type="checkbox" checked={weekdaysOnly} onChange={(e) => { setWeekdaysOnly(e.target.checked); if (e.target.checked) setEveryDay(false); }} /><span><strong>Todos los días laborables</strong><small>De lunes a viernes; excluye sábados y domingos ({weekdaysInMonth(year, month)} días).</small></span></label>
+          </div>}
+          {!everyDay && !weekdaysOnly && <label>Objetivo del mes<input type="number" min="1" max={modal === "daily" ? days : 5} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} /></label>}
           <button className="add-button full" onClick={addHabit}>Crear hábito</button>
         </div>
       </div>}
@@ -1016,8 +1041,11 @@ export default function Home() {
           <h2 id="edit-title">Editar hábito</h2>
           <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} /></label>
           <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-          {editing.type === "daily" && <label className="frequency-toggle"><input type="checkbox" checked={everyDay} onChange={(e) => setEveryDay(e.target.checked)} /><span><strong>Todos los días</strong><small>El objetivo se ajustará al número real de días del mes.</small></span></label>}
-          {!everyDay && <label>Objetivo del mes<input type="number" min="1" max={editing.type === "daily" ? days : 5} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} /></label>}
+          {editing.type === "daily" && <div className="frequency-options">
+            <label className="frequency-toggle"><input type="checkbox" checked={everyDay} onChange={(e) => { setEveryDay(e.target.checked); if (e.target.checked) setWeekdaysOnly(false); }} /><span><strong>Todos los días</strong><small>El objetivo se ajustará al número real de días del mes.</small></span></label>
+            <label className="frequency-toggle"><input type="checkbox" checked={weekdaysOnly} onChange={(e) => { setWeekdaysOnly(e.target.checked); if (e.target.checked) setEveryDay(false); }} /><span><strong>Todos los días laborables</strong><small>De lunes a viernes; excluye sábados y domingos ({weekdaysInMonth(year, month)} días).</small></span></label>
+          </div>}
+          {!everyDay && !weekdaysOnly && <label>Objetivo del mes<input type="number" min="1" max={editing.type === "daily" ? days : 5} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} /></label>}
           <fieldset className="color-picker">
             <legend>Color del hábito</legend>
             <div className="color-palette">
