@@ -210,8 +210,8 @@ function TrendChart({ data }: { data: { label: string; value: number }[] }) {
   );
 }
 
-function Brand() {
-  return <div className="brand"><Image className="brand-logo" src="/brujula-logo-simple.svg" width={68} height={68} alt="" priority /><span>Brújula</span></div>;
+function Brand({ lightBackground = false }: { lightBackground?: boolean }) {
+  return <div className="brand"><Image className="brand-logo" src={lightBackground ? "/brujula-logo-light.svg" : "/brujula-logo-simple.svg"} width={68} height={68} alt="" priority /><span>Brújula</span></div>;
 }
 
 function AuthGate() {
@@ -252,7 +252,7 @@ function AuthGate() {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <div className="auth-brand"><Brand /></div>
+        <div className="auth-brand"><Brand lightBackground /></div>
         <p className="eyebrow">TU RUMBO PERSONAL</p>
         <h1>{mode === "login" ? "Continúa avanzando." : mode === "register" ? "Empieza tu recorrido." : "Recupera el acceso."}</h1>
         <p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : "Tus hábitos se guardarán de forma privada y estarán disponibles en todos tus dispositivos."}</p>
@@ -302,7 +302,7 @@ function ResetPassword({ onComplete }: { onComplete: () => void }) {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <div className="auth-brand"><Brand /></div>
+        <div className="auth-brand"><Brand lightBackground /></div>
         <p className="eyebrow">NUEVA CONTRASEÑA</p>
         <h1>Recupera tu rumbo.</h1>
         <p>Elige una contraseña nueva de al menos 8 caracteres.</p>
