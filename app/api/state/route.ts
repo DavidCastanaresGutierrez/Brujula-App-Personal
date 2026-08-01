@@ -1,5 +1,14 @@
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const noStoreHeaders = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0",
+  Pragma: "no-cache",
+  Expires: "0",
+};
+
 type CategoryRow = {
   id: string;
   label: string;
@@ -218,7 +227,7 @@ export async function GET(request: Request) {
         ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text) }
         : null;
 
-    return Response.json({ state });
+    return Response.json({ state }, { headers: noStoreHeaders });
   } catch (error) {
     return errorResponse(error);
   }
@@ -240,7 +249,10 @@ export async function PUT(request: Request) {
     }
 
     await applyStateChanges(supabase, authData.user.id, state, base);
-    return Response.json({ ok: true, updatedAt: new Date().toISOString() });
+    return Response.json(
+      { ok: true, updatedAt: new Date().toISOString() },
+      { headers: noStoreHeaders },
+    );
   } catch (error) {
     return errorResponse(error);
   }

@@ -453,9 +453,12 @@ export default function Home() {
 
     async function loadState() {
       try {
-        const response = await fetch("/api/state", {
+        const response = await fetch(`/api/state?ts=${Date.now()}`, {
           cache: "no-store",
-          headers: { authorization: `Bearer ${accessToken}` },
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            "cache-control": "no-cache",
+          },
         });
         if (!response.ok) throw new Error("No se pudo cargar la base de datos");
         const payload = await response.json() as { state: TrackerState | null };
@@ -566,9 +569,12 @@ export default function Home() {
         const supabase = getSupabaseBrowserClient();
         const { data } = await supabase.auth.getSession();
         if (!data.session) return;
-        const response = await fetch("/api/state", {
+        const response = await fetch(`/api/state?ts=${Date.now()}`, {
           cache: "no-store",
-          headers: { authorization: `Bearer ${data.session.access_token}` },
+          headers: {
+            authorization: `Bearer ${data.session.access_token}`,
+            "cache-control": "no-cache",
+          },
         });
         if (!response.ok) return;
         const payload = await response.json() as { state: TrackerState | null };
@@ -591,14 +597,27 @@ export default function Home() {
     };
 
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
-    const interval = window.setInterval(() => void pullLatest(), 10_000);
+    const onPageShow = () => void pullLatest();
+    const supabase = getSupabaseBrowserClient();
+    const realtime = supabase
+      .channel(`brujula-sync:${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "habit_completions", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
+      .on("postgres_changes", { event: "*", schema: "public", table: "habits", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
+      .subscribe();
+    const interval = window.setInterval(() => void pullLatest(), 3_000);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("online", onPageShow);
     document.addEventListener("visibilitychange", onFocus);
+    void pullLatest();
     return () => {
       cancelled = true;
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("online", onPageShow);
       document.removeEventListener("visibilitychange", onFocus);
+      void supabase.removeChannel(realtime);
     };
   }, [hydrated, session]);
 
