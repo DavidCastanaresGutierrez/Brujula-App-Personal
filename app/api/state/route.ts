@@ -18,6 +18,7 @@ type HabitRow = {
   position: number;
   archived: boolean;
   every_day: boolean;
+  weekdays_only: boolean;
   celebrated_streak_30: string | null;
 };
 
@@ -41,6 +42,116 @@ function validState(value: unknown): value is {
     && Array.isArray(state.categories);
 }
 
+type TrackerState = {
+  daily: Record<string, unknown>[];
+  weekly: Record<string, unknown>[];
+  categories: Record<string, unknown>[];
+  motivations?: string[];
+};
+
+function habitsOf(state: TrackerState): Array<Record<string, unknown> & { kind: "daily" | "weekly" }> {
+  return [
+    ...state.daily.map((habit) => ({ ...habit, kind: "daily" as const })),
+    ...state.weekly.map((habit) => ({ ...habit, kind: "weekly" as const })),
+  ];
+}
+
+function changedRecords<T extends Record<string, unknown>>(before: T[], after: T[], key: keyof T) {
+  const previous = new Map(before.map((item) => [String(item[key]), item]));
+  return after.filter((item) => JSON.stringify(previous.get(String(item[key]))) !== JSON.stringify(item));
+}
+
+async function applyStateChanges(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  userId: string,
+  next: TrackerState,
+  base?: TrackerState,
+) {
+  const nextHabits = habitsOf(next);
+  const baseHabits = base ? habitsOf(base) : [];
+  const nextHabitIds = new Set(nextHabits.map((habit) => Number(habit.id)));
+  const nextCategoryIds = new Set(next.categories.map((category) => String(category.id)));
+  const deletedHabitIds = baseHabits.filter((habit) => !nextHabitIds.has(Number(habit.id))).map((habit) => Number(habit.id));
+  const deletedCategoryIds = (base?.categories ?? []).filter((category) => !nextCategoryIds.has(String(category.id))).map((category) => String(category.id));
+
+  // Deletions are only accepted when the client proves the record existed in its
+  // last synchronized baseline. A stale/empty device can therefore never wipe a user.
+  if (deletedHabitIds.length) {
+    const { error } = await supabase.from("habits").delete().eq("user_id", userId).in("id", deletedHabitIds);
+    if (error) throw error;
+  }
+
+  const categories = changedRecords(base?.categories ?? [], next.categories, "id").map((category, position) => ({
+    user_id: userId,
+    id: String(category.id),
+    label: String(category.label),
+    icon: String(category.icon ?? "●"),
+    color: String(category.color),
+    position: next.categories.findIndex((item) => item.id === category.id) ?? position,
+  }));
+  if (categories.length) {
+    const { error } = await supabase.from("categories").upsert(categories, { onConflict: "user_id,id" });
+    if (error) throw error;
+  }
+
+  const habits = changedRecords(baseHabits, nextHabits, "id").map((habit) => ({
+    user_id: userId,
+    id: Number(habit.id),
+    category_id: String(habit.category),
+    kind: habit.kind,
+    name: String(habit.name),
+    goal: Number(habit.goal),
+    color: String(habit.color),
+    position: nextHabits.findIndex((item) => item.id === habit.id),
+    archived: Boolean(habit.archived),
+    every_day: habit.kind === "daily" && Boolean(habit.everyDay),
+    weekdays_only: habit.kind === "daily" && Boolean(habit.weekdaysOnly),
+    celebrated_streak_30: habit.celebratedStreak30 ? String(habit.celebratedStreak30) : null,
+  }));
+  if (habits.length) {
+    const { error } = await supabase.from("habits").upsert(habits, { onConflict: "user_id,id" });
+    if (error) throw error;
+  }
+
+  const completionKeys = (state: TrackerState) => new Set(habitsOf(state).flatMap((habit) =>
+    Object.entries((habit.history ?? {}) as Record<string, number[]>).flatMap(([periodKey, values]) =>
+      values.map((value) => `${habit.id}|${periodKey}|${value}`),
+    ),
+  ));
+  const beforeCompletions = base ? completionKeys(base) : new Set<string>();
+  const afterCompletions = completionKeys(next);
+  const addedCompletions = [...afterCompletions].filter((key) => !beforeCompletions.has(key)).map((key) => {
+    const [habitId, periodKey, value] = key.split("|");
+    return { user_id: userId, habit_id: Number(habitId), period_key: periodKey, value: Number(value) };
+  });
+  const removedCompletions = [...beforeCompletions].filter((key) => !afterCompletions.has(key));
+  if (addedCompletions.length) {
+    const { error } = await supabase.from("habit_completions").upsert(addedCompletions, { onConflict: "user_id,habit_id,period_key,value" });
+    if (error) throw error;
+  }
+  for (const key of removedCompletions) {
+    const [habitId, periodKey, value] = key.split("|");
+    const { error } = await supabase.from("habit_completions").delete()
+      .eq("user_id", userId).eq("habit_id", Number(habitId)).eq("period_key", periodKey).eq("value", Number(value));
+    if (error) throw error;
+  }
+
+  if (deletedCategoryIds.length) {
+    const { error } = await supabase.from("categories").delete().eq("user_id", userId).in("id", deletedCategoryIds);
+    if (error) throw error;
+  }
+
+  if (JSON.stringify(base?.motivations ?? []) !== JSON.stringify(next.motivations ?? [])) {
+    const { error: deleteError } = await supabase.from("motivational_quotes").delete().eq("user_id", userId);
+    if (deleteError) throw deleteError;
+    const quotes = (next.motivations ?? []).map((text, position) => ({ user_id: userId, text, position }));
+    if (quotes.length) {
+      const { error: insertError } = await supabase.from("motivational_quotes").insert(quotes);
+      if (insertError) throw insertError;
+    }
+  }
+}
+
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Error de base de datos";
   const status = message.includes("autenticado") ? 401 : 500;
@@ -55,7 +166,7 @@ export async function GET(request: Request) {
 
     const [categoriesResult, habitsResult, completionsResult, motivationsResult] = await Promise.all([
       supabase.from("categories").select("id,label,icon,color,position").order("position"),
-      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,celebrated_streak_30").order("position"),
+      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
       supabase.from("motivational_quotes").select("text,position").order("position"),
     ]);
@@ -89,6 +200,7 @@ export async function GET(request: Request) {
       checks: [],
       archived: habit.archived || undefined,
       everyDay: habit.kind === "daily" ? habit.every_day : undefined,
+      weekdaysOnly: habit.kind === "daily" ? habit.weekdays_only : undefined,
       history: historyByHabit.get(Number(habit.id)) ?? {},
       category: habit.category_id,
       celebratedStreak30: habit.celebrated_streak_30 ?? undefined,
@@ -117,7 +229,9 @@ export async function PUT(request: Request) {
     const supabase = getSupabaseServerClient(request);
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Usuario no autenticado");
-    const state = await request.json();
+    const body = await request.json();
+    const state = (body?.state ?? body) as TrackerState;
+    const base = validState(body?.base) ? body.base as TrackerState : undefined;
     if (!validState(state)) {
       return Response.json({ error: "Estado de hábitos no válido" }, { status: 400 });
     }
@@ -125,8 +239,7 @@ export async function PUT(request: Request) {
       return Response.json({ error: "Los datos superan el tamaño permitido" }, { status: 413 });
     }
 
-    const { error } = await supabase.rpc("replace_tracker_state", { payload: state });
-    if (error) throw error;
+    await applyStateChanges(supabase, authData.user.id, state, base);
     return Response.json({ ok: true, updatedAt: new Date().toISOString() });
   } catch (error) {
     return errorResponse(error);

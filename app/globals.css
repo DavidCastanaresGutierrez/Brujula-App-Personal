@@ -336,6 +336,20 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
 .delete-button { border: 0; background: #e84b63; color: white; padding: 10px 14px; border-radius: 9px; font-weight: 700; font-size: 10px; cursor: pointer; }
 .blocks-modal { width: min(560px, 100%); }
+.archived-button { display: inline-flex; align-items: center; gap: 7px; }
+.archived-button span { min-width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; background: rgba(45,212,191,.16); color: var(--teal); font-size: 9px; font-weight: 800; }
+.archived-modal { width: min(560px, 100%); }
+.archived-list { display: grid; gap: 8px; max-height: min(52vh, 430px); overflow-y: auto; padding-right: 3px; }
+.archived-row { display: grid; grid-template-columns: 5px 1fr auto; align-items: center; gap: 12px; padding: 12px 12px 12px 10px; border: 1px solid var(--line); border-radius: 11px; background: rgba(8,16,31,.36); }
+.archived-row > i { width: 5px; height: 30px; border-radius: 5px; }
+.archived-row strong, .archived-row small { display: block; }
+.archived-row strong { font-size: 12px; }
+.archived-row small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.restore-button { border: 1px solid rgba(45,212,191,.32); border-radius: 9px; background: rgba(45,212,191,.1); color: var(--teal); padding: 9px 12px; font-size: 10px; font-weight: 800; cursor: pointer; }
+.restore-button:hover { background: rgba(45,212,191,.18); }
+.archived-empty { padding: 24px 18px; border: 1px dashed rgba(160,177,212,.2); border-radius: 12px; text-align: center; background: rgba(8,16,31,.25); }
+.archived-empty strong { font-size: 13px; }
+.archived-empty p { max-width: 360px; margin: 7px auto 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .block-manager-list { display: grid; gap: 7px; margin: -6px 0 20px; }
 .block-manager-row { display: grid; grid-template-columns: 38px 1fr 34px 34px; align-items: center; gap: 9px; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: rgba(8,16,31,.36); }
 .block-manager-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; font-weight: 850; }

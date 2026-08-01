@@ -143,6 +143,39 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
   };
 }
 
+function statesEqual(a: TrackerState | null, b: TrackerState | null) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function mergeStates(serverState: TrackerState, localState: TrackerState): Required<TrackerState> {
+  const server = normalizeState(serverState);
+  const local = normalizeState(localState);
+  const mergeHabits = <T extends Habit | WeeklyHabit>(remote: T[], device: T[]) => {
+    const merged = new Map(remote.map((habit) => [habit.id, habit]));
+    device.forEach((habit) => {
+      const existing = merged.get(habit.id);
+      if (!existing) {
+        merged.set(habit.id, habit);
+        return;
+      }
+      const history = { ...(habit.history ?? {}), ...(existing.history ?? {}) };
+      Object.keys(history).forEach((key) => {
+        history[key] = [...new Set([...(habit.history?.[key] ?? []), ...(existing.history?.[key] ?? [])])].sort((a, b) => a - b);
+      });
+      merged.set(habit.id, { ...habit, ...existing, history });
+    });
+    return [...merged.values()];
+  };
+  const categories = new Map(local.categories.map((category) => [category.id, category]));
+  server.categories.forEach((category) => categories.set(category.id, category));
+  return {
+    daily: mergeHabits(server.daily, local.daily),
+    weekly: mergeHabits(server.weekly, local.weekly),
+    categories: [...categories.values()],
+    motivations: server.motivations.length ? server.motivations : local.motivations,
+  };
+}
+
 function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
 }
@@ -358,6 +391,7 @@ export default function Home() {
   const [selectedColor, setSelectedColor] = useState(palette[0]);
   const [selectedCategory, setSelectedCategory] = useState<HabitCategory>("health");
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [archivedManagerOpen, setArchivedManagerOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<HabitCategory | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState(defaultCategories[0].color);
@@ -371,6 +405,9 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const baselineRef = useRef<TrackerState | null>(null);
+  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations });
+  const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -390,9 +427,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    stateRef.current = { daily, weekly, categories: habitCategories, motivations };
+  }, [daily, weekly, habitCategories, motivations]);
+
+  useEffect(() => {
     if (!authReady || !session) return;
     const accessToken = session.access_token;
     const storageKey = `brujula-state-v1:${session.user.id}`;
+    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     let cancelled = false;
     const localSaved = localStorage.getItem(storageKey);
     let localState: TrackerState | null = null;
@@ -400,6 +442,13 @@ export default function Home() {
       if (localSaved) localState = JSON.parse(localSaved);
     } catch {
       localState = null;
+    }
+    let localBaseline: TrackerState | null = null;
+    try {
+      const savedBaseline = localStorage.getItem(baselineKey);
+      if (savedBaseline) localBaseline = JSON.parse(savedBaseline);
+    } catch {
+      localBaseline = null;
     }
 
     async function loadState() {
@@ -410,7 +459,10 @@ export default function Home() {
         });
         if (!response.ok) throw new Error("No se pudo cargar la base de datos");
         const payload = await response.json() as { state: TrackerState | null };
-        const state = payload.state ?? localState;
+        const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
+        const state = payload.state
+          ? (hasPendingLocalChanges && localState ? mergeStates(payload.state, localState) : payload.state)
+          : localState;
         if (cancelled) return;
         if (state) {
           const normalized = normalizeState(state);
@@ -420,18 +472,9 @@ export default function Home() {
           const savedMotivations = (state.motivations?.length ? state.motivations : localState?.motivations)?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
+        baselineRef.current = payload.state ? normalizeState(payload.state) : null;
+        localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
         setSyncStatus("synced");
-
-        if (!payload.state && localState) {
-          await fetch("/api/state", {
-            method: "PUT",
-            headers: {
-              "content-type": "application/json",
-              authorization: `Bearer ${accessToken}`,
-            },
-            body: JSON.stringify(localState),
-          });
-        }
       } catch {
         if (!cancelled && localState) {
           const normalized = normalizeState(localState);
@@ -452,32 +495,112 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated || !session) return;
-    const accessToken = session.access_token;
     const storageKey = `brujula-state-v1:${session.user.id}`;
+    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const state = { daily, weekly, categories: habitCategories, motivations };
     localStorage.setItem(storageKey, JSON.stringify(state));
+    if (statesEqual(state, baselineRef.current)) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
+      if (syncInFlight.current) return;
+      syncInFlight.current = true;
       setSyncStatus("saving");
       try {
+        const supabase = getSupabaseBrowserClient();
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !data.session) throw sessionError ?? new Error("La sesión ha caducado");
+        const snapshot = stateRef.current;
         const response = await fetch("/api/state", {
           method: "PUT",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${accessToken}`,
+            authorization: `Bearer ${data.session.access_token}`,
           },
-          body: JSON.stringify(state),
+          body: JSON.stringify({ base: baselineRef.current, state: snapshot }),
         });
-        if (!response.ok) throw new Error("No se pudo guardar");
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? "No se pudo guardar");
+        }
+        baselineRef.current = snapshot;
+        localStorage.setItem(baselineKey, JSON.stringify(snapshot));
         setSyncStatus("synced");
       } catch {
         setSyncStatus("offline");
+      } finally {
+        syncInFlight.current = false;
       }
     }, 600);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [daily, weekly, habitCategories, motivations, hydrated, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session) return;
+    const retry = () => {
+      if (document.visibilityState === "visible" || navigator.onLine) {
+        // Trigger the normal diff-based save without inventing a second sync path.
+        setDaily((items) => [...items]);
+      }
+    };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [hydrated, session]);
+
+  useEffect(() => {
+    if (!hydrated || !session) return;
+    let cancelled = false;
+    let pulling = false;
+    const storageKey = `brujula-state-v1:${session.user.id}`;
+    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+
+    const pullLatest = async () => {
+      if (pulling || syncInFlight.current || !navigator.onLine) return;
+      pulling = true;
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) return;
+        const response = await fetch("/api/state", {
+          cache: "no-store",
+          headers: { authorization: `Bearer ${data.session.access_token}` },
+        });
+        if (!response.ok) return;
+        const payload = await response.json() as { state: TrackerState | null };
+        if (cancelled || !payload.state) return;
+        const serverState = normalizeState(payload.state);
+        const localState = stateRef.current;
+        const hasPendingLocalChanges = !statesEqual(localState, baselineRef.current);
+        const nextState = hasPendingLocalChanges ? mergeStates(serverState, localState) : serverState;
+        baselineRef.current = serverState;
+        localStorage.setItem(baselineKey, JSON.stringify(serverState));
+        localStorage.setItem(storageKey, JSON.stringify(nextState));
+        setDaily(nextState.daily);
+        setWeekly(nextState.weekly);
+        setHabitCategories(nextState.categories);
+        setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
+        setSyncStatus(hasPendingLocalChanges ? "saving" : "synced");
+      } finally {
+        pulling = false;
+      }
+    };
+
+    const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
+    const interval = window.setInterval(() => void pullLatest(), 10_000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [hydrated, session]);
 
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -506,6 +629,10 @@ export default function Home() {
 
   const activeDaily = daily.filter((habit) => !habit.archived);
   const activeWeekly = weekly.filter((habit) => !habit.archived);
+  const archivedHabits = [
+    ...daily.filter((habit) => habit.archived).map((habit) => ({ type: "daily" as const, habit })),
+    ...weekly.filter((habit) => habit.archived).map((habit) => ({ type: "weekly" as const, habit })),
+  ];
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
   const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
@@ -645,6 +772,12 @@ export default function Home() {
     if (type === "daily") setDaily((items) => items.map(update));
     else setWeekly((items) => items.map(update));
     setActionHabit(null);
+  }
+
+  function restoreHabit(type: "daily" | "weekly", id: number) {
+    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: false } : habit;
+    if (type === "daily") setDaily((items) => items.map(update));
+    else setWeekly((items) => items.map(update));
   }
 
   function deleteHabit() {
@@ -866,6 +999,9 @@ export default function Home() {
             </div>
             <div className="tracker-actions">
               <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
+              <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
+                Archivados{archivedHabits.length > 0 && <span>{archivedHabits.length}</span>}
+              </button>
               <div className="tabs">
                 <button className={activeTab === "daily" ? "active" : ""} onClick={() => setActiveTab("daily")}>Diarios</button>
                 <button className={activeTab === "weekly" ? "active" : ""} onClick={() => setActiveTab("weekly")}>Semanales</button>
@@ -1024,6 +1160,33 @@ export default function Home() {
               <button className="add-button" onClick={saveCategory}>{editingCategoryId ? "Guardar bloque" : "+ Añadir bloque"}</button>
             </div>
           </div>
+        </div>
+      </div>}
+      {archivedManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setArchivedManagerOpen(false)}>
+        <div className="modal archived-modal" role="dialog" aria-modal="true" aria-labelledby="archived-title" onMouseDown={(e) => e.stopPropagation()}>
+          <button className="close" onClick={() => setArchivedManagerOpen(false)} aria-label="Cerrar">×</button>
+          <p className="eyebrow">HISTORIAL CONSERVADO</p>
+          <h2 id="archived-title">Hábitos archivados</h2>
+          {archivedHabits.length === 0 ? (
+            <div className="archived-empty">
+              <strong>No tienes hábitos archivados</strong>
+              <p>Cuando archives uno, podrás encontrarlo y restaurarlo desde aquí sin perder sus registros.</p>
+            </div>
+          ) : (
+            <div className="archived-list">
+              {archivedHabits.map(({ type, habit }) => {
+                const category = habitCategories.find((item) => item.id === (habit.category ?? inferCategory(habit.name)));
+                return <div className="archived-row" key={`${type}-${habit.id}`}>
+                  <i style={{ background: habit.color }} />
+                  <div>
+                    <strong>{habit.name}</strong>
+                    <small>{type === "daily" ? "Diario" : "Semanal"}{category ? ` · ${category.label}` : ""}</small>
+                  </div>
+                  <button className="restore-button" onClick={() => restoreHabit(type, habit.id)}>Restaurar</button>
+                </div>;
+              })}
+            </div>
+          )}
         </div>
       </div>}
       {deletingCategoryId && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingCategoryId(null)}>
