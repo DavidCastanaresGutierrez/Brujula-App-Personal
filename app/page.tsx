@@ -41,9 +41,10 @@ type TrackerState = {
 };
 
 const palette = [
-  "#ff3b88", "#ef476f", "#fb7185", "#ff0000", "#f97316", "#f59e0b", "#fbbf24",
+  "#ff0000", "#f97316", "#f59e0b", "#fbbf24",
   "#84cc16", "#39c6a4", "#14b8a6", "#22d3ee", "#50b8e7", "#3b82f6",
-  "#6366f1", "#8b5cf6", "#a78bfa", "#d946ef", "#f472b6", "#94a3b8",
+  "#6366f1", "#8b5cf6", "#a78bfa", "#d946ef", "#ff3b88", "#f472b6", "#fb7185",
+  "#ef476f", "#94a3b8",
 ];
 const defaultCategories: Category[] = [
   { id: "health", label: "Salud", icon: "♥", color: "#39c6a4" },
@@ -627,7 +628,9 @@ export default function Home() {
   const days = new Date(year, month + 1, 0).getDate();
   const today = new Date();
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+  const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
   const todayNumber = isCurrentMonth ? today.getDate() : null;
+  const elapsedDays = isPastMonth ? days : isCurrentMonth ? today.getDate() : 0;
   const calendar = Array.from({ length: days }, (_, i) => ({
     day: i + 1,
     week: Math.floor(i / 7) + 1,
@@ -675,9 +678,10 @@ export default function Home() {
   const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
-  const weeklyProgress = Array.from({ length: 5 }, (_, week) => {
+  const elapsedWeeks = elapsedDays ? Math.ceil(elapsedDays / 7) : 0;
+  const weeklyProgress = Array.from({ length: elapsedWeeks }, (_, week) => {
     const start = week * 7 + 1;
-    const end = Math.min(days, start + 6);
+    const end = Math.min(elapsedDays, start + 6);
     const count = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d >= start && d <= end).length, 0);
     const possible = activeDaily.length * (end - start + 1);
     return possible ? Math.round((count / possible) * 100) : 0;
@@ -688,14 +692,19 @@ export default function Home() {
   const selectedCategoryMeta = habitCategories.find((category) => category.id === selectedChartCategory) ?? habitCategories[0] ?? defaultCategories[0];
   const dataForHabits = (habits: Habit[]) => {
     if (chartPeriod === "monthly") {
-      return Array.from({ length: days }, (_, index) => {
+      return Array.from({ length: elapsedDays }, (_, index) => {
         const day = index + 1;
         const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
         const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? day : habit.weekdaysOnly ? weekdaysInMonth(year, month, day) : Math.min(habit.goal, day)), 0);
         return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
       });
     }
-    return monthNames.map((label, index) => {
+    const elapsedMonths = year < today.getFullYear()
+      ? 12
+      : year === today.getFullYear()
+        ? today.getMonth() + 1
+        : 0;
+    return monthNames.slice(0, elapsedMonths).map((label, index) => {
       const key = `${year}-${String(index + 1).padStart(2, "0")}`;
       const monthDays = new Date(year, index + 1, 0).getDate();
       const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
