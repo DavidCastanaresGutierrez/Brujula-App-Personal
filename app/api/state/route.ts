@@ -121,7 +121,13 @@ async function applyStateChanges(
     if (error) throw error;
   }
 
-  const habits = changedRecords(baseHabits, nextHabits, "id").map((habit) => ({
+  const changedHabitIds = new Set(changedRecords(baseHabits, nextHabits, "id").map((habit) => String(habit.id)));
+  nextHabits.forEach((habit, position) => {
+    if (baseHabits.findIndex((item) => String(item.id) === String(habit.id)) !== position) {
+      changedHabitIds.add(String(habit.id));
+    }
+  });
+  const habits = nextHabits.filter((habit) => changedHabitIds.has(String(habit.id))).map((habit) => ({
     user_id: userId,
     id: Number(habit.id),
     category_id: String(habit.category),
@@ -129,7 +135,7 @@ async function applyStateChanges(
     name: String(habit.name),
     goal: Number(habit.goal),
     color: String(habit.color),
-    position: nextHabits.findIndex((item) => item.id === habit.id),
+    position: nextHabits.findIndex((item) => String(item.id) === String(habit.id)),
     archived: Boolean(habit.archived),
     every_day: habit.kind === "daily" && Boolean(habit.everyDay),
     weekdays_only: habit.kind === "daily" && Boolean(habit.weekdaysOnly),
