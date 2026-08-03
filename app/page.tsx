@@ -37,7 +37,8 @@ type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
 type MainView = "summary" | "today" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
 type BookEntry = { id: number; title: string; format: BookFormat; completedAt: string };
-type FitnessEntry = { id: number; recordedAt: string; weight?: number; bodyFat?: number; muscle?: number };
+type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi";
+type FitnessEntry = { id: number; recordedAt: string; weight: number; muscle: number; fatMass: number; bodyWater: number; bodyFat: number; bmi: number };
 type Goal = {
   id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
   measurement: "complete" | "quantity"; targetValue: number; currentValue: number;
@@ -123,12 +124,28 @@ const dailyMotivations = [
   "Decide el rumbo y deja que los días hagan el trabajo.",
   "Hoy es una oportunidad concreta, no una promesa abstracta.",
 ];
+const PHRASES_OWNER_EMAIL = "david.castanares.gutierrez@gmail.com";
+const fitnessMetricMeta: Record<FitnessMetric, { label: string; unit: string }> = {
+  weight: { label: "Peso", unit: "kg" }, muscle: { label: "Masa muscular", unit: "kg" },
+  fatMass: { label: "Masa grasa", unit: "kg" }, bodyWater: { label: "Agua corporal", unit: "kg" },
+  bodyFat: { label: "Grasa corporal", unit: "%" }, bmi: { label: "IMC", unit: "" },
+};
 
 function motivationForToday(motivations = dailyMotivations) {
   const available = motivations.length ? motivations : dailyMotivations;
   const now = new Date();
   const dayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000);
   return available[dayNumber % available.length];
+}
+
+function FitnessChart({ entries, metric, period }: { entries: FitnessEntry[]; metric: FitnessMetric; period: number }) {
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - period);
+  const points = entries.filter((entry) => new Date(`${entry.recordedAt}T12:00:00`) >= cutoff && Number.isFinite(entry[metric])).sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+  if (!points.length) return <p className="fitness-chart-empty">Añade mediciones para ver tu evolución.</p>;
+  const values = points.map((entry) => entry[metric]); const min = Math.min(...values); const max = Math.max(...values); const span = Math.max(1, max - min);
+  const coords = points.map((entry, index) => ({ x: points.length === 1 ? 50 : 6 + index * 88 / (points.length - 1), y: 82 - (entry[metric] - min) / span * 64, entry }));
+  const meta = fitnessMetricMeta[metric]; const change = values.at(-1)! - values[0];
+  return <div className="fitness-chart"><div className="fitness-chart-summary"><span>Última <b>{values.at(-1)} {meta.unit}</b></span><span>Registros <b>{points.length}</b></span><span>Variación <b className={change <= 0 ? "positive" : ""}>{change > 0 ? "+" : ""}{change.toFixed(1)} {meta.unit}</b></span></div><svg viewBox="0 0 100 92" role="img" aria-label={`Evolución de ${meta.label}`} preserveAspectRatio="none"><path className="fitness-area" d={`M ${coords.map((p) => `${p.x} ${p.y}`).join(" L ")} L ${coords.at(-1)!.x} 88 L ${coords[0].x} 88 Z`} /><polyline points={coords.map((p) => `${p.x},${p.y}`).join(" ")} /><g>{coords.map((p) => <circle key={p.entry.id} cx={p.x} cy={p.y} r="1.7"><title>{p.entry.recordedAt}: {p.entry[metric]} {meta.unit}</title></circle>)}</g></svg><div className="fitness-chart-dates"><span>{points[0].recordedAt}</span><span>{points.at(-1)!.recordedAt}</span></div></div>;
 }
 
 function inferCategory(name: string): HabitCategory {
@@ -483,7 +500,9 @@ export default function Home() {
   const [bookTitle, setBookTitle] = useState("");
   const [bookFormat, setBookFormat] = useState<BookFormat>("paper");
   const [fitnessGoal, setFitnessGoal] = useState<Goal | null>(null);
-  const [fitnessDraft, setFitnessDraft] = useState({ weight: "", bodyFat: "", muscle: "" });
+  const [fitnessDraft, setFitnessDraft] = useState({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "" });
+  const [fitnessMetric, setFitnessMetric] = useState<FitnessMetric>("weight");
+  const [fitnessPeriod, setFitnessPeriod] = useState<30 | 90 | 365>(90);
   const [fitnessImporting, setFitnessImporting] = useState(false);
   const [fitnessImportMessage, setFitnessImportMessage] = useState("");
   const [motivationManagerOpen, setMotivationManagerOpen] = useState(false);
@@ -526,6 +545,11 @@ export default function Home() {
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
+
+  useEffect(() => {
+    if (!canManagePhrases && motivationManagerOpen) setMotivationManagerOpen(false);
+  }, [canManagePhrases, motivationManagerOpen]);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -778,8 +802,14 @@ export default function Home() {
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
   const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
-  const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= days).length, 0);
-  const totalGoal = activeDaily.reduce((sum, habit) => sum + goalFor(habit), 0);
+  const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
+  const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= evaluatedThrough).length, 0);
+  const effectiveGoalThrough = (habit: Habit, through: number) => habit.everyDay
+    ? through
+    : habit.weekdaysOnly
+      ? weekdaysInMonth(year, month, through)
+      : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, days)));
+  const totalGoal = activeDaily.reduce((sum, habit) => sum + effectiveGoalThrough(habit, evaluatedThrough), 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -788,6 +818,7 @@ export default function Home() {
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
   const weekStart = Math.max(1, referenceDay - mondayOffset);
   const weekEnd = Math.min(days, weekStart + 6);
+  const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
   const habitsScheduledForDay = (day: number) => activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
   const referenceDayHabits = habitsScheduledForDay(referenceDay);
   const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
@@ -804,8 +835,9 @@ export default function Home() {
     ? pastMonthDailyValues.reduce((sum, progress) => sum + progress, 0) / pastMonthDailyValues.length
     : 0;
   const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
-  const weekChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((day) => day >= weekStart && day <= weekEnd).length, 0);
-  const weekGoal = activeDaily.length * (weekEnd - weekStart + 1);
+  const weekChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((day) => day >= weekStart && day <= evaluatedWeekEnd).length, 0);
+  let weekGoal = 0;
+  for (let day = weekStart; day <= evaluatedWeekEnd; day += 1) weekGoal += habitsScheduledForDay(day).length;
   const weekScore = scoreFromPercent(weekGoal ? weekChecks / weekGoal * 100 : 0);
   const dayScore = scoreFromPercent(dayProgress);
   const dayScoreTitle = isPastMonth ? "Nota media diaria" : "Nota del día";
@@ -816,17 +848,9 @@ export default function Home() {
   const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
-  const monthStart = new Date(year, month, 1);
-  const monthEnd = new Date(year, month, days);
-  const firstWeekStart = new Date(monthStart);
-  firstWeekStart.setDate(monthStart.getDate() - ((monthStart.getDay() + 6) % 7));
-  const lastWeekEnd = new Date(monthEnd);
-  lastWeekEnd.setDate(monthEnd.getDate() + (6 - ((monthEnd.getDay() + 6) % 7)));
-  const weeklyProgress = Array.from({ length: Math.round((lastWeekEnd.getTime() - firstWeekStart.getTime()) / 604_800_000) + 1 }, (_, index) => {
-    const naturalStart = new Date(firstWeekStart); naturalStart.setDate(firstWeekStart.getDate() + index * 7);
-    const naturalEnd = new Date(naturalStart); naturalEnd.setDate(naturalStart.getDate() + 6);
-    const start = Math.max(1, naturalStart.getMonth() === month ? naturalStart.getDate() : 1);
-    const end = Math.min(days, naturalEnd.getMonth() === month ? naturalEnd.getDate() : days);
+  const weeklyProgress = Array.from({ length: Math.ceil(days / 7) }, (_, index) => {
+    const start = index * 7 + 1;
+    const end = Math.min(days, start + 6);
     const projected = !isPastMonth && new Date(year, month, start) > today;
     const evaluatedEnd = projected ? start - 1 : Math.min(end, isCurrentMonth ? today.getDate() : end);
     let completed = 0; let possible = 0;
@@ -834,8 +858,7 @@ export default function Home() {
       const scheduled = habitsScheduledForDay(day); possible += scheduled.length;
       completed += scheduled.filter((habit) => checksFor(habit).includes(day)).length;
     }
-    const format = (value: Date) => value.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(".", "");
-    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range: `${format(naturalStart)}–${format(naturalEnd)}` };
+    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range: `${start}–${end} ${monthNames[month].slice(0, 3).toLowerCase()}` };
   });
   const selectedHabit = activeDaily.find((habit) => habit.id === selectedHabitId) ?? activeDaily[0];
   const allCategoriesSelected = selectedChartCategory === "__all__";
@@ -1171,10 +1194,11 @@ export default function Home() {
   function saveFitnessEntry() {
     if (!fitnessGoal) return;
     const parse = (value: string) => value.trim() ? Number(value.replace(",", ".")) : undefined;
-    const entry: FitnessEntry = { id: Date.now(), recordedAt: new Date().toISOString().slice(0, 10), weight: parse(fitnessDraft.weight), bodyFat: parse(fitnessDraft.bodyFat), muscle: parse(fitnessDraft.muscle) };
-    if ([entry.weight, entry.bodyFat, entry.muscle].every((value) => value === undefined || Number.isNaN(value))) return;
+    const values = Object.fromEntries(Object.entries(fitnessDraft).map(([key, value]) => [key, parse(value)])) as Record<FitnessMetric, number | undefined>;
+    if (Object.values(values).some((value) => value === undefined || Number.isNaN(value) || value < 0)) return;
+    const entry: FitnessEntry = { id: Date.now(), recordedAt: new Date().toISOString().slice(0, 10), ...(values as Record<FitnessMetric, number>) };
     setGoals((items) => items.map((goal) => goal.id === fitnessGoal.id ? { ...goal, fitnessEntries: [...(goal.fitnessEntries ?? []), entry] } : goal));
-    setFitnessGoal(null); setFitnessDraft({ weight: "", bodyFat: "", muscle: "" }); setFitnessImportMessage("");
+    setFitnessGoal(null); setFitnessDraft({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "" }); setFitnessImportMessage("");
   }
 
   async function importSamsungHealth(file?: File) {
@@ -1194,8 +1218,10 @@ export default function Home() {
       const weight = numberAfter(["peso", "weight"]);
       const bodyFat = numberAfter(["grasa corporal", "body fat"]);
       const muscle = numberAfter(["músculo esquelético", "musculo esqueletico", "skeletal muscle", "masa muscular"]);
-      setFitnessDraft({ weight, bodyFat, muscle });
-      setFitnessImportMessage(weight || bodyFat || muscle ? "Valores detectados. Revísalos antes de guardar." : "No he podido identificar los valores. Puedes introducirlos manualmente.");
+      const fatMass = numberAfter(["masa grasa", "fat mass"]); const bodyWater = numberAfter(["agua corporal", "body water"]); const bmi = numberAfter(["imc", "bmi"]);
+      setFitnessDraft({ weight, muscle, fatMass, bodyWater, bodyFat, bmi });
+      const detected = [weight, muscle, fatMass, bodyWater, bodyFat, bmi].filter(Boolean).length;
+      setFitnessImportMessage(detected ? `${detected} de 6 valores detectados. Revísalos y completa los restantes.` : "No he podido identificar los valores. Puedes introducirlos manualmente.");
     } catch {
       setFitnessImportMessage("No se pudo leer la captura. Introduce los valores manualmente.");
     } finally { setFitnessImporting(false); }
@@ -1343,7 +1369,7 @@ export default function Home() {
           <article className="metric">
             <span>Nota semanal</span>
             <strong>{scoreLabel(weekScore)} <small>/ 10</small></strong>
-            <p>Del día {weekStart} al {weekEnd}</p>
+            <p>Del día {weekStart} al {evaluatedWeekEnd}</p>
           </article>
           <article className="metric">
             <span>Nota del mes</span>
@@ -1363,7 +1389,7 @@ export default function Home() {
             <div className="bars">
               {weeklyProgress.map((week, index) => (
                 <div className={`bar-column ${week.projected ? "projected" : ""}`} key={week.range}>
-                  <span>{week.projected ? "Proyectada" : `${week.value}%`}</span>
+                  <span>{week.value !== null ? `${week.value}%` : ""}</span>
                   <div className="bar-track">{week.value !== null && <div style={{ height: `${Math.max(week.value, 4)}%`, background: palette[index] }} />}</div>
                   <strong><b>S{index + 1}</b><small>{week.range}</small></strong>
                 </div>
@@ -1443,7 +1469,7 @@ export default function Home() {
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {goal.template === "reading" ? <><button className="goal-complete" onClick={() => setBookGoal(goal)}>+ Registrar libro terminado</button><div className="goal-entry-list">{(goal.books ?? []).slice(-3).reverse().map((book) => <div key={book.id}><span>{book.title}</span><small>{{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small><button onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></div>)}</div><small className="goal-consistency">Constancia de lectura: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
-                : goal.template === "fitness" ? <><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button>{goal.fitnessEntries?.at(-1) && <div className="fitness-latest"><span>Peso <b>{goal.fitnessEntries.at(-1)?.weight ?? "—"} kg</b></span><span>Grasa <b>{goal.fitnessEntries.at(-1)?.bodyFat ?? "—"}%</b></span><span>Músculo <b>{goal.fitnessEntries.at(-1)?.muscle ?? "—"} kg</b></span></div>}</>
+                : goal.template === "fitness" ? <><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
                 : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
                 : <label className="goal-value">Progreso actual<input type="number" min="0" max={goal.targetValue} value={goal.currentValue} onChange={(event) => updateGoalProgress(goal, Number(event.target.value))} /></label>}
             </article>;
@@ -1460,6 +1486,7 @@ export default function Home() {
               <h2>Tu constancia, día a día</h2>
             </div>
             <div className="tracker-actions">
+              {canManagePhrases && <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>}
               <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
               <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
                 Archivados{archivedHabits.length > 0 && <span>{archivedHabits.length}</span>}
@@ -1562,9 +1589,9 @@ export default function Home() {
         <button className="close" onClick={() => setFitnessGoal(null)} aria-label="Cerrar">×</button><p className="eyebrow">SAMSUNG HEALTH</p><h2>Actualizar composición corporal</h2>
         <label className="health-upload">Subir captura de Samsung Health<input type="file" accept="image/*" onChange={(event) => void importSamsungHealth(event.target.files?.[0])} /><span>{fitnessImporting ? "Analizando…" : "Seleccionar captura"}</span></label>
         {fitnessImportMessage && <p className="import-message">{fitnessImportMessage}</p>}
-        <div className="goal-form-row fitness-fields"><label>Peso (kg)<input inputMode="decimal" value={fitnessDraft.weight} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, weight: event.target.value }))} /></label><label>Grasa corporal (%)<input inputMode="decimal" value={fitnessDraft.bodyFat} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, bodyFat: event.target.value }))} /></label><label>Músculo (kg)<input inputMode="decimal" value={fitnessDraft.muscle} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, muscle: event.target.value }))} /></label></div>
+        <div className="goal-form-row fitness-fields">{(Object.entries(fitnessMetricMeta) as [FitnessMetric, { label: string; unit: string }][]).map(([key, meta]) => <label key={key}>{meta.label}{meta.unit ? ` (${meta.unit})` : ""}<input required inputMode="decimal" value={fitnessDraft[key]} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, [key]: event.target.value }))} /></label>)}</div>
         <p className="form-note">Revisa los valores detectados antes de guardarlos; la lectura automática puede confundirse según la captura.</p>
-        <button className="add-button full" onClick={saveFitnessEntry}>Guardar valores</button>
+        <button className="add-button full" disabled={Object.values(fitnessDraft).some((value) => !value.trim())} onClick={saveFitnessEntry}>Guardar valores</button>
       </div></div>}
 
       {deletingGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingGoal(null)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -1602,7 +1629,7 @@ export default function Home() {
           <button className="add-button full" onClick={addHabit}>Crear hábito</button>
         </div>
       </div>}
-      {motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
+      {canManagePhrases && motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
         <div className="modal motivations-modal" role="dialog" aria-modal="true" aria-labelledby="motivations-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="close" onClick={() => setMotivationManagerOpen(false)} aria-label="Cerrar">×</button>
           <p className="eyebrow">TU VOZ INTERIOR</p>
