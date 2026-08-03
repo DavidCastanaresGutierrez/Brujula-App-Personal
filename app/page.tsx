@@ -45,6 +45,7 @@ type Goal = {
   unit?: string; status: "active" | "completed" | "discarded"; dueDate: string;
   linkedHabitId?: number;
   linkedHabitIds?: number[];
+  trackingStart?: string;
   template?: "fitness" | "reading";
   books?: BookEntry[];
   fitnessEntries?: FitnessEntry[];
@@ -234,18 +235,21 @@ function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
 }
 
 function linkedGoalProgress(goal: Goal, habits: Array<Habit | WeeklyHabit>) {
-  if (!goal.linkedHabitId) return goal.currentValue;
-  const habit = habits.find((item) => item.id === goal.linkedHabitId);
-  if (!habit) return goal.currentValue;
+  const linkedIds = [...new Set([...(goal.linkedHabitIds ?? []), ...(goal.linkedHabitId ? [goal.linkedHabitId] : [])])];
+  if (!linkedIds.length) return goal.currentValue;
+  const linkedHabits = habits.filter((item) => linkedIds.includes(item.id));
+  if (!linkedHabits.length) return goal.currentValue;
   let count = 0;
-  Object.entries(habit.history ?? {}).forEach(([monthKey, values]) => {
-    values.forEach((value) => {
-      const date = `${monthKey}-${String(value).padStart(2, "0")}`;
-      const inPeriod = goal.period === "daily" ? date === goal.periodKey
-        : goal.period === "weekly" ? date >= goal.periodKey && date <= goal.dueDate
-        : goal.period === "monthly" ? monthKey === goal.periodKey
-        : monthKey.startsWith(`${goal.periodKey}-`);
-      if (inPeriod) count += 1;
+  linkedHabits.forEach((habit) => {
+    Object.entries(habit.history ?? {}).forEach(([monthKey, values]) => {
+      values.forEach((value) => {
+        const date = `${monthKey}-${String(value).padStart(2, "0")}`;
+        const inPeriod = goal.period === "daily" ? date === goal.periodKey
+          : goal.period === "weekly" ? date >= goal.periodKey && date <= goal.dueDate
+          : goal.period === "monthly" ? monthKey === goal.periodKey
+          : monthKey.startsWith(`${goal.periodKey}-`);
+        if (inPeriod) count += 1;
+      });
     });
   });
   return Math.min(count, goal.targetValue);
@@ -493,7 +497,7 @@ export default function Home() {
   const [goalTarget, setGoalTarget] = useState(1);
   const [goalUnit, setGoalUnit] = useState("");
   const [goalCategory, setGoalCategory] = useState<HabitCategory>("health");
-  const [goalLinkedHabitId, setGoalLinkedHabitId] = useState(0);
+  const [goalLinkedHabitIds, setGoalLinkedHabitIds] = useState<number[]>([]);
   const [goalFilter, setGoalFilter] = useState<"weekly" | "monthly" | "yearly">("yearly");
   const [goalCategoryFilter, setGoalCategoryFilter] = useState<HabitCategory | "all">("all");
   const [draggingGoalId, setDraggingGoalId] = useState<number | null>(null);
@@ -1132,19 +1136,21 @@ export default function Home() {
       measurement: goalMeasurement, targetValue: goalMeasurement === "complete" ? 1 : Math.max(1, goalTarget),
       currentValue: 0, unit: goalMeasurement === "quantity" ? goalUnit.trim() : "",
       status: "active", dueDate: period.due,
-      linkedHabitId: goalLinkedHabitId || undefined,
+      linkedHabitId: undefined,
+      linkedHabitIds: goalMeasurement === "quantity" ? goalLinkedHabitIds : [],
     };
     setGoals((items) => editingGoalId
-      ? items.map((item) => item.id === editingGoalId ? { ...item, ...nextGoal, currentValue: item.currentValue, status: item.status, template: item.template, books: item.books, fitnessEntries: item.fitnessEntries, linkedHabitIds: item.linkedHabitIds } : item)
+      ? items.map((item) => item.id === editingGoalId ? { ...item, ...nextGoal, currentValue: item.currentValue, status: item.status, template: item.template, books: item.books, fitnessEntries: item.fitnessEntries, trackingStart: item.trackingStart } : item)
       : [...items, nextGoal]);
-    setGoalTitle(""); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitId(0);
+    setGoalTitle(""); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitIds([]);
     setEditingGoalId(null); setGoalModalOpen(false);
     if (goalPeriod !== "daily") setGoalFilter(goalPeriod);
   }
 
   function startGoalEdit(goal: Goal) {
     setEditingGoalId(goal.id); setGoalTitle(goal.title); setGoalPeriod(goal.period); setGoalMeasurement(goal.measurement);
-    setGoalTarget(goal.targetValue); setGoalUnit(goal.unit ?? ""); setGoalCategory(goal.category); setGoalLinkedHabitId(goal.linkedHabitId ?? 0);
+    setGoalTarget(goal.targetValue); setGoalUnit(goal.unit ?? ""); setGoalCategory(goal.category);
+    setGoalLinkedHabitIds([...new Set([...(goal.linkedHabitIds ?? []), ...(goal.linkedHabitId ? [goal.linkedHabitId] : [])])]);
     setGoalModalOpen(true);
   }
 
@@ -1206,7 +1212,7 @@ export default function Home() {
   function createTemplateGoal() {
     if (!templateModal) return;
     const period = goalPeriodDetails("yearly");
-    const id = Date.now();
+    const id = Math.max(0, ...goals.map((goal) => goal.id)) + 1;
     const isReading = templateModal === "reading";
     const goal: Goal = {
       id,
@@ -1217,6 +1223,7 @@ export default function Home() {
       currentValue: 0, unit: isReading ? "libros" : "%", status: "active",
       linkedHabitId: isReading ? templateHabitIds[0] : undefined,
       linkedHabitIds: templateHabitIds,
+      trackingStart: isoDate(today.getFullYear(), today.getMonth(), today.getDate()),
       template: templateModal,
       books: isReading ? [] : undefined,
       fitnessEntries: isReading ? undefined : [],
@@ -1289,6 +1296,27 @@ export default function Home() {
     return Math.min(100, Math.round(completed / Math.max(1, expected) * 100));
   };
 
+  const yearlyDailyWeightedPercent = (habitIds: number[], trackingStart?: string) => {
+    const selected = daily.filter((habit) => habitIds.includes(habit.id));
+    if (!selected.length) return 0;
+    let completedWeight = 0;
+    let elapsedDays = 0;
+    const start = trackingStart ? new Date(`${trackingStart}T12:00:00`) : today;
+    const startMonth = start.getFullYear() === today.getFullYear() ? start.getMonth() : 0;
+    for (let index = startMonth; index <= today.getMonth(); index += 1) {
+      const key = `${today.getFullYear()}-${String(index + 1).padStart(2, "0")}`;
+      const monthDays = new Date(today.getFullYear(), index + 1, 0).getDate();
+      const through = index === today.getMonth() ? today.getDate() : monthDays;
+      const firstDay = index === startMonth ? start.getDate() : 1;
+      for (let day = firstDay; day <= through; day += 1) {
+        const completed = selected.filter((habit) => (habit.history?.[key] ?? []).includes(day)).length;
+        completedWeight += completed / selected.length;
+        elapsedDays += 1;
+      }
+    }
+    return Math.min(100, Math.round(completedWeight / Math.max(1, elapsedDays) * 100));
+  };
+
   const resolvedGoals = goals.map((goal) => {
     if (goal.template === "reading") {
       const currentValue = goal.books?.length ?? 0;
@@ -1296,11 +1324,10 @@ export default function Home() {
     }
     if (goal.template === "fitness") {
       const ids = goal.linkedHabitIds ?? [];
-      const selected = daily.filter((habit) => ids.includes(habit.id));
-      const progress = selected.length ? Math.round(selected.reduce((sum, habit) => sum + yearlyHabitPercent(habit.id), 0) / selected.length) : 0;
+      const progress = yearlyDailyWeightedPercent(ids, goal.trackingStart);
       return { ...goal, currentValue: progress };
     }
-    if (!goal.linkedHabitId || goal.status === "discarded") return goal;
+    if (!(goal.linkedHabitIds?.length || goal.linkedHabitId) || goal.status === "discarded") return goal;
     const currentValue = linkedGoalProgress(goal, daily);
     return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
   });
@@ -1526,7 +1553,7 @@ export default function Home() {
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {goal.template === "reading" ? <><button className="goal-complete" onClick={() => setBookGoal(goal)}>+ Registrar libro terminado</button><div className="goal-entry-list">{(goal.books ?? []).slice(-3).reverse().map((book) => <div key={book.id}><span>{book.title}</span><small>{{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small><button onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></div>)}</div><small className="goal-consistency">Constancia de lectura: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
-                : goal.template === "fitness" ? <><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
+                : goal.template === "fitness" ? <><small className="goal-consistency">{(goal.linkedHabitIds ?? []).length ? `${(goal.linkedHabitIds ?? []).length} hábitos · cada uno pondera ${(100 / (goal.linkedHabitIds ?? []).length).toFixed(2)}% al día` : "Sin hábitos vinculados"}</small><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
                 : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
                 : <form className="goal-value" onSubmit={(event) => { event.preventDefault(); addGoalProgress(goal); }}>
                     <label htmlFor={`goal-progress-${goal.id}`}>Añadir progreso</label>
@@ -1670,7 +1697,7 @@ export default function Home() {
           <label>Periodo<select value={goalPeriod === "daily" ? "weekly" : goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
           <label>Pilar<select value={goalCategory} onChange={(event) => setGoalCategory(event.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
           <label>Cómo se mide<select value={goalMeasurement} onChange={(event) => setGoalMeasurement(event.target.value as "complete" | "quantity")}><option value="complete">Completado / pendiente</option><option value="quantity">Mediante una cantidad</option></select></label>
-          {goalMeasurement === "quantity" && <label>Vincular a un hábito diario (opcional)<select value={goalLinkedHabitId} onChange={(event) => setGoalLinkedHabitId(Number(event.target.value))}><option value={0}>Actualizar manualmente</option>{daily.filter((habit) => !habit.archived).map((habit) => <option key={habit.id} value={habit.id}>{habit.name}</option>)}</select></label>}
+          {goalMeasurement === "quantity" && <fieldset className="goal-habit-picker"><legend>Vincular hábitos diarios (opcional)</legend><small>{goalLinkedHabitIds.length ? `${goalLinkedHabitIds.length} ${goalLinkedHabitIds.length === 1 ? "hábito vinculado" : "hábitos vinculados"}` : "Sin hábitos: el progreso se actualizará manualmente"}</small><div>{daily.filter((habit) => !habit.archived).map((habit) => <label key={habit.id}><input type="checkbox" checked={goalLinkedHabitIds.includes(habit.id)} onChange={() => setGoalLinkedHabitIds((ids) => ids.includes(habit.id) ? ids.filter((id) => id !== habit.id) : [...ids, habit.id])} /><span style={{ background: habit.color }} aria-hidden="true" />{habit.name}</label>)}</div></fieldset>}
           {goalMeasurement === "quantity" && <div className="goal-form-row"><label>Meta<input type="number" min="1" value={goalTarget} onChange={(event) => setGoalTarget(Number(event.target.value))} /></label><label>Unidad<input maxLength={24} value={goalUnit} onChange={(event) => setGoalUnit(event.target.value)} placeholder="€, kg, páginas…" /></label></div>}
           <button className="add-button full" onClick={createGoal}>{editingGoalId ? "Guardar cambios" : "Crear objetivo"}</button>
         </div>
