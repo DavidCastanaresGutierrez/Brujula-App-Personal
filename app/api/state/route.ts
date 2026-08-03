@@ -39,6 +39,22 @@ type CompletionRow = {
 
 type MotivationRow = { text: string; position: number };
 
+type GoalRow = {
+  id: number;
+  title: string;
+  category_id: string;
+  period: "daily" | "weekly" | "monthly" | "yearly";
+  period_key: string;
+  measurement: "complete" | "quantity";
+  target_value: number;
+  current_value: number;
+  unit: string | null;
+  status: "active" | "completed" | "discarded";
+  due_date: string;
+  position: number;
+  linked_habit_id: number | null;
+};
+
 function validState(value: unknown): value is {
   daily: unknown[];
   weekly: unknown[];
@@ -56,6 +72,7 @@ type TrackerState = {
   weekly: Record<string, unknown>[];
   categories: Record<string, unknown>[];
   motivations?: string[];
+  goals?: Record<string, unknown>[];
 };
 
 function habitsOf(state: TrackerState): Array<Record<string, unknown> & { kind: "daily" | "weekly" }> {
@@ -159,6 +176,35 @@ async function applyStateChanges(
       if (insertError) throw insertError;
     }
   }
+
+  const nextGoals = next.goals ?? [];
+  const baseGoals = base?.goals ?? [];
+  const nextGoalIds = new Set(nextGoals.map((goal) => Number(goal.id)));
+  const deletedGoalIds = baseGoals.filter((goal) => !nextGoalIds.has(Number(goal.id))).map((goal) => Number(goal.id));
+  if (deletedGoalIds.length) {
+    const { error } = await supabase.from("goals").delete().eq("user_id", userId).in("id", deletedGoalIds);
+    if (error) throw error;
+  }
+  const goals = changedRecords(baseGoals, nextGoals, "id").map((goal, position) => ({
+    user_id: userId,
+    id: Number(goal.id),
+    title: String(goal.title),
+    category_id: String(goal.category),
+    period: String(goal.period),
+    period_key: String(goal.periodKey),
+    measurement: String(goal.measurement),
+    target_value: Number(goal.targetValue ?? 1),
+    current_value: Number(goal.currentValue ?? 0),
+    unit: String(goal.unit ?? "") || null,
+    status: String(goal.status ?? "active"),
+    due_date: String(goal.dueDate),
+    position: nextGoals.findIndex((item) => item.id === goal.id) ?? position,
+    linked_habit_id: goal.linkedHabitId ? Number(goal.linkedHabitId) : null,
+  }));
+  if (goals.length) {
+    const { error } = await supabase.from("goals").upsert(goals, { onConflict: "user_id,id" });
+    if (error) throw error;
+  }
 }
 
 function errorResponse(error: unknown) {
@@ -173,16 +219,17 @@ export async function GET(request: Request) {
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) throw new Error("Usuario no autenticado");
 
-    const [categoriesResult, habitsResult, completionsResult, motivationsResult] = await Promise.all([
+    const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult] = await Promise.all([
       supabase.from("categories").select("id,label,icon,color,position").order("position"),
       supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
       supabase.from("motivational_quotes").select("text,position").order("position"),
+      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id").order("position"),
     ]);
 
     // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
     // cargando aunque el despliegue llegue antes que la migración de Supabase.
-    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error;
+    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error ?? goalsResult.error;
     if (databaseError) throw databaseError;
 
     const categories = (categoriesResult.data as CategoryRow[]).map((category) => ({
@@ -216,15 +263,22 @@ export async function GET(request: Request) {
     });
 
     const habits = habitsResult.data as HabitRow[];
-    const state = habits.length || categories.length
+    const goals = ((goalsResult.data ?? []) as GoalRow[]).map((goal) => ({
+      id: Number(goal.id), title: goal.title, category: goal.category_id, period: goal.period,
+      periodKey: goal.period_key, measurement: goal.measurement, targetValue: goal.target_value,
+      currentValue: goal.current_value, unit: goal.unit ?? "", status: goal.status, dueDate: goal.due_date,
+      linkedHabitId: goal.linked_habit_id ?? undefined,
+    }));
+    const state = habits.length || categories.length || goals.length
       ? {
           daily: habits.filter((habit) => habit.kind === "daily").map(mapHabit),
           weekly: habits.filter((habit) => habit.kind === "weekly").map(mapHabit),
           categories,
           motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text),
+          goals,
         }
       : ((motivationsResult.data ?? []) as MotivationRow[]).length
-        ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text) }
+        ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text), goals }
         : null;
 
     return Response.json({ state }, { headers: noStoreHeaders });
