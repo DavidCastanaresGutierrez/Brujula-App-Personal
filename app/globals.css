@@ -101,6 +101,28 @@ h1 em { font-style: normal; color: var(--teal); }
 .chart-summary { display: flex; justify-content: flex-end; gap: 24px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font-size: 9px; }
 .chart-summary strong { color: var(--ink); }
 .panel { padding: 23px; }
+.goals-panel { margin-bottom: 14px; scroll-margin-top: 84px; }
+.goals-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.goals-head > div > p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 11px; }
+.goal-tabs { width: fit-content; margin: 20px 0 16px; }
+.goal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.goal-card { --goal-color: var(--teal); padding: 16px; border: 1px solid var(--line); border-top: 3px solid var(--goal-color); border-radius: 13px; background: rgba(8,16,31,.42); }
+.goal-card-head, .goal-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.goal-card-head span { color: var(--goal-color); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.goal-card-head button { border: 0; background: transparent; color: #70809d; cursor: pointer; font-size: 18px; }
+.goal-card h3 { min-height: 44px; margin: 13px 0 14px; font-size: 15px; line-height: 1.4; }
+.goal-progress { height: 5px; border-radius: 4px; overflow: hidden; background: rgba(255,255,255,.07); }
+.goal-progress i { display: block; height: 100%; border-radius: inherit; background: var(--goal-color); transition: width .25s ease; }
+.goal-card-foot { align-items: flex-end; margin-top: 9px; }
+.goal-card-foot strong { font-size: 11px; }
+.goal-card-foot span { color: var(--muted); font-size: 8px; text-align: right; }
+.goal-complete { width: 100%; min-height: 36px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--goal-color) 42%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--goal-color) 11%, transparent); color: var(--goal-color); cursor: pointer; font-size: 10px; font-weight: 800; }
+.goal-value { display: flex !important; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 0 !important; }
+.goal-value input { width: 90px !important; margin: 0 !important; padding: 8px !important; }
+.goals-empty { padding: 28px; border: 1px dashed rgba(160,177,212,.2); border-radius: 12px; text-align: center; }
+.goals-empty strong { font-size: 13px; }
+.goals-empty p { margin: 7px 0 0; color: var(--muted); font-size: 11px; }
+.goal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .panel-head, .tracker-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .legend { color: var(--muted); font-size: 10px; display: flex; align-items: center; gap: 7px; }
@@ -391,6 +413,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
   .tracker-actions { width: 100%; justify-content: space-between; }
   .blocks-button { margin-right: auto; }
   .weekly-list { overflow: hidden; }
+  .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -411,7 +434,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
     right: 10px;
     bottom: calc(8px + env(safe-area-inset-bottom));
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     padding: 5px;
     border: 1px solid rgba(255,255,255,.12);
@@ -441,6 +464,12 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
   .panel-head { gap: 10px; }
   .bars { gap: 10px; height: 165px; padding-inline: 4px; }
   .analytics-panel { margin-bottom: 10px; }
+  .goals-panel { margin-bottom: 10px; }
+  .goals-head { align-items: stretch; flex-direction: column; }
+  .goals-head .add-button { width: 100%; }
+  .goal-tabs { width: 100%; overflow-x: auto; }
+  .goal-tabs button { min-height: 40px; white-space: nowrap; }
+  .goal-grid { grid-template-columns: 1fr; }
   .analytics-head { gap: 14px; }
   .analytics-controls { width: 100%; display: grid; grid-template-columns: 1fr; }
   .analytics-controls .tabs { width: 100%; }
