@@ -731,12 +731,30 @@ export default function Home() {
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
   const weekStart = Math.max(1, referenceDay - mondayOffset);
   const weekEnd = Math.min(days, weekStart + 6);
-  const dayChecks = activeDaily.filter((habit) => checksFor(habit).includes(referenceDay)).length;
-  const dayProgress = activeDaily.length ? dayChecks / activeDaily.length * 100 : 0;
+  const habitsScheduledForDay = (day: number) => activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
+  const referenceDayHabits = habitsScheduledForDay(referenceDay);
+  const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
+  const currentDayProgress = referenceDayHabits.length ? dayChecks / referenceDayHabits.length * 100 : 0;
+  const pastMonthDailyValues = isPastMonth
+    ? Array.from({ length: days }, (_, index) => {
+        const day = index + 1;
+        const scheduled = habitsScheduledForDay(day);
+        const completed = scheduled.filter((habit) => checksFor(habit).includes(day)).length;
+        return scheduled.length ? completed / scheduled.length * 100 : null;
+      }).filter((progress): progress is number => progress !== null)
+    : [];
+  const pastMonthDailyProgress = pastMonthDailyValues.length
+    ? pastMonthDailyValues.reduce((sum, progress) => sum + progress, 0) / pastMonthDailyValues.length
+    : 0;
+  const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
   const weekChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((day) => day >= weekStart && day <= weekEnd).length, 0);
   const weekGoal = activeDaily.length * (weekEnd - weekStart + 1);
   const weekScore = scoreFromPercent(weekGoal ? weekChecks / weekGoal * 100 : 0);
   const dayScore = scoreFromPercent(dayProgress);
+  const dayScoreTitle = isPastMonth ? "Nota media diaria" : "Nota del día";
+  const dayScoreDetail = isPastMonth
+    ? `Media de ${pastMonthDailyValues.length} días con hábitos en ${monthNames[month].toLowerCase()}`
+    : `${dayChecks} de ${referenceDayHabits.length} hábitos completados`;
   const monthScore = scoreFromPercent(globalProgress);
   const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
@@ -757,14 +775,13 @@ export default function Home() {
     if (chartPeriod === "weekly") {
       if (!isPastMonth && !isCurrentMonth) return [];
       const selectedReference = isCurrentMonth ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : new Date(year, month + 1, 0);
-      const offset = (selectedReference.getDay() + 6) % 7;
-      const monday = new Date(selectedReference);
-      monday.setDate(selectedReference.getDate() - offset);
+      const rangeStart = new Date(selectedReference);
+      rangeStart.setDate(selectedReference.getDate() - 6);
       const weekDates = Array.from({ length: 7 }, (_, index) => {
-        const item = new Date(monday);
-        item.setDate(monday.getDate() + index);
+        const item = new Date(rangeStart);
+        item.setDate(rangeStart.getDate() + index);
         return item;
-      }).filter((item) => !isCurrentMonth || item <= today);
+      });
       return weekDates.map((item) => {
         const key = `${item.getFullYear()}-${String(item.getMonth() + 1).padStart(2, "0")}`;
         const day = item.getDate();
@@ -804,6 +821,11 @@ export default function Home() {
         : chartScope === "habit" && selectedHabit
           ? [{ name: selectedHabit.name, color: selectedHabit.color, data: dataForHabits([selectedHabit]) }]
           : [{ name: "General", color: "#3cc9ab", data: dataForHabits(activeDaily) }];
+  const rollingPeriodEnd = isCurrentMonth ? today : new Date(year, month + 1, 0);
+  const rollingPeriodStart = new Date(rollingPeriodEnd);
+  rollingPeriodStart.setDate(rollingPeriodEnd.getDate() - 6);
+  const shortDate = (value: Date) => value.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(".", "");
+  const rollingPeriodLabel = `${shortDate(rollingPeriodStart)} – ${shortDate(rollingPeriodEnd)}`;
 
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
@@ -1094,11 +1116,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="summary-jump-grid" aria-label="Accesos rápidos">
-          <button onClick={() => openView("today")}><span>HOY</span><strong>{dayChecks}/{todayHabits.length} hábitos completados</strong><small>Ver y completar tu día →</small></button>
-          <button onClick={() => openView("habits")}><span>HÁBITOS</span><strong>{activeDaily.length + activeWeekly.length} activos</strong><small>Gestionar constancia →</small></button>
-          <button onClick={() => openView("goals")}><span>OBJETIVOS</span><strong>{activeGoals.length} en curso</strong><small>Revisar resultados →</small></button>
-        </section>
         </>}
 
         {mainView === "today" && <>
@@ -1146,7 +1163,7 @@ export default function Home() {
         {mainView === "summary" && <>
         <section className="metrics">
           <article className="metric primary">
-            <div><span>Nota del día</span><strong>{scoreLabel(dayScore)}<small> / 10</small></strong><p>{dayChecks} de {activeDaily.length} hábitos completados</p></div>
+            <div><span>{dayScoreTitle}</span><strong>{scoreLabel(dayScore)}<small> / 10</small></strong><p>{dayScoreDetail}</p></div>
             <Ring value={dayProgress} />
           </article>
           <article className="metric">
@@ -1210,7 +1227,7 @@ export default function Home() {
               </h2>
             </div>
             <div className="analytics-controls">
-              <div className="tabs"><button className={chartPeriod === "weekly" ? "active" : ""} onClick={() => setChartPeriod("weekly")}>Semanal</button><button className={chartPeriod === "monthly" ? "active" : ""} onClick={() => setChartPeriod("monthly")}>Mensual</button><button className={chartPeriod === "yearly" ? "active" : ""} onClick={() => setChartPeriod("yearly")}>Anual</button></div>
+              <div className="tabs"><button className={chartPeriod === "weekly" ? "active" : ""} onClick={() => setChartPeriod("weekly")}>Últimos 7 días</button><button className={chartPeriod === "monthly" ? "active" : ""} onClick={() => setChartPeriod("monthly")}>Mensual</button><button className={chartPeriod === "yearly" ? "active" : ""} onClick={() => setChartPeriod("yearly")}>Anual</button></div>
               <div className="tabs scope-tabs">
                 <button className={chartScope === "general" ? "active" : ""} onClick={() => setChartScope("general")}>General</button>
                 <button className={chartScope === "category" ? "active" : ""} onClick={() => setChartScope("category")}>Por bloque</button>
@@ -1223,7 +1240,7 @@ export default function Home() {
           <TrendChart series={chartSeries} />
           <div className="chart-summary">
             <span>Alcance: <strong>{chartScope === "general" ? "General" : chartScope === "category" ? allCategoriesSelected ? "Todos los bloques" : selectedCategoryMeta.label : allHabitsSelected ? "Todos los hábitos" : selectedHabit?.name ?? "Hábito"}</strong></span>
-            <span>Periodo: <strong>{chartPeriod === "weekly" ? "Semana seleccionada" : chartPeriod === "monthly" ? `${monthNames[month]} ${year}` : year}</strong></span>
+            <span>Periodo: <strong>{chartPeriod === "weekly" ? rollingPeriodLabel : chartPeriod === "monthly" ? `${monthNames[month]} ${year}` : year}</strong></span>
             <span>{chartSeries.length > 1 ? <><strong>{chartSeries.length}</strong> series comparadas</> : <>Último valor: <strong>{Math.round(chartSeries[0]?.data.at(-1)?.value ?? 0)}%</strong></>}</span>
           </div>
         </section>
