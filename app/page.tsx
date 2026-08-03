@@ -34,6 +34,7 @@ type WeeklyHabit = {
 type HabitCategory = string;
 type Category = { id: HabitCategory; label: string; icon: string; color: string };
 type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
+type MainView = "summary" | "today" | "habits" | "goals";
 type Goal = {
   id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
   measurement: "complete" | "quantity"; targetValue: number; currentValue: number;
@@ -413,6 +414,7 @@ function ResetPassword({ onComplete }: { onComplete: () => void }) {
 }
 
 export default function Home() {
+  const [mainView, setMainView] = useState<MainView>("summary");
   const [daily, setDaily] = useState(initialDaily);
   const [weekly, setWeekly] = useState(initialWeekly);
   const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
@@ -1047,6 +1049,11 @@ export default function Home() {
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 6);
 
+  function openView(view: MainView) {
+    setMainView(view);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
   }
@@ -1058,12 +1065,10 @@ export default function Home() {
       <header className="topbar">
         <Brand />
         <nav aria-label="Navegación principal">
-          <button onClick={() => document.getElementById("today")?.scrollIntoView({ behavior: "smooth" })}>Hoy</button>
-          <button className="nav-active" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Panel</button>
-          <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
-          <button onClick={() => document.getElementById("analytics")?.scrollIntoView({ behavior: "smooth" })}>Análisis</button>
-          <button onClick={() => document.getElementById("goals")?.scrollIntoView({ behavior: "smooth" })}>Objetivos</button>
-          <button onClick={() => setMotivationManagerOpen(true)}>Frases</button>
+          <button className={mainView === "summary" ? "nav-active" : ""} onClick={() => openView("summary")}>Resumen</button>
+          <button className={mainView === "today" ? "nav-active" : ""} onClick={() => openView("today")}>Tu día</button>
+          <button className={mainView === "habits" ? "nav-active" : ""} onClick={() => openView("habits")}>Hábitos</button>
+          <button className={mainView === "goals" ? "nav-active" : ""} onClick={() => openView("goals")}>Objetivos</button>
         </nav>
         <div className="session-actions">
           <span className="avatar" aria-hidden="true">{(session.user.email?.slice(0, 2) ?? "BR").toUpperCase()}</span>
@@ -1072,6 +1077,7 @@ export default function Home() {
       </header>
 
       <div className="page-shell">
+        {mainView === "summary" && <>
         <section className="hero">
           <div>
             <p className="eyebrow">TU PANEL DE CONSTANCIA</p>
@@ -1088,6 +1094,15 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="summary-jump-grid" aria-label="Accesos rápidos">
+          <button onClick={() => openView("today")}><span>HOY</span><strong>{dayChecks}/{todayHabits.length} hábitos completados</strong><small>Ver y completar tu día →</small></button>
+          <button onClick={() => openView("habits")}><span>HÁBITOS</span><strong>{activeDaily.length + activeWeekly.length} activos</strong><small>Gestionar constancia →</small></button>
+          <button onClick={() => openView("goals")}><span>OBJETIVOS</span><strong>{activeGoals.length} en curso</strong><small>Revisar resultados →</small></button>
+        </section>
+        </>}
+
+        {mainView === "today" && <>
+        <section className="view-intro"><p className="eyebrow">ACCIÓN DIARIA</p><h1>Tu día</h1><p>Lo que requiere tu atención hoy, sin ruido.</p></section>
         <section className="panel today-panel" id="today">
           <div className="today-head">
             <div><p className="eyebrow">HOY · {today.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}</p><h2>Tu día, en una sola vista</h2><p>Marca lo que completas y mantén a la vista los resultados que estás persiguiendo.</p></div>
@@ -1126,7 +1141,9 @@ export default function Home() {
             </article>
           </div>
         </section>
+        </>}
 
+        {mainView === "summary" && <>
         <section className="metrics">
           <article className="metric primary">
             <div><span>Nota del día</span><strong>{scoreLabel(dayScore)}<small> / 10</small></strong><p>{dayChecks} de {activeDaily.length} hábitos completados</p></div>
@@ -1210,7 +1227,10 @@ export default function Home() {
             <span>{chartSeries.length > 1 ? <><strong>{chartSeries.length}</strong> series comparadas</> : <>Último valor: <strong>{Math.round(chartSeries[0]?.data.at(-1)?.value ?? 0)}%</strong></>}</span>
           </div>
         </section>
+        </>}
 
+        {mainView === "goals" && <>
+        <section className="view-intro"><p className="eyebrow">RESULTADOS</p><h1>Objetivos</h1><p>Define resultados concretos y comprueba si tus hábitos te acercan a ellos.</p></section>
         <section className="panel goals-panel" id="goals">
           <div className="goals-head">
             <div><p className="eyebrow">RESULTADOS CON RUMBO</p><h2>Tus objetivos</h2><p>Define el resultado; tus hábitos sostienen el camino.</p></div>
@@ -1236,7 +1256,10 @@ export default function Home() {
             </article>;
           })}</div> : <div className="goals-empty"><strong>{goalFilter === "completed" ? "Aún no hay objetivos completados" : "No hay objetivos en este periodo"}</strong><p>{activeGoals.length ? "Cambia de periodo para ver tus otros objetivos." : "Crea un resultado concreto y medible para orientar tus hábitos."}</p></div>}
         </section>
+        </>}
 
+        {mainView === "habits" && <>
+        <section className="view-intro"><p className="eyebrow">SISTEMAS</p><h1>Hábitos</h1><p>Configura tus rutinas, registra el seguimiento y protege tu constancia.</p></section>
         <section className="tracker panel" id="tracker">
           <div className="tracker-head">
             <div>
@@ -1323,6 +1346,7 @@ export default function Home() {
             {syncStatus === "offline" && " Sin conexión: los cambios quedan guardados temporalmente en este dispositivo."}
           </p>
         </section>
+        </>}
       </div>
 
       {goalModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setGoalModalOpen(false)}>
