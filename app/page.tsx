@@ -422,10 +422,7 @@ function AuthGate() {
             </div>
           </div>
         </section>
-        <aside className="auth-visual" aria-hidden="true">
-          <div className="auth-compass-orbit"><span /><AuthIcon name="compass" /></div>
-          <blockquote>“No se trata de llegar más rápido, sino de avanzar en la dirección correcta.”</blockquote>
-        </aside>
+        <aside className="auth-visual" aria-hidden="true" />
       </div>
     </main>
   );
