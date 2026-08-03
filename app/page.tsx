@@ -423,8 +423,10 @@ function AuthGate() {
           </div>
         </section>
         <aside className="auth-visual" aria-hidden="true">
-          <div className="auth-compass-orbit"><span /><AuthIcon name="compass" /></div>
-          <blockquote>“No se trata de llegar más rápido, sino de avanzar en la dirección correcta.”</blockquote>
+          <div className="auth-visual-message">
+            <span className="auth-visual-icon"><AuthIcon name="compass" /></span>
+            <blockquote>“No se trata de llegar más rápido, sino de avanzar en la dirección correcta.”</blockquote>
+          </div>
         </aside>
       </div>
     </main>
@@ -492,7 +494,7 @@ export default function Home() {
   const [goalUnit, setGoalUnit] = useState("");
   const [goalCategory, setGoalCategory] = useState<HabitCategory>("health");
   const [goalLinkedHabitId, setGoalLinkedHabitId] = useState(0);
-  const [goalFilter, setGoalFilter] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [goalFilter, setGoalFilter] = useState<"weekly" | "monthly" | "yearly">("yearly");
   const [goalCategoryFilter, setGoalCategoryFilter] = useState<HabitCategory | "all">("all");
   const [draggingGoalId, setDraggingGoalId] = useState<number | null>(null);
   const [goalProgressDrafts, setGoalProgressDrafts] = useState<Record<number, string>>({});
@@ -1179,6 +1181,28 @@ export default function Home() {
     setDraggingGoalId(null);
   }
 
+  function startGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>, goalId: number) {
+    if (goalCategoryFilter !== "all") return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.dataset.dropTargetId = String(goalId);
+    setDraggingGoalId(goalId);
+  }
+
+  function moveGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (draggingGoalId === null) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-goal-id]");
+    if (target?.dataset.goalId) event.currentTarget.dataset.dropTargetId = target.dataset.goalId;
+  }
+
+  function finishGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>, sourceId: number) {
+    const targetId = Number(event.currentTarget.dataset.dropTargetId);
+    delete event.currentTarget.dataset.dropTargetId;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (Number.isFinite(targetId)) reorderGoal(sourceId, targetId);
+    else setDraggingGoalId(null);
+  }
+
   function createTemplateGoal() {
     if (!templateModal) return;
     const period = goalPeriodDetails("yearly");
@@ -1296,6 +1320,7 @@ export default function Home() {
     .slice(0, 6);
 
   function openView(view: MainView) {
+    if (view === "goals") setGoalFilter("yearly");
     setMainView(view);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1495,8 +1520,8 @@ export default function Home() {
           {visibleGoals.length ? <div className="goal-grid">{visibleGoals.map((goal) => {
             const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
             const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
-            return <article className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties} onDragOver={(event) => { if (goalCategoryFilter === "all") event.preventDefault(); }} onDrop={() => draggingGoalId && reorderGoal(draggingGoalId, goal.id)}>
-              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button className="goal-drag-handle" draggable={goalCategoryFilter === "all"} onDragStart={() => setDraggingGoalId(goal.id)} onDragEnd={() => setDraggingGoalId(null)} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button><button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
+            return <article data-goal-id={goal.id} className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
+              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button type="button" className="goal-drag-handle" disabled={goalCategoryFilter !== "all"} onPointerDown={(event) => startGoalPointerDrag(event, goal.id)} onPointerMove={moveGoalPointerDrag} onPointerUp={(event) => finishGoalPointerDrag(event, goal.id)} onPointerCancel={() => setDraggingGoalId(null)} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button><button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
               <h3>{goal.title}</h3>
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>

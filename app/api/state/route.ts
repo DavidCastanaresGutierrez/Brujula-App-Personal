@@ -186,7 +186,11 @@ async function applyStateChanges(
     const { error } = await supabase.from("goals").delete().eq("user_id", userId).in("id", deletedGoalIds);
     if (error) throw error;
   }
-  const goals = changedRecords(baseGoals, nextGoals, "id").map((goal, position) => ({
+  const changedGoalIds = new Set(changedRecords(baseGoals, nextGoals, "id").map((goal) => String(goal.id)));
+  nextGoals.forEach((goal, position) => {
+    if (baseGoals.findIndex((item) => String(item.id) === String(goal.id)) !== position) changedGoalIds.add(String(goal.id));
+  });
+  const goals = nextGoals.filter((goal) => changedGoalIds.has(String(goal.id))).map((goal, position) => ({
     user_id: userId,
     id: Number(goal.id),
     title: String(goal.title),
@@ -199,7 +203,7 @@ async function applyStateChanges(
     unit: String(goal.unit ?? "") || null,
     status: String(goal.status ?? "active"),
     due_date: String(goal.dueDate),
-    position: nextGoals.findIndex((item) => item.id === goal.id) ?? position,
+    position: nextGoals.findIndex((item) => String(item.id) === String(goal.id)) ?? position,
     linked_habit_id: goal.linkedHabitId ? Number(goal.linkedHabitId) : null,
     metadata: {
       template: goal.template ?? null,
