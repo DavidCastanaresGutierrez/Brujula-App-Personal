@@ -53,6 +53,7 @@ type GoalRow = {
   due_date: string;
   position: number;
   linked_habit_id: number | null;
+  metadata: Record<string, unknown> | null;
 };
 
 function validState(value: unknown): value is {
@@ -200,6 +201,12 @@ async function applyStateChanges(
     due_date: String(goal.dueDate),
     position: nextGoals.findIndex((item) => item.id === goal.id) ?? position,
     linked_habit_id: goal.linkedHabitId ? Number(goal.linkedHabitId) : null,
+    metadata: {
+      template: goal.template ?? null,
+      linkedHabitIds: goal.linkedHabitIds ?? [],
+      books: goal.books ?? [],
+      fitnessEntries: goal.fitnessEntries ?? [],
+    },
   }));
   if (goals.length) {
     const { error } = await supabase.from("goals").upsert(goals, { onConflict: "user_id,id" });
@@ -224,7 +231,7 @@ export async function GET(request: Request) {
       supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
       supabase.from("motivational_quotes").select("text,position").order("position"),
-      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id").order("position"),
+      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata").order("position"),
     ]);
 
     // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
@@ -268,6 +275,10 @@ export async function GET(request: Request) {
       periodKey: goal.period_key, measurement: goal.measurement, targetValue: goal.target_value,
       currentValue: goal.current_value, unit: goal.unit ?? "", status: goal.status, dueDate: goal.due_date,
       linkedHabitId: goal.linked_habit_id ?? undefined,
+      template: goal.metadata?.template ?? undefined,
+      linkedHabitIds: goal.metadata?.linkedHabitIds ?? [],
+      books: goal.metadata?.books ?? [],
+      fitnessEntries: goal.metadata?.fitnessEntries ?? [],
     }));
     const state = habits.length || categories.length || goals.length
       ? {
