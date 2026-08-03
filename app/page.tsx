@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
@@ -32,12 +33,20 @@ type WeeklyHabit = {
 
 type HabitCategory = string;
 type Category = { id: HabitCategory; label: string; icon: string; color: string };
+type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
+type Goal = {
+  id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
+  measurement: "complete" | "quantity"; targetValue: number; currentValue: number;
+  unit?: string; status: "active" | "completed" | "discarded"; dueDate: string;
+  linkedHabitId?: number;
+};
 
 type TrackerState = {
   daily: Habit[];
   weekly: WeeklyHabit[];
   categories?: Category[];
   motivations?: string[];
+  goals?: Goal[];
 };
 
 const palette = [
@@ -141,6 +150,7 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
     weekly: (state.weekly ?? []).map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) })),
     categories,
     motivations: state.motivations?.filter((item) => item.trim()) ?? [],
+    goals: state.goals ?? [],
   };
 }
 
@@ -174,7 +184,44 @@ function mergeStates(serverState: TrackerState, localState: TrackerState): Requi
     weekly: mergeHabits(server.weekly, local.weekly),
     categories: [...categories.values()],
     motivations: server.motivations.length ? server.motivations : local.motivations,
+    goals: (() => {
+      const merged = new Map(local.goals.map((goal) => [goal.id, goal]));
+      server.goals.forEach((goal) => merged.set(goal.id, goal));
+      return [...merged.values()];
+    })(),
   };
+}
+
+function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  if (period === "daily") return { key: now.toISOString().slice(0, 10), due: now.toISOString().slice(0, 10) };
+  if (period === "weekly") {
+    const day = now.getDay() || 7;
+    const monday = new Date(y, m, now.getDate() - day + 1);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return { key: monday.toISOString().slice(0, 10), due: sunday.toISOString().slice(0, 10) };
+  }
+  if (period === "monthly") return { key: `${y}-${String(m + 1).padStart(2, "0")}`, due: isoDate(y, m, new Date(y, m + 1, 0).getDate()) };
+  return { key: String(y), due: `${y}-12-31` };
+}
+
+function linkedGoalProgress(goal: Goal, habits: Array<Habit | WeeklyHabit>) {
+  if (!goal.linkedHabitId) return goal.currentValue;
+  const habit = habits.find((item) => item.id === goal.linkedHabitId);
+  if (!habit) return goal.currentValue;
+  let count = 0;
+  Object.entries(habit.history ?? {}).forEach(([monthKey, values]) => {
+    values.forEach((value) => {
+      const date = `${monthKey}-${String(value).padStart(2, "0")}`;
+      const inPeriod = goal.period === "daily" ? date === goal.periodKey
+        : goal.period === "weekly" ? date >= goal.periodKey && date <= goal.dueDate
+        : goal.period === "monthly" ? monthKey === goal.periodKey
+        : monthKey.startsWith(`${goal.periodKey}-`);
+      if (inPeriod) count += 1;
+    });
+  });
+  return Math.min(count, goal.targetValue);
 }
 
 function isoDate(year: number, monthIndex: number, day: number) {
@@ -370,6 +417,16 @@ export default function Home() {
   const [weekly, setWeekly] = useState(initialWeekly);
   const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
   const [motivations, setMotivations] = useState<string[]>(dailyMotivations);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalModalOpen, setGoalModalOpen] = useState(false);
+  const [goalTitle, setGoalTitle] = useState("");
+  const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("monthly");
+  const [goalMeasurement, setGoalMeasurement] = useState<"complete" | "quantity">("complete");
+  const [goalTarget, setGoalTarget] = useState(1);
+  const [goalUnit, setGoalUnit] = useState("");
+  const [goalCategory, setGoalCategory] = useState<HabitCategory>("health");
+  const [goalLinkedHabitId, setGoalLinkedHabitId] = useState(0);
+  const [goalFilter, setGoalFilter] = useState<GoalPeriod | "completed">("monthly");
   const [motivationManagerOpen, setMotivationManagerOpen] = useState(false);
   const [motivationDraft, setMotivationDraft] = useState("");
   const [editingMotivationIndex, setEditingMotivationIndex] = useState<number | null>(null);
@@ -407,7 +464,7 @@ export default function Home() {
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baselineRef = useRef<TrackerState | null>(null);
-  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations });
+  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -428,8 +485,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    stateRef.current = { daily, weekly, categories: habitCategories, motivations };
-  }, [daily, weekly, habitCategories, motivations]);
+    stateRef.current = { daily, weekly, categories: habitCategories, motivations, goals };
+  }, [daily, weekly, habitCategories, motivations, goals]);
 
   useEffect(() => {
     if (!authReady || !session) return;
@@ -473,6 +530,7 @@ export default function Home() {
           setDaily(normalized.daily);
           setWeekly(normalized.weekly);
           setHabitCategories(normalized.categories);
+          setGoals(normalized.goals);
           const savedMotivations = (state.motivations?.length ? state.motivations : localState?.motivations)?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
@@ -485,6 +543,7 @@ export default function Home() {
           setDaily(normalized.daily);
           setWeekly(normalized.weekly);
           setHabitCategories(normalized.categories);
+          setGoals(normalized.goals);
           const savedMotivations = localState.motivations?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
@@ -501,7 +560,7 @@ export default function Home() {
     if (!hydrated || !session) return;
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const state = { daily, weekly, categories: habitCategories, motivations };
+    const state = { daily, weekly, categories: habitCategories, motivations, goals };
     localStorage.setItem(storageKey, JSON.stringify(state));
     if (statesEqual(state, baselineRef.current)) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -538,7 +597,7 @@ export default function Home() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [daily, weekly, habitCategories, motivations, hydrated, session]);
+  }, [daily, weekly, habitCategories, motivations, goals, hydrated, session]);
 
   useEffect(() => {
     if (!hydrated || !session) return;
@@ -591,6 +650,7 @@ export default function Home() {
         setWeekly(nextState.weekly);
         setHabitCategories(nextState.categories);
         setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
+        setGoals(nextState.goals);
         setSyncStatus(hasPendingLocalChanges ? "saving" : "synced");
       } finally {
         pulling = false;
@@ -604,6 +664,7 @@ export default function Home() {
       .channel(`brujula-sync:${session.user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "habit_completions", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
       .on("postgres_changes", { event: "*", schema: "public", table: "habits", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
+      .on("postgres_changes", { event: "*", schema: "public", table: "goals", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
       .subscribe();
     const interval = window.setInterval(() => void pullLatest(), 3_000);
     window.addEventListener("focus", onFocus);
@@ -896,6 +957,42 @@ export default function Home() {
     }
   }
 
+  function createGoal() {
+    const title = goalTitle.trim();
+    if (!title) return;
+    const period = goalPeriodDetails(goalPeriod);
+    setGoals((items) => [...items, {
+      id: Date.now(), title, category: goalCategory, period: goalPeriod, periodKey: period.key,
+      measurement: goalMeasurement, targetValue: goalMeasurement === "complete" ? 1 : Math.max(1, goalTarget),
+      currentValue: 0, unit: goalMeasurement === "quantity" ? goalUnit.trim() : "",
+      status: "active", dueDate: period.due,
+      linkedHabitId: goalLinkedHabitId || undefined,
+    }]);
+    setGoalTitle(""); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitId(0);
+    setGoalModalOpen(false); setGoalFilter(goalPeriod);
+  }
+
+  function updateGoalProgress(goal: Goal, value: number) {
+    const currentValue = Math.max(0, Math.min(value, goal.targetValue));
+    setGoals((items) => items.map((item) => item.id === goal.id
+      ? { ...item, currentValue, status: currentValue >= item.targetValue ? "completed" : "active" }
+      : item));
+  }
+
+  function discardGoal(id: number) {
+    setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, status: "discarded" } : goal));
+  }
+
+  const resolvedGoals = goals.map((goal) => {
+    if (!goal.linkedHabitId || goal.status === "discarded") return goal;
+    const currentValue = linkedGoalProgress(goal, daily);
+    return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
+  });
+  const visibleGoals = resolvedGoals.filter((goal) => goalFilter === "completed"
+    ? goal.status === "completed"
+    : goal.period === goalFilter && goal.status === "active");
+  const activeGoals = resolvedGoals.filter((goal) => goal.status === "active");
+
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
   }
@@ -910,6 +1007,7 @@ export default function Home() {
           <button className="nav-active">Panel</button>
           <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
           <button onClick={() => document.getElementById("analytics")?.scrollIntoView({ behavior: "smooth" })}>Análisis</button>
+          <button onClick={() => document.getElementById("goals")?.scrollIntoView({ behavior: "smooth" })}>Objetivos</button>
           <button onClick={() => setMotivationManagerOpen(true)}>Frases</button>
         </nav>
         <div className="session-actions">
@@ -1019,6 +1117,32 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="panel goals-panel" id="goals">
+          <div className="goals-head">
+            <div><p className="eyebrow">RESULTADOS CON RUMBO</p><h2>Tus objetivos</h2><p>Define el resultado; tus hábitos sostienen el camino.</p></div>
+            <button className="add-button" onClick={() => setGoalModalOpen(true)}>+ Añadir objetivo</button>
+          </div>
+          <div className="tabs goal-tabs">
+            {(["daily", "weekly", "monthly", "yearly", "completed"] as const).map((filter) => (
+              <button key={filter} className={goalFilter === filter ? "active" : ""} onClick={() => setGoalFilter(filter)}>
+                {{ daily: "Hoy", weekly: "Semana", monthly: "Mes", yearly: "Año", completed: "Completados" }[filter]}
+              </button>
+            ))}
+          </div>
+          {visibleGoals.length ? <div className="goal-grid">{visibleGoals.map((goal) => {
+            const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
+            const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
+            return <article className="goal-card" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
+              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><button onClick={() => discardGoal(goal.id)} aria-label={`Descartar ${goal.title}`}>×</button></div>
+              <h3>{goal.title}</h3>
+              <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
+              <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
+              {goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
+                : <label className="goal-value">Progreso actual<input type="number" min="0" max={goal.targetValue} value={goal.currentValue} onChange={(event) => updateGoalProgress(goal, Number(event.target.value))} /></label>}
+            </article>;
+          })}</div> : <div className="goals-empty"><strong>{goalFilter === "completed" ? "Aún no hay objetivos completados" : "No hay objetivos en este periodo"}</strong><p>{activeGoals.length ? "Cambia de periodo para ver tus otros objetivos." : "Crea un resultado concreto y medible para orientar tus hábitos."}</p></div>}
+        </section>
+
         <section className="tracker panel" id="tracker">
           <div className="tracker-head">
             <div>
@@ -1106,6 +1230,20 @@ export default function Home() {
           </p>
         </section>
       </div>
+
+      {goalModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setGoalModalOpen(false)}>
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="close" onClick={() => setGoalModalOpen(false)} aria-label="Cerrar">×</button>
+          <p className="eyebrow">NUEVO RESULTADO</p><h2 id="goal-modal-title">Añadir objetivo</h2>
+          <label>Objetivo<input autoFocus maxLength={160} value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Ej. Ahorrar 4.000 €" /></label>
+          <label>Periodo<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="daily">Hoy, acción puntual</option><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
+          <label>Pilar<select value={goalCategory} onChange={(event) => setGoalCategory(event.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
+          <label>Cómo se mide<select value={goalMeasurement} onChange={(event) => setGoalMeasurement(event.target.value as "complete" | "quantity")}><option value="complete">Completado / pendiente</option><option value="quantity">Mediante una cantidad</option></select></label>
+          {goalMeasurement === "quantity" && <label>Vincular a un hábito diario (opcional)<select value={goalLinkedHabitId} onChange={(event) => setGoalLinkedHabitId(Number(event.target.value))}><option value={0}>Actualizar manualmente</option>{daily.filter((habit) => !habit.archived).map((habit) => <option key={habit.id} value={habit.id}>{habit.name}</option>)}</select></label>}
+          {goalMeasurement === "quantity" && <div className="goal-form-row"><label>Meta<input type="number" min="1" value={goalTarget} onChange={(event) => setGoalTarget(Number(event.target.value))} /></label><label>Unidad<input maxLength={24} value={goalUnit} onChange={(event) => setGoalUnit(event.target.value)} placeholder="€, kg, páginas…" /></label></div>}
+          <button className="add-button full" onClick={createGoal}>Crear objetivo</button>
+        </div>
+      </div>}
 
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}>
         <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(e) => e.stopPropagation()}>
