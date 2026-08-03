@@ -787,6 +787,8 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .goal-card-actions .goal-drag-handle { background: rgba(255,255,255,.04); color: #7e8ba4; cursor: grab; font-size: 16px; touch-action: none; user-select: none; }
 .goal-card-actions .goal-drag-handle:active { cursor: grabbing; color: var(--teal); }
 .goal-card-actions .goal-drag-handle:disabled { opacity: .35; cursor: not-allowed; }
+.goal-card-actions .goal-archive { color: #176a58; background: rgba(60,201,171,.14); }
+.goal-card-actions .goal-archive:hover { background: rgba(60,201,171,.24); }
 .goal-entry-list { display: grid; gap: 6px; margin-top: 12px; }
 .goal-entry-list > div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #e7efec; padding-top: 7px; font-size: .82rem; }
 .goal-entry-list button { border: 0; background: transparent; color: #9b4c3c; cursor: pointer; }

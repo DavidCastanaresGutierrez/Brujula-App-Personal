@@ -221,6 +221,7 @@ async function applyStateChanges(
       books: goal.books ?? [],
       fitnessEntries: goal.fitnessEntries ?? [],
       parentAnnualGoalId: goal.parentAnnualGoalId ? Number(goal.parentAnnualGoalId) : null,
+      archived: Boolean(goal.archived),
     },
   }));
   if (goals.length) {
@@ -298,6 +299,7 @@ export async function GET(request: Request) {
       books: goal.metadata?.books ?? [],
       fitnessEntries: goal.metadata?.fitnessEntries ?? [],
       parentAnnualGoalId: goal.metadata?.parentAnnualGoalId ? Number(goal.metadata.parentAnnualGoalId) : undefined,
+      archived: Boolean(goal.metadata?.archived),
     }));
     const state = habits.length || categories.length || goals.length
       ? {
