@@ -53,6 +53,7 @@ type GoalRow = {
   due_date: string;
   position: number;
   linked_habit_id: number | null;
+  created_at: string;
   metadata: Record<string, unknown> | null;
 };
 
@@ -210,10 +211,13 @@ async function applyStateChanges(
     status: String(goal.status ?? "active"),
     due_date: String(goal.dueDate),
     position: nextGoals.findIndex((item) => String(item.id) === String(goal.id)) ?? position,
-    linked_habit_id: goal.linkedHabitId ? Number(goal.linkedHabitId) : null,
+    linked_habit_id: null,
     metadata: {
       template: goal.template ?? null,
-      linkedHabitIds: goal.linkedHabitIds ?? [],
+      linkedHabitIds: Array.isArray(goal.linkedHabitIds)
+        ? goal.linkedHabitIds.map(Number)
+        : goal.linkedHabitId ? [Number(goal.linkedHabitId)] : [],
+      trackingStart: goal.trackingStart ?? null,
       books: goal.books ?? [],
       fitnessEntries: goal.fitnessEntries ?? [],
     },
@@ -241,7 +245,7 @@ export async function GET(request: Request) {
       supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
       supabase.from("habit_completions").select("habit_id,period_key,value"),
       supabase.from("motivational_quotes").select("text,position").order("position"),
-      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata").order("position"),
+      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
     ]);
 
     // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
@@ -284,9 +288,12 @@ export async function GET(request: Request) {
       id: Number(goal.id), title: goal.title, category: goal.category_id, period: goal.period,
       periodKey: goal.period_key, measurement: goal.measurement, targetValue: goal.target_value,
       currentValue: goal.current_value, unit: goal.unit ?? "", status: goal.status, dueDate: goal.due_date,
-      linkedHabitId: goal.linked_habit_id ?? undefined,
+      linkedHabitId: undefined,
       template: goal.metadata?.template ?? undefined,
-      linkedHabitIds: goal.metadata?.linkedHabitIds ?? [],
+      linkedHabitIds: Array.isArray(goal.metadata?.linkedHabitIds)
+        ? goal.metadata.linkedHabitIds.map(Number)
+        : goal.linked_habit_id ? [Number(goal.linked_habit_id)] : [],
+      trackingStart: typeof goal.metadata?.trackingStart === "string" ? goal.metadata.trackingStart : goal.created_at.slice(0, 10),
       books: goal.metadata?.books ?? [],
       fitnessEntries: goal.metadata?.fitnessEntries ?? [],
     }));
