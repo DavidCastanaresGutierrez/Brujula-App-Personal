@@ -37,8 +37,8 @@ type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
 type MainView = "summary" | "today" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
 type BookEntry = { id: number; title: string; format: BookFormat; completedAt: string };
-type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi";
-type FitnessEntry = { id: number; recordedAt: string; weight: number; muscle: number; fatMass: number; bodyWater: number; bodyFat: number; bmi: number };
+type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi" | "basalMetabolicRate";
+type FitnessEntry = { id: number; recordedAt: string; weight: number; muscle: number; fatMass: number; bodyWater: number; bodyFat: number; bmi: number; basalMetabolicRate: number };
 type Goal = {
   id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
   measurement: "complete" | "quantity"; targetValue: number; currentValue: number;
@@ -64,6 +64,7 @@ const palette = [
   "#6366f1", "#8b5cf6", "#a78bfa", "#d946ef", "#ff3b88", "#f472b6", "#fb7185",
   "#ef476f", "#94a3b8",
 ];
+const weeklyBarPalette = ["#3cc9ab", "#ffb51b", "#ff3b6b", "#50b8e7", "#a78bfa"];
 const defaultCategories: Category[] = [
   { id: "health", label: "Salud", icon: "♥", color: "#39c6a4" },
   { id: "family", label: "Familia", icon: "⌂", color: "#f472b6" },
@@ -129,6 +130,7 @@ const fitnessMetricMeta: Record<FitnessMetric, { label: string; unit: string }> 
   weight: { label: "Peso", unit: "kg" }, muscle: { label: "Masa muscular", unit: "kg" },
   fatMass: { label: "Masa grasa", unit: "kg" }, bodyWater: { label: "Agua corporal", unit: "kg" },
   bodyFat: { label: "Grasa corporal", unit: "%" }, bmi: { label: "IMC", unit: "" },
+  basalMetabolicRate: { label: "Tasa metabólica basal", unit: "kcal/día" },
 };
 
 function motivationForToday(motivations = dailyMotivations) {
@@ -490,7 +492,10 @@ export default function Home() {
   const [goalUnit, setGoalUnit] = useState("");
   const [goalCategory, setGoalCategory] = useState<HabitCategory>("health");
   const [goalLinkedHabitId, setGoalLinkedHabitId] = useState(0);
-  const [goalFilter, setGoalFilter] = useState<GoalPeriod | "completed">("monthly");
+  const [goalFilter, setGoalFilter] = useState<"weekly" | "monthly" | "yearly">("monthly");
+  const [goalCategoryFilter, setGoalCategoryFilter] = useState<HabitCategory | "all">("all");
+  const [draggingGoalId, setDraggingGoalId] = useState<number | null>(null);
+  const [goalProgressDrafts, setGoalProgressDrafts] = useState<Record<number, string>>({});
   const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
   const [templateModal, setTemplateModal] = useState<null | "fitness" | "reading">(null);
@@ -500,7 +505,7 @@ export default function Home() {
   const [bookTitle, setBookTitle] = useState("");
   const [bookFormat, setBookFormat] = useState<BookFormat>("paper");
   const [fitnessGoal, setFitnessGoal] = useState<Goal | null>(null);
-  const [fitnessDraft, setFitnessDraft] = useState({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "" });
+  const [fitnessDraft, setFitnessDraft] = useState({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" });
   const [fitnessMetric, setFitnessMetric] = useState<FitnessMetric>("weight");
   const [fitnessPeriod, setFitnessPeriod] = useState<30 | 90 | 365>(90);
   const [fitnessImporting, setFitnessImporting] = useState(false);
@@ -546,10 +551,6 @@ export default function Home() {
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
-
-  useEffect(() => {
-    if (!canManagePhrases && motivationManagerOpen) setMotivationManagerOpen(false);
-  }, [canManagePhrases, motivationManagerOpen]);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -1135,7 +1136,8 @@ export default function Home() {
       ? items.map((item) => item.id === editingGoalId ? { ...item, ...nextGoal, currentValue: item.currentValue, status: item.status, template: item.template, books: item.books, fitnessEntries: item.fitnessEntries, linkedHabitIds: item.linkedHabitIds } : item)
       : [...items, nextGoal]);
     setGoalTitle(""); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitId(0);
-    setEditingGoalId(null); setGoalModalOpen(false); setGoalFilter(goalPeriod);
+    setEditingGoalId(null); setGoalModalOpen(false);
+    if (goalPeriod !== "daily") setGoalFilter(goalPeriod);
   }
 
   function startGoalEdit(goal: Goal) {
@@ -1151,9 +1153,30 @@ export default function Home() {
       : item));
   }
 
+  function addGoalProgress(goal: Goal) {
+    const amount = Number(goalProgressDrafts[goal.id] ?? "");
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    updateGoalProgress(goal, goal.currentValue + amount);
+    setGoalProgressDrafts((drafts) => ({ ...drafts, [goal.id]: "" }));
+  }
+
   function deleteGoal(id: number) {
     setGoals((items) => items.filter((goal) => goal.id !== id));
     setDeletingGoal(null);
+  }
+
+  function reorderGoal(sourceId: number, targetId: number) {
+    if (sourceId === targetId || goalCategoryFilter !== "all") return;
+    setGoals((items) => {
+      const sourceIndex = items.findIndex((goal) => goal.id === sourceId);
+      const targetIndex = items.findIndex((goal) => goal.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return items;
+      const next = [...items];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+    setDraggingGoalId(null);
   }
 
   function createTemplateGoal() {
@@ -1198,7 +1221,7 @@ export default function Home() {
     if (Object.values(values).some((value) => value === undefined || Number.isNaN(value) || value < 0)) return;
     const entry: FitnessEntry = { id: Date.now(), recordedAt: new Date().toISOString().slice(0, 10), ...(values as Record<FitnessMetric, number>) };
     setGoals((items) => items.map((goal) => goal.id === fitnessGoal.id ? { ...goal, fitnessEntries: [...(goal.fitnessEntries ?? []), entry] } : goal));
-    setFitnessGoal(null); setFitnessDraft({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "" }); setFitnessImportMessage("");
+    setFitnessGoal(null); setFitnessDraft({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" }); setFitnessImportMessage("");
   }
 
   async function importSamsungHealth(file?: File) {
@@ -1210,7 +1233,7 @@ export default function Home() {
       const text = result.data.text.replace(/,/g, ".");
       const numberAfter = (labels: string[]) => {
         for (const label of labels) {
-          const match = text.match(new RegExp(`${label}[^0-9]{0,30}([0-9]{1,3}(?:\\.[0-9]{1,2})?)`, "i"));
+          const match = text.match(new RegExp(`${label}[^0-9]{0,30}([0-9]{1,4}(?:\\.[0-9]{1,2})?)`, "i"));
           if (match) return match[1];
         }
         return "";
@@ -1219,9 +1242,10 @@ export default function Home() {
       const bodyFat = numberAfter(["grasa corporal", "body fat"]);
       const muscle = numberAfter(["músculo esquelético", "musculo esqueletico", "skeletal muscle", "masa muscular"]);
       const fatMass = numberAfter(["masa grasa", "fat mass"]); const bodyWater = numberAfter(["agua corporal", "body water"]); const bmi = numberAfter(["imc", "bmi"]);
-      setFitnessDraft({ weight, muscle, fatMass, bodyWater, bodyFat, bmi });
-      const detected = [weight, muscle, fatMass, bodyWater, bodyFat, bmi].filter(Boolean).length;
-      setFitnessImportMessage(detected ? `${detected} de 6 valores detectados. Revísalos y completa los restantes.` : "No he podido identificar los valores. Puedes introducirlos manualmente.");
+      const basalMetabolicRate = numberAfter(["tasa metabólica basal", "tasa metabolica basal", "basal metabolic rate", "bmr"]);
+      setFitnessDraft({ weight, muscle, fatMass, bodyWater, bodyFat, bmi, basalMetabolicRate });
+      const detected = [weight, muscle, fatMass, bodyWater, bodyFat, bmi, basalMetabolicRate].filter(Boolean).length;
+      setFitnessImportMessage(detected ? `${detected} de 7 valores detectados. Revísalos y completa los restantes.` : "No he podido identificar los valores. Puedes introducirlos manualmente.");
     } catch {
       setFitnessImportMessage("No se pudo leer la captura. Introduce los valores manualmente.");
     } finally { setFitnessImporting(false); }
@@ -1256,9 +1280,9 @@ export default function Home() {
     const currentValue = linkedGoalProgress(goal, daily);
     return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
   });
-  const visibleGoals = resolvedGoals.filter((goal) => goalFilter === "completed"
-    ? goal.status === "completed"
-    : goal.period === goalFilter && goal.status === "active");
+  const visibleGoals = resolvedGoals.filter((goal) => goal.period === goalFilter
+    && goal.status !== "discarded"
+    && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter));
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active");
   const realTodayKey = today.toISOString().slice(0, 10);
   const todayMonthKey = realTodayKey.slice(0, 7);
@@ -1390,7 +1414,7 @@ export default function Home() {
               {weeklyProgress.map((week, index) => (
                 <div className={`bar-column ${week.projected ? "projected" : ""}`} key={week.range}>
                   <span>{week.value !== null ? `${week.value}%` : ""}</span>
-                  <div className="bar-track">{week.value !== null && <div style={{ height: `${Math.max(week.value, 4)}%`, background: palette[index] }} />}</div>
+                  <div className="bar-track">{week.value !== null && <div style={{ height: `${Math.max(week.value, 4)}%`, background: weeklyBarPalette[index] }} />}</div>
                   <strong><b>S{index + 1}</b><small>{week.range}</small></strong>
                 </div>
               ))}
@@ -1451,29 +1475,43 @@ export default function Home() {
         <section className="panel goals-panel" id="goals">
           <div className="goals-head">
             <div><p className="eyebrow">RESULTADOS CON RUMBO</p><h2>Tus objetivos</h2><p>Define el resultado; tus hábitos sostienen el camino.</p></div>
-            <div className="goal-head-actions"><button className="template-button" onClick={() => setTemplateModal("fitness")}>♥ Forma física</button><button className="template-button" onClick={() => setTemplateModal("reading")}>◫ Lectura anual</button><button className="add-button" onClick={() => { setEditingGoalId(null); setGoalModalOpen(true); }}>+ Añadir objetivo</button></div>
+            <div className="goal-head-actions">
+              <button className="template-button" onClick={() => setTemplateModal("fitness")}><span aria-hidden="true">♥</span>Forma física</button>
+              <button className="template-button" onClick={() => setTemplateModal("reading")}><span aria-hidden="true">▥</span>Lectura anual</button>
+              <button className="add-button" onClick={() => { setEditingGoalId(null); setGoalModalOpen(true); }}>+ Añadir objetivo</button>
+            </div>
           </div>
+          <div className="goal-toolbar">
           <div className="tabs goal-tabs">
-            {(["daily", "weekly", "monthly", "yearly", "completed"] as const).map((filter) => (
+            {(["weekly", "monthly", "yearly"] as const).map((filter) => (
               <button key={filter} className={goalFilter === filter ? "active" : ""} onClick={() => setGoalFilter(filter)}>
-                {{ daily: "Hoy", weekly: "Semana", monthly: "Mes", yearly: "Año", completed: "Completados" }[filter]}
+                {{ weekly: "Semana", monthly: "Mes", yearly: "Año" }[filter]}
               </button>
             ))}
           </div>
+          <label className="goal-block-filter"><span>Bloque</span><select value={goalCategoryFilter} onChange={(event) => setGoalCategoryFilter(event.target.value)}><option value="all">Todos los bloques</option>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
+          </div>
+          {goalCategoryFilter !== "all" && <p className="goal-filter-note">Quita el filtro de bloque para reordenar las tarjetas.</p>}
           {visibleGoals.length ? <div className="goal-grid">{visibleGoals.map((goal) => {
             const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
             const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
-            return <article className="goal-card" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
-              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
+            return <article className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties} onDragOver={(event) => { if (goalCategoryFilter === "all") event.preventDefault(); }} onDrop={() => draggingGoalId && reorderGoal(draggingGoalId, goal.id)}>
+              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button className="goal-drag-handle" draggable={goalCategoryFilter === "all"} onDragStart={() => setDraggingGoalId(goal.id)} onDragEnd={() => setDraggingGoalId(null)} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button><button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
               <h3>{goal.title}</h3>
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {goal.template === "reading" ? <><button className="goal-complete" onClick={() => setBookGoal(goal)}>+ Registrar libro terminado</button><div className="goal-entry-list">{(goal.books ?? []).slice(-3).reverse().map((book) => <div key={book.id}><span>{book.title}</span><small>{{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small><button onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></div>)}</div><small className="goal-consistency">Constancia de lectura: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
                 : goal.template === "fitness" ? <><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
                 : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
-                : <label className="goal-value">Progreso actual<input type="number" min="0" max={goal.targetValue} value={goal.currentValue} onChange={(event) => updateGoalProgress(goal, Number(event.target.value))} /></label>}
+                : <form className="goal-value" onSubmit={(event) => { event.preventDefault(); addGoalProgress(goal); }}>
+                    <label htmlFor={`goal-progress-${goal.id}`}>Añadir progreso</label>
+                    <div className="goal-value-entry">
+                      <input id={`goal-progress-${goal.id}`} type="number" min="0" max={Math.max(0, goal.targetValue - goal.currentValue)} step="any" inputMode="decimal" value={goalProgressDrafts[goal.id] ?? ""} onChange={(event) => setGoalProgressDrafts((drafts) => ({ ...drafts, [goal.id]: event.target.value }))} placeholder={goal.unit ? `Cantidad en ${goal.unit}` : "Cantidad"} aria-label={`Cantidad que añadir a ${goal.title}`} />
+                      <button type="submit" disabled={!Number.isFinite(Number(goalProgressDrafts[goal.id])) || Number(goalProgressDrafts[goal.id]) <= 0 || goal.currentValue >= goal.targetValue}>Sumar</button>
+                    </div>
+                  </form>}
             </article>;
-          })}</div> : <div className="goals-empty"><strong>{goalFilter === "completed" ? "Aún no hay objetivos completados" : "No hay objetivos en este periodo"}</strong><p>{activeGoals.length ? "Cambia de periodo para ver tus otros objetivos." : "Crea un resultado concreto y medible para orientar tus hábitos."}</p></div>}
+          })}</div> : <div className="goals-empty"><strong>No hay objetivos en este periodo{goalCategoryFilter !== "all" ? " y bloque" : ""}</strong><p>{activeGoals.length ? "Cambia el periodo o el filtro para ver tus otros objetivos." : "Crea un resultado concreto y medible para orientar tus hábitos."}</p></div>}
         </section>
         </>}
 
@@ -1604,7 +1642,7 @@ export default function Home() {
           <button className="close" onClick={() => { setGoalModalOpen(false); setEditingGoalId(null); }} aria-label="Cerrar">×</button>
           <p className="eyebrow">{editingGoalId ? "EDITAR RESULTADO" : "NUEVO RESULTADO"}</p><h2 id="goal-modal-title">{editingGoalId ? "Editar objetivo" : "Añadir objetivo"}</h2>
           <label>Objetivo<input autoFocus maxLength={160} value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Ej. Ahorrar 4.000 €" /></label>
-          <label>Periodo<select value={goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="daily">Hoy, acción puntual</option><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
+          <label>Periodo<select value={goalPeriod === "daily" ? "weekly" : goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
           <label>Pilar<select value={goalCategory} onChange={(event) => setGoalCategory(event.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
           <label>Cómo se mide<select value={goalMeasurement} onChange={(event) => setGoalMeasurement(event.target.value as "complete" | "quantity")}><option value="complete">Completado / pendiente</option><option value="quantity">Mediante una cantidad</option></select></label>
           {goalMeasurement === "quantity" && <label>Vincular a un hábito diario (opcional)<select value={goalLinkedHabitId} onChange={(event) => setGoalLinkedHabitId(Number(event.target.value))}><option value={0}>Actualizar manualmente</option>{daily.filter((habit) => !habit.archived).map((habit) => <option key={habit.id} value={habit.id}>{habit.name}</option>)}</select></label>}
