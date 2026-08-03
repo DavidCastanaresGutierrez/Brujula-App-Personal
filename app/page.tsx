@@ -437,7 +437,7 @@ export default function Home() {
   const [deleting, setDeleting] = useState<{ type: "daily" | "weekly"; id: number; name: string } | null>(null);
   const [actionHabit, setActionHabit] = useState<{ type: "daily" | "weekly"; habit: Habit } | null>(null);
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
-  const [chartPeriod, setChartPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [chartPeriod, setChartPeriod] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [chartScope, setChartScope] = useState<"general" | "category" | "habit">("general");
   const [rankingView, setRankingView] = useState<"best" | "watch">("best");
   const [selectedChartCategory, setSelectedChartCategory] = useState<HabitCategory>("health");
@@ -752,6 +752,26 @@ export default function Home() {
   const allHabitsSelected = selectedHabitId === 0;
   const selectedCategoryMeta = habitCategories.find((category) => category.id === selectedChartCategory) ?? habitCategories[0] ?? defaultCategories[0];
   const dataForHabits = (habits: Habit[]) => {
+    if (chartPeriod === "weekly") {
+      if (!isPastMonth && !isCurrentMonth) return [];
+      const selectedReference = isCurrentMonth ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : new Date(year, month + 1, 0);
+      const offset = (selectedReference.getDay() + 6) % 7;
+      const monday = new Date(selectedReference);
+      monday.setDate(selectedReference.getDate() - offset);
+      const weekDates = Array.from({ length: 7 }, (_, index) => {
+        const item = new Date(monday);
+        item.setDate(monday.getDate() + index);
+        return item;
+      }).filter((item) => !isCurrentMonth || item <= today);
+      return weekDates.map((item) => {
+        const key = `${item.getFullYear()}-${String(item.getMonth() + 1).padStart(2, "0")}`;
+        const day = item.getDate();
+        const dueHabits = habits.filter((habit) => !habit.weekdaysOnly || isWeekday(item.getFullYear(), item.getMonth(), day));
+        const completed = dueHabits.filter((habit) => checksFor(habit, key).includes(day)).length;
+        const label = item.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }).replace(".", "");
+        return { label, value: dueHabits.length ? completed / dueHabits.length * 100 : 0 };
+      });
+    }
     if (chartPeriod === "monthly") {
       return Array.from({ length: elapsedDays }, (_, index) => {
         const day = index + 1;
@@ -804,6 +824,32 @@ export default function Home() {
         }
       }
       return { ...habit, history };
+    }));
+  }
+
+  function toggleTodayHabit(id: number) {
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const currentDay = today.getDate();
+    const key = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+    const habit = daily.find((item) => item.id === id);
+    if (habit?.weekdaysOnly && !isWeekday(currentYear, currentMonth, currentDay)) return;
+    setDaily((items) => items.map((item) => {
+      if (item.id !== id) return item;
+      const current = item.history?.[key] ?? [];
+      const next = current.includes(currentDay) ? current.filter((day) => day !== currentDay) : [...current, currentDay];
+      return { ...item, history: { ...(item.history ?? {}), [key]: next } };
+    }));
+  }
+
+  function toggleCurrentWeekHabit(id: number) {
+    const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+    const currentWeek = Math.floor((today.getDate() - 1) / 7) + 1;
+    setWeekly((items) => items.map((item) => {
+      if (item.id !== id) return item;
+      const current = item.history?.[key] ?? [];
+      const next = current.includes(currentWeek) ? current.filter((week) => week !== currentWeek) : [...current, currentWeek];
+      return { ...item, history: { ...(item.history ?? {}), [key]: next } };
     }));
   }
 
@@ -992,6 +1038,14 @@ export default function Home() {
     ? goal.status === "completed"
     : goal.period === goalFilter && goal.status === "active");
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active");
+  const realTodayKey = today.toISOString().slice(0, 10);
+  const todayMonthKey = realTodayKey.slice(0, 7);
+  const currentWeekIndex = Math.floor((today.getDate() - 1) / 7) + 1;
+  const todayHabits = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(today.getFullYear(), today.getMonth(), today.getDate()));
+  const todayGoals = activeGoals
+    .filter((goal) => goal.period === "daily" ? goal.periodKey === realTodayKey : goal.dueDate >= realTodayKey)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 6);
 
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
@@ -1004,7 +1058,8 @@ export default function Home() {
       <header className="topbar">
         <Brand />
         <nav aria-label="Navegación principal">
-          <button className="nav-active">Panel</button>
+          <button onClick={() => document.getElementById("today")?.scrollIntoView({ behavior: "smooth" })}>Hoy</button>
+          <button className="nav-active" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Panel</button>
           <button onClick={() => document.getElementById("tracker")?.scrollIntoView({ behavior: "smooth" })}>Hábitos</button>
           <button onClick={() => document.getElementById("analytics")?.scrollIntoView({ behavior: "smooth" })}>Análisis</button>
           <button onClick={() => document.getElementById("goals")?.scrollIntoView({ behavior: "smooth" })}>Objetivos</button>
@@ -1030,6 +1085,45 @@ export default function Home() {
               <div><span>PERIODO</span><strong>{monthNames[month]} {year}</strong></div>
               <button onClick={() => shiftMonth(1)} aria-label="Mes siguiente">›</button>
             </div>
+          </div>
+        </section>
+
+        <section className="panel today-panel" id="today">
+          <div className="today-head">
+            <div><p className="eyebrow">HOY · {today.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}</p><h2>Tu día, en una sola vista</h2><p>Marca lo que completas y mantén a la vista los resultados que estás persiguiendo.</p></div>
+            <strong>{todayHabits.filter((habit) => (habit.history?.[todayMonthKey] ?? []).includes(today.getDate())).length}/{todayHabits.length} hábitos</strong>
+          </div>
+          <div className="today-grid">
+            <article className="today-column-card">
+              <div className="today-section-title"><h3>Hábitos de hoy</h3><span>{todayHabits.length}</span></div>
+              <div className="today-list">
+                {todayHabits.map((habit) => {
+                  const checked = (habit.history?.[todayMonthKey] ?? []).includes(today.getDate());
+                  return <button key={habit.id} className={`today-item ${checked ? "done" : ""}`} onClick={() => toggleTodayHabit(habit.id)} aria-pressed={checked}>
+                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : "Pendiente"}</small></span><b>{checked ? "✓" : ""}</b>
+                  </button>;
+                })}
+                {!todayHabits.length && <p className="today-empty">No tienes hábitos previstos para hoy.</p>}
+              </div>
+              {!!activeWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{activeWeekly.length}</span></div><div className="today-list compact">{activeWeekly.map((habit) => {
+                const checked = (habit.history?.[todayMonthKey] ?? []).includes(currentWeekIndex);
+                return <button key={habit.id} className={`today-item ${checked ? "done" : ""}`} onClick={() => toggleCurrentWeekHabit(habit.id)} aria-pressed={checked}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Semana completada" : "Pendiente esta semana"}</small></span><b>{checked ? "✓" : ""}</b></button>;
+              })}</div></>}
+            </article>
+            <article className="today-column-card">
+              <div className="today-section-title"><h3>Objetivos en foco</h3><span>{todayGoals.length}</span></div>
+              <div className="today-goals">
+                {todayGoals.map((goal) => {
+                  const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
+                  const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
+                  return <div className="today-goal" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
+                    <div><span>{category?.icon} {goal.period === "daily" ? "Hoy" : goal.period === "weekly" ? "Semana" : goal.period === "monthly" ? "Mes" : "Año"}</span><strong>{goal.title}</strong><small>{progress}% · vence {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></div>
+                    {goal.measurement === "complete" ? <button onClick={() => updateGoalProgress(goal, 1)}>✓</button> : <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
+                  </div>;
+                })}
+                {!todayGoals.length && <p className="today-empty">No hay objetivos activos que requieran tu atención.</p>}
+              </div>
+            </article>
           </div>
         </section>
 
@@ -1099,7 +1193,7 @@ export default function Home() {
               </h2>
             </div>
             <div className="analytics-controls">
-              <div className="tabs"><button className={chartPeriod === "monthly" ? "active" : ""} onClick={() => setChartPeriod("monthly")}>Mensual</button><button className={chartPeriod === "yearly" ? "active" : ""} onClick={() => setChartPeriod("yearly")}>Anual</button></div>
+              <div className="tabs"><button className={chartPeriod === "weekly" ? "active" : ""} onClick={() => setChartPeriod("weekly")}>Semanal</button><button className={chartPeriod === "monthly" ? "active" : ""} onClick={() => setChartPeriod("monthly")}>Mensual</button><button className={chartPeriod === "yearly" ? "active" : ""} onClick={() => setChartPeriod("yearly")}>Anual</button></div>
               <div className="tabs scope-tabs">
                 <button className={chartScope === "general" ? "active" : ""} onClick={() => setChartScope("general")}>General</button>
                 <button className={chartScope === "category" ? "active" : ""} onClick={() => setChartScope("category")}>Por bloque</button>
@@ -1112,7 +1206,7 @@ export default function Home() {
           <TrendChart series={chartSeries} />
           <div className="chart-summary">
             <span>Alcance: <strong>{chartScope === "general" ? "General" : chartScope === "category" ? allCategoriesSelected ? "Todos los bloques" : selectedCategoryMeta.label : allHabitsSelected ? "Todos los hábitos" : selectedHabit?.name ?? "Hábito"}</strong></span>
-            <span>Periodo: <strong>{chartPeriod === "monthly" ? `${monthNames[month]} ${year}` : year}</strong></span>
+            <span>Periodo: <strong>{chartPeriod === "weekly" ? "Semana seleccionada" : chartPeriod === "monthly" ? `${monthNames[month]} ${year}` : year}</strong></span>
             <span>{chartSeries.length > 1 ? <><strong>{chartSeries.length}</strong> series comparadas</> : <>Último valor: <strong>{Math.round(chartSeries[0]?.data.at(-1)?.value ?? 0)}%</strong></>}</span>
           </div>
         </section>
