@@ -317,6 +317,15 @@ function Brand({ lightBackground = false }: { lightBackground?: boolean }) {
   return <div className="brand"><Image className="brand-logo" src={lightBackground ? "/compass-mark-light.png" : "/compass-mark-dark.png"} width={68} height={68} alt="" priority /><span>Brújula</span></div>;
 }
 
+function AuthIcon({ name }: { name: "mail" | "lock" | "eye" | "eyeOff" | "shield" | "compass" }) {
+  if (name === "mail") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h17v11h-17z"/><path d="m4 7 8 6 8-6"/></svg>;
+  if (name === "lock") return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>;
+  if (name === "eye") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>;
+  if (name === "eyeOff") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.4 3.1M6.1 6.2C3.7 8 2.5 12 2.5 12s3.5 6 9.5 6a9.7 9.7 0 0 0 3-.5M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>;
+  if (name === "shield") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.8 2.9 8.2 7 10 4.1-1.8 7-5.2 7-10V6l-7-3Z"/><path d="m9.5 12 1.7 1.7 3.5-3.7"/></svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.3 5.3-5.3 2.3 2.3-5.3 5.3-2.3Z"/></svg>;
+}
+
 function AuthGate() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -354,22 +363,51 @@ function AuthGate() {
 
   return (
     <main className="auth-page">
-      <section className="auth-card">
-        <div className="auth-brand"><Brand lightBackground /></div>
-        <p className="eyebrow">TU RUMBO PERSONAL</p>
-        <h1>{mode === "login" ? "Continúa avanzando." : mode === "register" ? "Empieza tu recorrido." : "Recupera el acceso."}</h1>
-        <p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : "Tus hábitos se guardarán de forma privada y estarán disponibles en todos tus dispositivos."}</p>
-        <form onSubmit={submit}>
-          <label>Correo<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          {mode !== "forgot" && <label>Contraseña<span className="password-field"><input type={showPassword ? "text" : "password"} minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? "Ocultar" : "Mostrar"}</button></span></label>}
-          {message && <p className="auth-message">{message}</p>}
-          <button className="add-button full" disabled={busy}>{busy ? "Procesando…" : mode === "login" ? "Entrar" : mode === "register" ? "Crear cuenta" : "Enviar enlace"}</button>
-        </form>
-        {mode === "login" && <button className="auth-switch" onClick={() => { setMode("forgot"); setMessage(""); }}>¿Has olvidado tu contraseña?</button>}
-        <button className="auth-switch secondary" onClick={() => { setMode(mode === "login" ? "register" : "login"); setMessage(""); setShowPassword(false); }}>
-          {mode === "login" ? "¿Primera vez? Crear una cuenta" : "Volver al inicio de sesión"}
-        </button>
-      </section>
+      <div className="auth-shell">
+        <section className="auth-card">
+          <div className="auth-content">
+            <div className="auth-brand" aria-label="Brújula, tu rumbo personal">
+              <Image className="auth-logo" src="/compass-mark-light.png" width={92} height={92} alt="" priority />
+              <strong>Brújula</strong>
+              <span>TU RUMBO PERSONAL</span>
+            </div>
+            <div className="auth-intro">
+              <h1>{mode === "login" ? "Construye la persona que quieres llegar a ser." : mode === "register" ? "Empieza a construir tu mejor versión." : "Recupera el acceso a tu rumbo."}</h1>
+              <p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : "Cada pequeño hábito cambia tu dirección."}</p>
+            </div>
+            <form onSubmit={submit}>
+              <label htmlFor="auth-email">Correo</label>
+              <div className="auth-field">
+                <span className="auth-field-icon"><AuthIcon name="mail" /></span>
+                <input id="auth-email" type="email" placeholder="tu@email.com" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+              </div>
+              {mode !== "forgot" && <>
+                <label htmlFor="auth-password">Contraseña</label>
+                <div className="auth-field password-field">
+                  <span className="auth-field-icon"><AuthIcon name="lock" /></span>
+                  <input id="auth-password" type={showPassword ? "text" : "password"} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={mode === "login" ? "current-password" : "new-password"} required value={password} onChange={(event) => setPassword(event.target.value)} />
+                  <button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}><AuthIcon name={showPassword ? "eyeOff" : "eye"} /></button>
+                </div>
+              </>}
+              {message && <p className="auth-message" role="status">{message}</p>}
+              <button className="auth-submit" disabled={busy}>
+                {busy ? <><span className="auth-spinner" aria-hidden="true" />Procesando…</> : <>{mode === "login" ? "Entrar" : mode === "register" ? "Crear cuenta" : "Enviar enlace"}<span aria-hidden="true">→</span></>}
+              </button>
+            </form>
+            <p className="auth-trust"><AuthIcon name="shield" /> Privado · Seguro · Sincronizado</p>
+            <div className="auth-links">
+              {mode === "login" && <button className="auth-switch" onClick={() => { setMode("forgot"); setMessage(""); }}>¿Has olvidado tu contraseña?</button>}
+              <button className="auth-switch secondary" onClick={() => { setMode(mode === "login" ? "register" : "login"); setMessage(""); setShowPassword(false); }}>
+                {mode === "login" ? <>¿Primera vez? <strong>Crear una cuenta</strong></> : "Volver al inicio de sesión"}
+              </button>
+            </div>
+          </div>
+        </section>
+        <aside className="auth-visual" aria-hidden="true">
+          <div className="auth-compass-orbit"><span /><AuthIcon name="compass" /></div>
+          <blockquote>“No se trata de llegar más rápido, sino de avanzar en la dirección correcta.”</blockquote>
+        </aside>
+      </div>
     </main>
   );
 }
