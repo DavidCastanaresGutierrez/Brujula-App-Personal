@@ -5,6 +5,7 @@ import {
   daysForMonthWeek,
   goalPeriodDetails,
   toggleCompletionForDay,
+  weeklyGoalIncludesDate,
   weekdaysInMonth,
 } from "./tracking";
 
@@ -23,6 +24,17 @@ describe("calendar rules", () => {
 
   it("counts only working days through the requested date", () => {
     expect(weekdaysInMonth(2026, 7, 9)).toBe(5);
+  });
+});
+
+describe("weeklyGoalIncludesDate", () => {
+  it("keeps legacy Sunday-to-Saturday goals visible during their saved interval", () => {
+    expect(weeklyGoalIncludesDate("2026-08-02", "2026-08-08", "2026-08-04")).toBe(true);
+  });
+
+  it("does not treat a future or finished weekly goal as current", () => {
+    expect(weeklyGoalIncludesDate("2026-08-02", "2026-08-08", "2026-08-01")).toBe(false);
+    expect(weeklyGoalIncludesDate("2026-08-02", "2026-08-08", "2026-08-09")).toBe(false);
   });
 });
 

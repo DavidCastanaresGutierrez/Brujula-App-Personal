@@ -13,6 +13,7 @@ import {
   isoDate,
   isWeekday,
   toggleCompletionForDay,
+  weeklyGoalIncludesDate,
   weekdaysInMonth,
 } from "../lib/domain/tracking";
 
@@ -859,7 +860,8 @@ export default function Home() {
   const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
   const weekDates = Array.from({ length: Math.max(0, evaluatedWeekEnd - weekStart + 1) }, (_, index) => new Date(year, month, weekStart + index));
   const adjustedWeekBaseScore = weekDates.length ? weekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / weekDates.length : 0;
-  const currentWeeklyGoals = goals.filter((goal) => goal.period === "weekly" && goal.periodKey === goalPeriodDetails("weekly", referenceDate).key && goal.status !== "discarded");
+  const referenceDateKey = isoDate(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  const currentWeeklyGoals = goals.filter((goal) => goal.period === "weekly" && weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, referenceDateKey) && goal.status !== "discarded");
   const weeklyGoalResult = calculateWeeklyGoalBonus(adjustedWeekBaseScore, currentWeeklyGoals);
   const weeklyGoalBonus = weeklyGoalResult.bonus;
   const weekScore = weeklyGoalResult.finalScore;
@@ -1386,12 +1388,11 @@ export default function Home() {
     };
   });
   const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
-  const currentWeekKey = goalPeriodDetails("weekly", today).key;
   const visibleGoals = resolvedGoals.filter((goal) => goal.period === goalFilter
     && goal.status !== "discarded"
     && !goal.archived
     && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter)
-    && (goal.period !== "weekly" || goal.periodKey === currentWeekKey || (goal.status === "active" && goal.dueDate < realTodayKey)));
+    && (goal.period !== "weekly" || weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, realTodayKey) || (goal.status === "active" && goal.dueDate < realTodayKey)));
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active" && !goal.archived);
   const todayMonthKey = realTodayKey.slice(0, 7);
   const currentWeekIndex = Math.floor((today.getDate() - 1) / 7) + 1;

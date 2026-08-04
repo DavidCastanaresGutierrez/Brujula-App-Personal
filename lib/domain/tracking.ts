@@ -69,6 +69,10 @@ export function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
   return { key: String(year), due: `${year}-12-31` };
 }
 
+export function weeklyGoalIncludesDate(periodKey: string, dueDate: string, date: string) {
+  return periodKey <= date && date <= dueDate;
+}
+
 export function toggleCompletionForDay(checks: number[], day: number) {
   return checks.includes(day) ? checks.filter((item) => item !== day) : [...checks, day].sort((a, b) => a - b);
 }
