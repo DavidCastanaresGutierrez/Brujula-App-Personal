@@ -156,6 +156,10 @@ h1 em { font-style: normal; color: var(--teal); }
 .goal-card-foot strong { font-size: 11px; }
 .goal-card-foot span { color: var(--muted); font-size: 8px; text-align: right; }
 .goal-complete { width: 100%; min-height: 36px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--goal-color) 42%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--goal-color) 11%, transparent); color: var(--goal-color); cursor: pointer; font-size: 10px; font-weight: 800; }
+.goal-overdue-label { display: block; margin: -8px 0 12px; color: #fbbf24; font-size: 9px; font-weight: 800; }
+.goal-weekly-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 14px; }
+.goal-weekly-actions button { min-height: 36px; border: 1px solid color-mix(in srgb, var(--goal-color) 42%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--goal-color) 11%, transparent); color: var(--goal-color); cursor: pointer; font-size: 10px; font-weight: 800; padding: 0 12px; }
+.goal-weekly-actions button.danger { border-color: rgba(255,59,107,.32); background: rgba(255,59,107,.08); color: #ff6b8d; }
 .goal-value { display: grid; gap: 7px; margin: 14px 0 0; }
 .goal-value > label { margin: 0; color: var(--muted); font-size: 9px; font-weight: 700; }
 .goal-value-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
