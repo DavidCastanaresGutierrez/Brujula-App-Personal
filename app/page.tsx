@@ -5,6 +5,16 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
+import {
+  calculateDailyScore,
+  calculateWeeklyGoalBonus,
+  daysForMonthWeek,
+  goalPeriodDetails,
+  isoDate,
+  isWeekday,
+  toggleCompletionForDay,
+  weekdaysInMonth,
+} from "../lib/domain/tracking";
 
 type Habit = {
   id: number;
@@ -33,7 +43,7 @@ type WeeklyHabit = {
 
 type HabitCategory = string;
 type Category = { id: HabitCategory; label: string; icon: string; color: string };
-type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
+type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
 type BookEntry = { id: number; title: string; format: BookFormat; completedAt: string };
@@ -236,20 +246,6 @@ function mergeStates(serverState: TrackerState, localState: TrackerState): Requi
   };
 }
 
-function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  if (period === "daily") return { key: isoDate(y, m, now.getDate()), due: isoDate(y, m, now.getDate()) };
-  if (period === "weekly") {
-    const day = now.getDay() || 7;
-    const monday = new Date(y, m, now.getDate() - day + 1);
-    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-    return { key: isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate()), due: isoDate(sunday.getFullYear(), sunday.getMonth(), sunday.getDate()) };
-  }
-  if (period === "monthly") return { key: `${y}-${String(m + 1).padStart(2, "0")}`, due: isoDate(y, m, new Date(y, m + 1, 0).getDate()) };
-  return { key: String(y), due: `${y}-12-31` };
-}
-
 function linkedGoalProgress(goal: Goal, habits: Array<Habit | WeeklyHabit>) {
   const linkedIds = [...new Set([...(goal.linkedHabitIds ?? []), ...(goal.linkedHabitId ? [goal.linkedHabitId] : [])])];
   if (!linkedIds.length) return goal.currentValue;
@@ -269,36 +265,6 @@ function linkedGoalProgress(goal: Goal, habits: Array<Habit | WeeklyHabit>) {
     });
   });
   return Math.min(count, goal.targetValue);
-}
-
-function isoDate(year: number, monthIndex: number, day: number) {
-  return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
-}
-
-function isWeekday(year: number, monthIndex: number, day: number) {
-  const weekday = new Date(year, monthIndex, day).getDay();
-  return weekday >= 1 && weekday <= 5;
-}
-
-function weekdaysInMonth(year: number, monthIndex: number, throughDay?: number) {
-  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
-  const limit = Math.min(throughDay ?? monthDays, monthDays);
-  let count = 0;
-  for (let day = 1; day <= limit; day += 1) {
-    if (isWeekday(year, monthIndex, day)) count += 1;
-  }
-  return count;
-}
-
-function weekOfMonth(day: number) {
-  return Math.floor((day - 1) / 7) + 1;
-}
-
-function daysForMonthWeek(year: number, monthIndex: number, week: number) {
-  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
-  const start = (week - 1) * 7 + 1;
-  const end = Math.min(start + 6, monthDays);
-  return start > monthDays ? [] : Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
 function streakContaining(history: Record<string, number[]> | undefined, target: string) {
@@ -575,13 +541,15 @@ export default function Home() {
   const [deletingCategoryId, setDeletingCategoryId] = useState<HabitCategory | null>(null);
   const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
   const [hydrated, setHydrated] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline">("loading");
+  const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline" | "conflict">("loading");
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baselineRef = useRef<TrackerState | null>(null);
+  const revisionRef = useRef(0);
+  const conflictRef = useRef(false);
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -597,6 +565,8 @@ export default function Home() {
       if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setHydrated(false);
       setSyncStatus("loading");
+      revisionRef.current = 0;
+      conflictRef.current = false;
       setSession(nextSession);
       setAuthReady(true);
     });
@@ -612,6 +582,7 @@ export default function Home() {
     const accessToken = session.access_token;
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+    const revisionKey = `brujula-revision-v1:${session.user.id}`;
     let cancelled = false;
     const localSaved = localStorage.getItem(storageKey);
     let localState: TrackerState | null = null;
@@ -638,7 +609,7 @@ export default function Home() {
           },
         });
         if (!response.ok) throw new Error("No se pudo cargar la base de datos");
-        const payload = await response.json() as { state: TrackerState | null };
+        const payload = await response.json() as { state: TrackerState | null; revision: number };
         const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
         const state = payload.state
           ? (hasPendingLocalChanges && localState ? mergeStates(payload.state, localState) : payload.state)
@@ -654,7 +625,9 @@ export default function Home() {
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
         baselineRef.current = payload.state ? normalizeState(payload.state) : null;
+        revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
+        localStorage.setItem(revisionKey, String(payload.revision));
         setSyncStatus("synced");
       } catch {
         if (!cancelled && localState) {
@@ -679,6 +652,7 @@ export default function Home() {
     if (!hydrated || !session) return;
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+    const revisionKey = `brujula-revision-v1:${session.user.id}`;
     const state = { daily, weekly, categories: habitCategories, motivations, goals };
     localStorage.setItem(storageKey, JSON.stringify(state));
     if (statesEqual(state, baselineRef.current)) return;
@@ -698,14 +672,22 @@ export default function Home() {
             "content-type": "application/json",
             authorization: `Bearer ${data.session.access_token}`,
           },
-          body: JSON.stringify({ base: baselineRef.current, state: snapshot }),
+          body: JSON.stringify({ base: baselineRef.current, state: snapshot, expectedRevision: revisionRef.current }),
         });
         if (!response.ok) {
-          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          const payload = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+          if (response.status === 409 && payload?.code === "STATE_CONFLICT") {
+            conflictRef.current = true;
+            setSyncStatus("conflict");
+            return;
+          }
           throw new Error(payload?.error ?? "No se pudo guardar");
         }
+        const payload = await response.json() as { revision: number };
         baselineRef.current = snapshot;
+        revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(snapshot));
+        localStorage.setItem(revisionKey, String(payload.revision));
         setSyncStatus("synced");
       } catch {
         setSyncStatus("offline");
@@ -740,9 +722,10 @@ export default function Home() {
     let pulling = false;
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+    const revisionKey = `brujula-revision-v1:${session.user.id}`;
 
     const pullLatest = async () => {
-      if (pulling || syncInFlight.current || !navigator.onLine) return;
+      if (pulling || syncInFlight.current || conflictRef.current || !navigator.onLine) return;
       pulling = true;
       try {
         const supabase = getSupabaseBrowserClient();
@@ -756,14 +739,16 @@ export default function Home() {
           },
         });
         if (!response.ok) return;
-        const payload = await response.json() as { state: TrackerState | null };
+        const payload = await response.json() as { state: TrackerState | null; revision: number };
         if (cancelled || !payload.state) return;
         const serverState = normalizeState(payload.state);
         const localState = stateRef.current;
         const hasPendingLocalChanges = !statesEqual(localState, baselineRef.current);
         const nextState = hasPendingLocalChanges ? mergeStates(serverState, localState) : serverState;
         baselineRef.current = serverState;
+        revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(serverState));
+        localStorage.setItem(revisionKey, String(payload.revision));
         localStorage.setItem(storageKey, JSON.stringify(nextState));
         setDaily(nextState.daily);
         setWeekly(nextState.weekly);
@@ -849,28 +834,7 @@ export default function Home() {
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const dateParts = (value: Date) => ({
-    year: value.getFullYear(), month: value.getMonth(), day: value.getDate(),
-    monthKey: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`,
-  });
-  const dailyScoreForDate = (value: Date) => {
-    const parts = dateParts(value);
-    const scheduled = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(parts.year, parts.month, parts.day));
-    const completed = scheduled.filter((habit) => (habit.history?.[parts.monthKey] ?? []).includes(parts.day)).length;
-    const baseScore = scheduled.length ? completed / scheduled.length * 10 : 0;
-    const week = weekOfMonth(parts.day);
-    const weekDays = daysForMonthWeek(parts.year, parts.month, week);
-    const totalWeeklyTarget = activeWeekly.reduce((sum, habit) => sum + Math.max(1, habit.goal), 0);
-    const eligibleWeeklyDoneToday = activeWeekly.reduce((sum, habit) => {
-      const history = habit.history?.[parts.monthKey] ?? [];
-      if (!history.includes(parts.day)) return sum;
-      const checksThroughToday = history.filter((day) => weekDays.includes(day) && day <= parts.day).length;
-      return sum + (checksThroughToday <= habit.goal ? 1 : 0);
-    }, 0);
-    const contribution = totalWeeklyTarget ? Math.min(1, eligibleWeeklyDoneToday / totalWeeklyTarget) : 0;
-    const bonus = (10 - baseScore) * .2 * contribution;
-    return { baseScore, bonus, finalScore: Math.min(10, baseScore + bonus), completed, scheduled: scheduled.length, eligibleWeeklyDoneToday };
-  };
+  const dailyScoreForDate = (value: Date) => calculateDailyScore(value, activeDaily, activeWeekly);
   const referenceDay = isCurrentMonth ? today.getDate() : days;
   const referenceDate = new Date(year, month, referenceDay);
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
@@ -896,9 +860,9 @@ export default function Home() {
   const weekDates = Array.from({ length: Math.max(0, evaluatedWeekEnd - weekStart + 1) }, (_, index) => new Date(year, month, weekStart + index));
   const adjustedWeekBaseScore = weekDates.length ? weekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / weekDates.length : 0;
   const currentWeeklyGoals = goals.filter((goal) => goal.period === "weekly" && goal.periodKey === goalPeriodDetails("weekly", referenceDate).key && goal.status !== "discarded");
-  const allWeeklyGoalsCompleted = currentWeeklyGoals.length > 0 && currentWeeklyGoals.every((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue);
-  const weeklyGoalBonus = allWeeklyGoalsCompleted ? (10 - adjustedWeekBaseScore) * .1 : 0;
-  const weekScore = Math.min(10, adjustedWeekBaseScore + weeklyGoalBonus);
+  const weeklyGoalResult = calculateWeeklyGoalBonus(adjustedWeekBaseScore, currentWeeklyGoals);
+  const weeklyGoalBonus = weeklyGoalResult.bonus;
+  const weekScore = weeklyGoalResult.finalScore;
   const currentDayBreakdown = dailyScoreForDate(referenceDate);
   const dayScore = isPastMonth ? scoreFromPercent(dayProgress) : currentDayBreakdown.finalScore;
   const dayScoreTitle = isPastMonth ? "Nota media diaria" : "Nota del día";
@@ -992,7 +956,7 @@ export default function Home() {
       if (habit.id !== id) return habit;
       const current = checksFor(habit);
       const isRemoving = current.includes(day);
-      const next = isRemoving ? current.filter((d) => d !== day) : [...current, day];
+      const next = toggleCompletionForDay(current, day);
       const history = { ...(habit.history ?? {}), [monthKey]: next };
       if (!isRemoving) {
         const streak = streakContaining(history, isoDate(year, month, day));
@@ -1015,21 +979,17 @@ export default function Home() {
     setDaily((items) => items.map((item) => {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
-      const next = current.includes(currentDay) ? current.filter((day) => day !== currentDay) : [...current, currentDay];
+      const next = toggleCompletionForDay(current, currentDay);
       return { ...item, history: { ...(item.history ?? {}), [key]: next } };
     }));
   }
 
   function toggleCurrentWeekHabit(id: number) {
     const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-    const currentWeek = weekOfMonth(today.getDate());
     setWeekly((items) => items.map((item) => {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
-      const weekDays = daysForMonthWeek(today.getFullYear(), today.getMonth(), currentWeek);
-      const next = current.includes(today.getDate())
-        ? current.filter((day) => day !== today.getDate())
-        : [...current, today.getDate()].sort((a, b) => a - b);
+      const next = toggleCompletionForDay(current, today.getDate());
       return { ...item, history: { ...(item.history ?? {}), [key]: next } };
     }));
   }
@@ -1458,18 +1418,17 @@ export default function Home() {
       const weeklyKey = `weekly:${isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate())}`;
       if (!delivered.has(weeklyKey)) {
         const closedWeekDates = Array.from({ length: 7 }, (_, index) => { const item = new Date(monday); item.setDate(monday.getDate() + index); return item; });
-        const baseScore = closedWeekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / 7;
+        const baseScore = closedWeekDates.reduce((sum, item) => sum + calculateDailyScore(item, daily, weekly).finalScore, 0) / 7;
         const period = goalPeriodDetails("weekly", monday);
         const weekGoals = goals.filter((goal) => goal.period === "weekly" && goal.periodKey === period.key && goal.status !== "discarded");
         const completed = weekGoals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
-        const earned = weekGoals.length > 0 && completed === weekGoals.length;
-        const bonus = earned ? (10 - baseScore) * .1 : 0;
-        nextNotice = { key: weeklyKey, kind: "weekly", eyebrow: "CIERRE DE SEMANA", title: earned ? "Semana cerrada con bonus" : "Tu resumen semanal", detail: weekGoals.length ? `${completed} de ${weekGoals.length} objetivos semanales completados${earned ? ". Bonus de cierre conseguido." : "."}` : "No había objetivos semanales definidos para esta semana.", baseScore, bonus, finalScore: Math.min(10, baseScore + bonus) };
+        const result = calculateWeeklyGoalBonus(baseScore, weekGoals);
+        nextNotice = { key: weeklyKey, kind: "weekly", eyebrow: "CIERRE DE SEMANA", title: result.earned ? "Semana cerrada con bonus" : "Tu resumen semanal", detail: weekGoals.length ? `${completed} de ${weekGoals.length} objetivos semanales completados${result.earned ? ". Bonus de cierre conseguido." : "."}` : "No había objetivos semanales definidos para esta semana.", baseScore, bonus: result.bonus, finalScore: result.finalScore };
       }
     }
 
     if (!nextNotice && !delivered.has(yesterdayKey)) {
-      const result = dailyScoreForDate(yesterday);
+      const result = calculateDailyScore(yesterday, daily, weekly);
       nextNotice = { key: yesterdayKey, kind: "daily", eyebrow: "CIERRE DEL DÍA", title: result.bonus > 0 ? "Tu constancia sumó un bonus" : "Así terminó tu día", detail: `${result.completed} de ${result.scheduled} hábitos diarios · ${result.eligibleWeeklyDoneToday} aportaciones semanales con bonus.`, baseScore: result.baseScore, bonus: result.bonus, finalScore: result.finalScore };
     }
     if (nextNotice) setClosureNotice(nextNotice);
@@ -1811,6 +1770,7 @@ export default function Home() {
             {syncStatus === "saving" && " Guardando cambios…"}
             {syncStatus === "synced" && " Sincronizado en todos tus dispositivos."}
             {syncStatus === "offline" && " Sin conexión: los cambios quedan guardados temporalmente en este dispositivo."}
+            {syncStatus === "conflict" && " Hay cambios más recientes en otro dispositivo. Conservamos tus cambios locales; recarga para combinarlos antes de guardar."}
           </p>
         </section>
         </>}
