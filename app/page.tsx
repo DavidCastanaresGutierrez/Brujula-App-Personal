@@ -203,7 +203,10 @@ function mergeStates(serverState: TrackerState, localState: TrackerState): Requi
       Object.keys(history).forEach((key) => {
         history[key] = [...new Set([...(habit.history?.[key] ?? []), ...(existing.history?.[key] ?? [])])].sort((a, b) => a - b);
       });
-      merged.set(habit.id, { ...habit, ...existing, history });
+      // This merge only runs while the device has unsaved changes. Keep the
+      // server history, but never let an older server snapshot overwrite the
+      // fields the user has just edited (for example a weekly goal of 2).
+      merged.set(habit.id, { ...existing, ...habit, history });
     });
     return [...merged.values()];
   };
