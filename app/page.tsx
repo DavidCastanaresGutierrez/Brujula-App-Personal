@@ -61,6 +61,17 @@ type TrackerState = {
   goals?: Goal[];
 };
 
+type ClosureNotice = {
+  key: string;
+  kind: "daily" | "weekly";
+  eyebrow: string;
+  title: string;
+  detail: string;
+  baseScore: number;
+  bonus: number;
+  finalScore: number;
+};
+
 const palette = [
   "#ff0000", "#f97316", "#f59e0b", "#fbbf24",
   "#84cc16", "#39c6a4", "#14b8a6", "#22d3ee", "#50b8e7", "#3b82f6",
@@ -506,6 +517,7 @@ export default function Home() {
   const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
   const [motivations, setMotivations] = useState<string[]>(dailyMotivations);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [goalTitle, setGoalTitle] = useState("");
   const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("monthly");
@@ -837,6 +849,28 @@ export default function Home() {
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const dateParts = (value: Date) => ({
+    year: value.getFullYear(), month: value.getMonth(), day: value.getDate(),
+    monthKey: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`,
+  });
+  const dailyScoreForDate = (value: Date) => {
+    const parts = dateParts(value);
+    const scheduled = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(parts.year, parts.month, parts.day));
+    const completed = scheduled.filter((habit) => (habit.history?.[parts.monthKey] ?? []).includes(parts.day)).length;
+    const baseScore = scheduled.length ? completed / scheduled.length * 10 : 0;
+    const week = weekOfMonth(parts.day);
+    const weekDays = daysForMonthWeek(parts.year, parts.month, week);
+    const totalWeeklyTarget = activeWeekly.reduce((sum, habit) => sum + Math.max(1, habit.goal), 0);
+    const eligibleWeeklyDoneToday = activeWeekly.reduce((sum, habit) => {
+      const history = habit.history?.[parts.monthKey] ?? [];
+      if (!history.includes(parts.day)) return sum;
+      const checksThroughToday = history.filter((day) => weekDays.includes(day) && day <= parts.day).length;
+      return sum + (checksThroughToday <= habit.goal ? 1 : 0);
+    }, 0);
+    const contribution = totalWeeklyTarget ? Math.min(1, eligibleWeeklyDoneToday / totalWeeklyTarget) : 0;
+    const bonus = (10 - baseScore) * .2 * contribution;
+    return { baseScore, bonus, finalScore: Math.min(10, baseScore + bonus), completed, scheduled: scheduled.length, eligibleWeeklyDoneToday };
+  };
   const referenceDay = isCurrentMonth ? today.getDate() : days;
   const referenceDate = new Date(year, month, referenceDay);
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
@@ -859,15 +893,18 @@ export default function Home() {
     ? pastMonthDailyValues.reduce((sum, progress) => sum + progress, 0) / pastMonthDailyValues.length
     : 0;
   const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
-  const weekChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((day) => day >= weekStart && day <= evaluatedWeekEnd).length, 0);
-  let weekGoal = 0;
-  for (let day = weekStart; day <= evaluatedWeekEnd; day += 1) weekGoal += habitsScheduledForDay(day).length;
-  const weekScore = scoreFromPercent(weekGoal ? weekChecks / weekGoal * 100 : 0);
-  const dayScore = scoreFromPercent(dayProgress);
+  const weekDates = Array.from({ length: Math.max(0, evaluatedWeekEnd - weekStart + 1) }, (_, index) => new Date(year, month, weekStart + index));
+  const adjustedWeekBaseScore = weekDates.length ? weekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / weekDates.length : 0;
+  const currentWeeklyGoals = goals.filter((goal) => goal.period === "weekly" && goal.periodKey === goalPeriodDetails("weekly", referenceDate).key && goal.status !== "discarded");
+  const allWeeklyGoalsCompleted = currentWeeklyGoals.length > 0 && currentWeeklyGoals.every((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue);
+  const weeklyGoalBonus = allWeeklyGoalsCompleted ? (10 - adjustedWeekBaseScore) * .1 : 0;
+  const weekScore = Math.min(10, adjustedWeekBaseScore + weeklyGoalBonus);
+  const currentDayBreakdown = dailyScoreForDate(referenceDate);
+  const dayScore = isPastMonth ? scoreFromPercent(dayProgress) : currentDayBreakdown.finalScore;
   const dayScoreTitle = isPastMonth ? "Nota media diaria" : "Nota del día";
   const dayScoreDetail = isPastMonth
     ? `Media de ${pastMonthDailyValues.length} días con hábitos en ${monthNames[month].toLowerCase()}`
-    : `${dayChecks} de ${referenceDayHabits.length} hábitos completados`;
+    : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
   const monthScore = scoreFromPercent(globalProgress);
   const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
@@ -990,10 +1027,9 @@ export default function Home() {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
       const weekDays = daysForMonthWeek(today.getFullYear(), today.getMonth(), currentWeek);
-      const weekChecks = current.filter((day) => weekDays.includes(day));
       const next = current.includes(today.getDate())
         ? current.filter((day) => day !== today.getDate())
-        : weekChecks.length < item.goal ? [...current, today.getDate()].sort((a, b) => a - b) : current;
+        : [...current, today.getDate()].sort((a, b) => a - b);
       return { ...item, history: { ...(item.history ?? {}), [key]: next } };
     }));
   }
@@ -1005,7 +1041,7 @@ export default function Home() {
       const weekDays = daysForMonthWeek(year, month, week);
       const weekChecks = current.filter((day) => weekDays.includes(day)).sort((a, b) => a - b);
       let next = current;
-      if (direction === 1 && weekChecks.length < habit.goal) {
+      if (direction === 1 && weekChecks.length < weekDays.length) {
         const availableDay = weekDays.find((day) => !current.includes(day));
         if (availableDay) next = [...current, availableDay].sort((a, b) => a - b);
       }
@@ -1407,6 +1443,47 @@ export default function Home() {
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 6);
 
+  useEffect(() => {
+    if (!hydrated || !session || closureNotice) return;
+    const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
+    const delivered = new Set<string>(JSON.parse(localStorage.getItem(deliveredKey) ?? "[]") as string[]);
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yesterdayKey = `daily:${isoDate(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())}`;
+    let nextNotice: ClosureNotice | null = null;
+
+    if (now.getDay() === 1) {
+      const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const monday = new Date(sunday); monday.setDate(sunday.getDate() - 6);
+      const weeklyKey = `weekly:${isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate())}`;
+      if (!delivered.has(weeklyKey)) {
+        const closedWeekDates = Array.from({ length: 7 }, (_, index) => { const item = new Date(monday); item.setDate(monday.getDate() + index); return item; });
+        const baseScore = closedWeekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / 7;
+        const period = goalPeriodDetails("weekly", monday);
+        const weekGoals = goals.filter((goal) => goal.period === "weekly" && goal.periodKey === period.key && goal.status !== "discarded");
+        const completed = weekGoals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
+        const earned = weekGoals.length > 0 && completed === weekGoals.length;
+        const bonus = earned ? (10 - baseScore) * .1 : 0;
+        nextNotice = { key: weeklyKey, kind: "weekly", eyebrow: "CIERRE DE SEMANA", title: earned ? "Semana cerrada con bonus" : "Tu resumen semanal", detail: weekGoals.length ? `${completed} de ${weekGoals.length} objetivos semanales completados${earned ? ". Bonus de cierre conseguido." : "."}` : "No había objetivos semanales definidos para esta semana.", baseScore, bonus, finalScore: Math.min(10, baseScore + bonus) };
+      }
+    }
+
+    if (!nextNotice && !delivered.has(yesterdayKey)) {
+      const result = dailyScoreForDate(yesterday);
+      nextNotice = { key: yesterdayKey, kind: "daily", eyebrow: "CIERRE DEL DÍA", title: result.bonus > 0 ? "Tu constancia sumó un bonus" : "Así terminó tu día", detail: `${result.completed} de ${result.scheduled} hábitos diarios · ${result.eligibleWeeklyDoneToday} aportaciones semanales con bonus.`, baseScore: result.baseScore, bonus: result.bonus, finalScore: result.finalScore };
+    }
+    if (nextNotice) setClosureNotice(nextNotice);
+  }, [closureNotice, daily, goals, hydrated, session, weekly]);
+
+  function dismissClosureNotice() {
+    if (!closureNotice || !session) return;
+    const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
+    const delivered = new Set<string>(JSON.parse(localStorage.getItem(deliveredKey) ?? "[]") as string[]);
+    delivered.add(closureNotice.key);
+    localStorage.setItem(deliveredKey, JSON.stringify([...delivered].slice(-120)));
+    setClosureNotice(null);
+  }
+
   function openView(view: MainView) {
     if (view === "goals") setGoalFilter("yearly");
     setMainView(view);
@@ -1421,6 +1498,12 @@ export default function Home() {
 
   return (
     <main>
+      {closureNotice && <aside className="closure-notice" role="status" aria-live="polite">
+        <div className="closure-notice-head"><div><p className="eyebrow">{closureNotice.eyebrow}</p><h2>{closureNotice.title}</h2></div><button onClick={dismissClosureNotice} aria-label="Cerrar resumen">×</button></div>
+        <p>{closureNotice.detail}</p>
+        <div className="closure-score"><span><small>Nota base</small><strong>{scoreLabel(closureNotice.baseScore)}</strong></span><b>+</b><span className="bonus"><small>Bonus</small><strong>{closureNotice.bonus > 0 ? `+${scoreLabel(closureNotice.bonus)}` : "—"}</strong></span><b>=</b><span className="final"><small>Nota final</small><strong>{scoreLabel(closureNotice.finalScore)}</strong></span></div>
+        <button className="closure-confirm" onClick={dismissClosureNotice}>Entendido</button>
+      </aside>}
       <header className="topbar">
         <Brand />
         <nav aria-label="Navegación principal">
@@ -1508,7 +1591,7 @@ export default function Home() {
           <article className="metric">
             <span>Nota semanal</span>
             <strong>{scoreLabel(weekScore)} <small>/ 10</small></strong>
-            <p>Del día {weekStart} al {evaluatedWeekEnd}</p>
+            <p>Del día {weekStart} al {evaluatedWeekEnd}{weeklyGoalBonus > 0 ? ` · +${scoreLabel(weeklyGoalBonus)} bonus` : ""}</p>
           </article>
           <article className="metric">
             <span>Nota del mes</span>
@@ -1714,7 +1797,7 @@ export default function Home() {
                 const progress = Math.min(100, Math.round(currentChecks.length / Math.max(1, monthlyTarget) * 100));
                 return <div className={`weekly-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "weekly" && reorderHabit("weekly", dragging.id, habit.id)}>
                   <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "weekly", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "weekly", habit })}>⋯</button></div></div>
-                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const count = currentChecks.filter((day) => weekDays.includes(day)).length; return <div className={`week-counter ${count >= habit.goal ? "checked" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{count}/{habit.goal}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={count >= habit.goal} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
+                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const count = currentChecks.filter((day) => weekDays.includes(day)).length; return <div className={`week-counter ${count >= habit.goal ? "checked" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{count}/{habit.goal}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={count >= weekDays.length} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
                   <div className="weekly-result"><strong>{progress}%</strong><span>{currentChecks.length}/{monthlyTarget}</span></div>
                 </div>;
                   })}
