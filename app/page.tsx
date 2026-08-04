@@ -228,12 +228,12 @@ function mergeStates(serverState: TrackerState, localState: TrackerState): Requi
 function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
   const y = now.getFullYear();
   const m = now.getMonth();
-  if (period === "daily") return { key: now.toISOString().slice(0, 10), due: now.toISOString().slice(0, 10) };
+  if (period === "daily") return { key: isoDate(y, m, now.getDate()), due: isoDate(y, m, now.getDate()) };
   if (period === "weekly") {
     const day = now.getDay() || 7;
     const monday = new Date(y, m, now.getDate() - day + 1);
     const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-    return { key: monday.toISOString().slice(0, 10), due: sunday.toISOString().slice(0, 10) };
+    return { key: isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate()), due: isoDate(sunday.getFullYear(), sunday.getMonth(), sunday.getDate()) };
   }
   if (period === "monthly") return { key: `${y}-${String(m + 1).padStart(2, "0")}`, due: isoDate(y, m, new Date(y, m + 1, 0).getDate()) };
   return { key: String(y), due: `${y}-12-31` };
@@ -1210,6 +1210,13 @@ export default function Home() {
     setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, archived: true } : goal));
   }
 
+  function moveWeeklyGoalToCurrentWeek(id: number) {
+    const period = goalPeriodDetails("weekly", today);
+    setGoals((items) => items.map((goal) => goal.id === id
+      ? { ...goal, periodKey: period.key, dueDate: period.due, currentValue: 0, status: "active" }
+      : goal));
+  }
+
   function reorderGoal(sourceId: number, targetId: number) {
     if (sourceId === targetId || goalCategoryFilter !== "all") return;
     setGoals((items) => {
@@ -1382,12 +1389,14 @@ export default function Home() {
       status: completed === milestones.length ? "completed" as const : "active" as const,
     };
   });
+  const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const currentWeekKey = goalPeriodDetails("weekly", today).key;
   const visibleGoals = resolvedGoals.filter((goal) => goal.period === goalFilter
     && goal.status !== "discarded"
     && !goal.archived
-    && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter));
+    && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter)
+    && (goal.period !== "weekly" || goal.periodKey === currentWeekKey || (goal.status === "active" && goal.dueDate < realTodayKey)));
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active" && !goal.archived);
-  const realTodayKey = today.toISOString().slice(0, 10);
   const todayMonthKey = realTodayKey.slice(0, 7);
   const currentWeekIndex = Math.floor((today.getDate() - 1) / 7) + 1;
   const todayHabits = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(today.getFullYear(), today.getMonth(), today.getDate()));
@@ -1468,9 +1477,8 @@ export default function Home() {
               {!!activeWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{activeWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
                 const weekDays = daysForMonthWeek(today.getFullYear(), today.getMonth(), currentWeekIndex);
                 const count = (habit.history?.[todayMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
-                const completed = count >= habit.goal;
                 const doneToday = (habit.history?.[todayMonthKey] ?? []).includes(today.getDate());
-                return <button key={habit.id} className={`today-item ${completed ? "done" : ""}`} onClick={() => toggleCurrentWeekHabit(habit.id)} aria-pressed={doneToday}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{habit.goal} esta semana{doneToday ? " · hecho hoy" : ""}</small></span><b>{completed ? "✓" : "+"}</b></button>;
+                return <button key={habit.id} className={`today-item ${doneToday ? "done" : ""}`} onClick={() => toggleCurrentWeekHabit(habit.id)} aria-pressed={doneToday}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{habit.goal} esta semana{doneToday ? " · hecho hoy" : ""}</small></span><b>{doneToday ? "✓" : "+"}</b></button>;
               })}</div>)}</div></>}
             </article>
             <article className="today-column-card">
@@ -1606,15 +1614,18 @@ export default function Home() {
             const linkedMilestones = goal.period === "yearly" ? resolvedGoals.filter((item) => (item.period === "weekly" || item.period === "monthly") && item.parentAnnualGoalId === goal.id && item.status !== "discarded") : [];
             const visibleMilestones = linkedMilestones.filter((item) => !item.archived);
             const archivedMilestones = linkedMilestones.length - visibleMilestones.length;
+            const isOverdueWeekly = goal.period === "weekly" && goal.status === "active" && goal.dueDate < realTodayKey;
             return <article data-goal-id={goal.id} className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
               <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button type="button" className="goal-drag-handle" disabled={goalCategoryFilter !== "all"} onPointerDown={(event) => startGoalPointerDrag(event, goal.id)} onPointerMove={moveGoalPointerDrag} onPointerUp={(event) => finishGoalPointerDrag(event, goal.id)} onPointerCancel={() => setDraggingGoalId(null)} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button>{goal.status === "completed" && <button className="goal-archive" onClick={() => archiveGoal(goal.id)} aria-label={`Archivar ${goal.title}`} title="Archivar objetivo completado">▣</button>}<button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
               <h3>{goal.title}</h3>
+              {isOverdueWeekly && <small className="goal-overdue-label">Pendiente de la semana anterior</small>}
               {parentAnnualGoal && <small className="goal-parent-link">Hito de: {parentAnnualGoal.title}</small>}
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {linkedMilestones.length ? <div className="goal-milestones"><strong>{linkedMilestones.filter((item) => item.status === "completed").length} de {linkedMilestones.length} hitos completados</strong>{visibleMilestones.map((item) => <span key={item.id} className={item.status === "completed" ? "done" : ""}>{item.status === "completed" ? "✓" : "○"} {item.title}</span>)}{archivedMilestones > 0 && <small>{archivedMilestones} {archivedMilestones === 1 ? "hito archivado incluido" : "hitos archivados incluidos"}</small>}</div>
                 : goal.template === "reading" ? <><button className="goal-complete" onClick={() => setBookGoal(goal)}>+ Registrar libro terminado</button><div className="goal-entry-list">{(goal.books ?? []).slice(-3).reverse().map((book) => <div key={book.id}><span>{book.title}</span><small>{{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small><button onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></div>)}</div><small className="goal-consistency">Constancia de lectura: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
                 : goal.template === "fitness" ? <><small className="goal-consistency">{(goal.linkedHabitIds ?? []).length ? `${(goal.linkedHabitIds ?? []).length} hábitos · cada uno pondera ${(100 / (goal.linkedHabitIds ?? []).length).toFixed(2)}% al día` : "Sin hábitos vinculados"}</small><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
+                : isOverdueWeekly ? <div className="goal-weekly-actions"><button onClick={() => moveWeeklyGoalToCurrentWeek(goal.id)}>Mover a esta semana</button><button className="danger" onClick={() => setDeletingGoal(goal)}>Eliminar</button></div>
                 : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
                 : <form className="goal-value" onSubmit={(event) => { event.preventDefault(); addGoalProgress(goal); }}>
                     <label htmlFor={`goal-progress-${goal.id}`}>Añadir progreso</label>
