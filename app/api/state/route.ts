@@ -86,14 +86,17 @@ export async function GET(request: Request) {
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) return Response.json({ error: "Sesión no válida" }, { status: 401 });
 
-    const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, versionResult] = await Promise.all([
-      supabase.from("categories").select("id,label,icon,color,position").order("position"),
-      supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
-      supabase.from("habit_completions").select("habit_id,period_key,value"),
-      supabase.from("motivational_quotes").select("text,position").order("position"),
-      supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
-      supabase.from("tracker_state_versions").select("revision").maybeSingle(),
-    ]);
+    let snapshot: Awaited<ReturnType<typeof readStateSnapshot>> | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const candidate = await readStateSnapshot(supabase);
+      if (candidate.revisionBefore === candidate.revisionAfter) {
+        snapshot = candidate;
+        break;
+      }
+    }
+    if (!snapshot) throw new Error("El estado cambió durante la lectura");
+
+    const { categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, versionResult } = snapshot;
 
     // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
     // cargando aunque el despliegue llegue antes que la migración de Supabase.
@@ -162,6 +165,33 @@ export async function GET(request: Request) {
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const versionBeforeResult = await supabase.from("tracker_state_versions").select("revision").maybeSingle();
+  if (versionBeforeResult.error) throw versionBeforeResult.error;
+
+  const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult] = await Promise.all([
+    supabase.from("categories").select("id,label,icon,color,position").order("position"),
+    supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
+    supabase.from("habit_completions").select("habit_id,period_key,value"),
+    supabase.from("motivational_quotes").select("text,position").order("position"),
+    supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
+  ]);
+
+  const versionResult = await supabase.from("tracker_state_versions").select("revision").maybeSingle();
+  if (versionResult.error) throw versionResult.error;
+
+  return {
+    categoriesResult,
+    habitsResult,
+    completionsResult,
+    motivationsResult,
+    goalsResult,
+    versionResult,
+    revisionBefore: Number(versionBeforeResult.data?.revision ?? 0),
+    revisionAfter: Number(versionResult.data?.revision ?? 0),
+  };
 }
 
 export async function PUT(request: Request) {
