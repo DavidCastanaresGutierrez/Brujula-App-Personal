@@ -1,5 +1,13 @@
 export type RemoteRevisionAction = "ignore" | "apply" | "conflict";
 
+export function shouldRetryPendingSave(
+  pendingSave: boolean,
+  hasUnsavedChanges: boolean,
+  hasConflict: boolean,
+) {
+  return pendingSave && hasUnsavedChanges && !hasConflict;
+}
+
 export function decideRemoteRevision(
   currentRevision: number,
   remoteRevision: number,

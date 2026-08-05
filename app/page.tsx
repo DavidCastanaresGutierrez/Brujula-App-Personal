@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
-import { decideRemoteRevision } from "../lib/domain/sync";
+import { decideRemoteRevision, shouldRetryPendingSave } from "../lib/domain/sync";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import {
   calculateProportionalGoalBonus,
@@ -509,6 +509,7 @@ export default function Home() {
   const pullLatestRef = useRef<(() => Promise<void>) | null>(null);
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
+  const pendingLocalSaveRef = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
@@ -662,7 +663,10 @@ export default function Home() {
     if (conflictRef.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      if (syncInFlight.current) return;
+      if (syncInFlight.current) {
+        pendingLocalSaveRef.current = true;
+        return;
+      }
       syncInFlight.current = true;
       setSyncStatus("saving");
       try {
@@ -697,6 +701,17 @@ export default function Home() {
         setSyncStatus("offline");
       } finally {
         syncInFlight.current = false;
+        const shouldRetry = shouldRetryPendingSave(
+          pendingLocalSaveRef.current,
+          !statesEqual(stateRef.current, baselineRef.current),
+          conflictRef.current,
+        );
+        pendingLocalSaveRef.current = false;
+        if (shouldRetry) {
+          // Re-enter the normal debounced save path with the latest state. This
+          // prevents edits made during a slow request from remaining only local.
+          setDaily((items) => [...items]);
+        }
         if (pendingRemoteRevisionRef.current !== null) {
           pendingRemoteRevisionRef.current = null;
           void pullLatestRef.current?.();
