@@ -1,5 +1,9 @@
 export type RemoteRevisionAction = "ignore" | "apply" | "conflict";
 
+export function belongsToActiveUser(expectedUserId: string, activeUserId?: string | null) {
+  return Boolean(expectedUserId && activeUserId === expectedUserId);
+}
+
 export function shouldRetryPendingSave(
   pendingSave: boolean,
   hasUnsavedChanges: boolean,

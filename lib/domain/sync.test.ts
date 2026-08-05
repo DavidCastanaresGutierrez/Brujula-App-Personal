@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { decideRemoteRevision, shouldRetryPendingSave } from "./sync";
+import { belongsToActiveUser, decideRemoteRevision, shouldRetryPendingSave } from "./sync";
+
+describe("session isolation", () => {
+  it("allows a sync response only for the user that started it", () => {
+    expect(belongsToActiveUser("user-a", "user-a")).toBe(true);
+  });
+
+  it("rejects signed-out and changed-user sessions", () => {
+    expect(belongsToActiveUser("user-a", null)).toBe(false);
+    expect(belongsToActiveUser("user-a", "user-b")).toBe(false);
+  });
+});
 
 describe("decideRemoteRevision", () => {
   it("applies a newer remote revision when the device is clean", () => {

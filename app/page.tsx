@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
-import { decideRemoteRevision, shouldRetryPendingSave } from "../lib/domain/sync";
+import { belongsToActiveUser, decideRemoteRevision, shouldRetryPendingSave } from "../lib/domain/sync";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import {
   calculateProportionalGoalBonus,
@@ -510,6 +510,8 @@ export default function Home() {
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const pendingLocalSaveRef = useRef(false);
+  const activeUserIdRef = useRef<string | null>(null);
+  const syncGenerationRef = useRef(0);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
@@ -551,11 +553,17 @@ export default function Home() {
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     supabase.auth.getSession().then(({ data }) => {
+      activeUserIdRef.current = data.session?.user.id ?? null;
       setSession(data.session);
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      activeUserIdRef.current = nextSession?.user.id ?? null;
+      syncGenerationRef.current += 1;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      syncInFlight.current = false;
+      pendingLocalSaveRef.current = false;
       setHydrated(false);
       setSyncStatus("loading");
       revisionRef.current = 0;
@@ -654,6 +662,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated || !session) return;
+    const savingUserId = session.user.id;
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
@@ -668,11 +677,13 @@ export default function Home() {
         return;
       }
       syncInFlight.current = true;
+      const syncGeneration = syncGenerationRef.current;
       setSyncStatus("saving");
       try {
         const supabase = getSupabaseBrowserClient();
         const { data, error: sessionError } = await supabase.auth.getSession();
         if (sessionError || !data.session) throw sessionError ?? new Error("La sesión ha caducado");
+        if (!belongsToActiveUser(savingUserId, data.session.user.id) || !belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         const snapshot = stateRef.current;
         const response = await fetch("/api/state", {
           method: "PUT",
@@ -692,15 +703,18 @@ export default function Home() {
           throw new Error(payload?.error ?? "No se pudo guardar");
         }
         const payload = await response.json() as { revision: number };
+        if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         baselineRef.current = snapshot;
         revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(snapshot));
         localStorage.setItem(revisionKey, String(payload.revision));
         setSyncStatus("synced");
       } catch {
-        setSyncStatus("offline");
+        if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) setSyncStatus("offline");
       } finally {
+        if (syncGeneration !== syncGenerationRef.current) return;
         syncInFlight.current = false;
+        if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         const shouldRetry = shouldRetryPendingSave(
           pendingLocalSaveRef.current,
           !statesEqual(stateRef.current, baselineRef.current),
