@@ -1249,6 +1249,10 @@ export default function Home() {
     setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, archived: true } : goal));
   }
 
+  function restoreGoal(id: number) {
+    setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, archived: false } : goal));
+  }
+
   function moveWeeklyGoalToCurrentWeek(id: number) {
     const period = goalPeriodDetails("weekly", today);
     setGoals((items) => items.map((goal) => goal.id === id
@@ -1408,6 +1412,8 @@ export default function Home() {
       status: completed === milestones.length ? "completed" as const : "active" as const,
     };
   });
+  const archivedGoals = resolvedGoals.filter((goal) => goal.archived && goal.status !== "discarded");
+  const archivedCount = archivedHabits.length + archivedGoals.length;
   const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
   const visibleGoals = resolvedGoals.filter((goal) => goal.period === goalFilter
     && goal.status !== "discarded"
@@ -1685,6 +1691,9 @@ export default function Home() {
           <div className="goals-head">
             <div><p className="eyebrow">RESULTADOS CON RUMBO</p><h2>Tus objetivos</h2><p>Define el resultado; tus hábitos sostienen el camino.</p></div>
             <div className="goal-head-actions">
+              <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
+                Archivados{archivedCount > 0 && <span>{archivedCount}</span>}
+              </button>
               <button className="template-button" onClick={() => setTemplateModal("fitness")}><span aria-hidden="true">♥</span>Forma física</button>
               <button className="template-button" onClick={() => setTemplateModal("reading")}><span aria-hidden="true">▥</span>Lectura anual</button>
               <button className="add-button" onClick={() => { setEditingGoalId(null); setGoalTitle(""); setGoalPeriod("monthly"); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitIds([]); setGoalParentAnnualId(""); setGoalModalOpen(true); }}>+ Añadir objetivo</button>
@@ -1745,7 +1754,7 @@ export default function Home() {
               {canManagePhrases && <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>}
               <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
               <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
-                Archivados{archivedHabits.length > 0 && <span>{archivedHabits.length}</span>}
+                Archivados{archivedCount > 0 && <span>{archivedCount}</span>}
               </button>
               <div className="tabs">
                 <button className={activeTab === "daily" ? "active" : ""} onClick={() => setActiveTab("daily")}>Diarios</button>
@@ -1964,25 +1973,47 @@ export default function Home() {
         <div className="modal archived-modal" role="dialog" aria-modal="true" aria-labelledby="archived-title" onMouseDown={(e) => e.stopPropagation()}>
           <button className="close" onClick={() => setArchivedManagerOpen(false)} aria-label="Cerrar">×</button>
           <p className="eyebrow">HISTORIAL CONSERVADO</p>
-          <h2 id="archived-title">Hábitos archivados</h2>
-          {archivedHabits.length === 0 ? (
+          <h2 id="archived-title">Elementos archivados</h2>
+          {archivedCount === 0 ? (
             <div className="archived-empty">
-              <strong>No tienes hábitos archivados</strong>
-              <p>Cuando archives uno, podrás encontrarlo y restaurarlo desde aquí sin perder sus registros.</p>
+              <strong>No tienes elementos archivados</strong>
+              <p>Cuando archives un hábito u objetivo, podrás encontrarlo y restaurarlo desde aquí sin perder su historial.</p>
             </div>
           ) : (
-            <div className="archived-list">
-              {archivedHabits.map(({ type, habit }) => {
-                const category = habitCategories.find((item) => item.id === (habit.category ?? inferCategory(habit.name)));
-                return <div className="archived-row" key={`${type}-${habit.id}`}>
-                  <i style={{ background: habit.color }} />
-                  <div>
-                    <strong>{habit.name}</strong>
-                    <small>{type === "daily" ? "Diario" : "Semanal"}{category ? ` · ${category.label}` : ""}</small>
-                  </div>
-                  <button className="restore-button" onClick={() => restoreHabit(type, habit.id)}>Restaurar</button>
-                </div>;
-              })}
+            <div className="archived-sections">
+              <section className="archived-section">
+                <h3>Objetivos <span>{archivedGoals.length}</span></h3>
+                {archivedGoals.length ? <div className="archived-list">
+                  {archivedGoals.map((goal) => {
+                    const category = habitCategories.find((item) => item.id === goal.category);
+                    const periodLabel = { daily: "Diario", weekly: "Semanal", monthly: "Mensual", yearly: "Anual" }[goal.period];
+                    return <div className="archived-row" key={`goal-${goal.id}`}>
+                      <i style={{ background: category?.color ?? "#39c6a4" }} />
+                      <div>
+                        <strong>{goal.title}</strong>
+                        <small>{periodLabel}{category ? ` · ${category.label}` : ""} · {goal.status === "completed" ? "Completado" : "En curso"}</small>
+                      </div>
+                      <button className="restore-button" onClick={() => restoreGoal(goal.id)}>Restaurar</button>
+                    </div>;
+                  })}
+                </div> : <p className="archived-section-empty">No hay objetivos archivados.</p>}
+              </section>
+              <section className="archived-section">
+                <h3>Hábitos <span>{archivedHabits.length}</span></h3>
+                {archivedHabits.length ? <div className="archived-list">
+                  {archivedHabits.map(({ type, habit }) => {
+                    const category = habitCategories.find((item) => item.id === (habit.category ?? inferCategory(habit.name)));
+                    return <div className="archived-row" key={`${type}-${habit.id}`}>
+                      <i style={{ background: habit.color }} />
+                      <div>
+                        <strong>{habit.name}</strong>
+                        <small>{type === "daily" ? "Diario" : "Semanal"}{category ? ` · ${category.label}` : ""}</small>
+                      </div>
+                      <button className="restore-button" onClick={() => restoreHabit(type, habit.id)}>Restaurar</button>
+                    </div>;
+                  })}
+                </div> : <p className="archived-section-empty">No hay hábitos archivados.</p>}
+              </section>
             </div>
           )}
         </div>
