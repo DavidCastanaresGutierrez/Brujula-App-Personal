@@ -6,6 +6,7 @@ import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import { decideRemoteRevision } from "../lib/domain/sync";
+import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import {
   calculateProportionalGoalBonus,
   calculateWeightedHabitDays,
@@ -481,6 +482,9 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<HabitCategory>("health");
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [archivedManagerOpen, setArchivedManagerOpen] = useState(false);
+  const [backupManagerOpen, setBackupManagerOpen] = useState(false);
+  const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
+  const [backupMessage, setBackupMessage] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState<HabitCategory | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState(defaultCategories[0].color);
@@ -503,7 +507,42 @@ export default function Home() {
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
   const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
+
+  function exportBackup() {
+    const backup = createTrackerBackup({ daily, weekly, categories: habitCategories, motivations, goals });
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `brujula-copia-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function inspectBackup(file?: File) {
+    setBackupPreview(null);
+    if (!file) return;
+    if (file.size > MAX_BACKUP_BYTES) { setBackupMessage("La copia supera el límite de 10 MB."); return; }
+    const result = parseTrackerBackup(await file.text());
+    if (!result.success) { setBackupMessage(result.error); return; }
+    setBackupPreview(result.preview);
+    setBackupMessage("");
+  }
+
+  function restoreBackup() {
+    if (!backupPreview) return;
+    const restored = backupPreview.backup.state;
+    setDaily(restored.daily as Habit[]);
+    setWeekly(restored.weekly as WeeklyHabit[]);
+    setHabitCategories(restored.categories as Category[]);
+    setMotivations(restored.motivations?.length ? restored.motivations : dailyMotivations);
+    setGoals((restored.goals ?? []) as Goal[]);
+    setBackupPreview(null);
+    setBackupManagerOpen(false);
+    setBackupMessage("Copia restaurada. Los datos se sincronizarán automáticamente.");
+  }
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -1753,6 +1792,7 @@ export default function Home() {
             <div className="tracker-actions">
               {canManagePhrases && <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>}
               <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
+              <button className="reset-button blocks-button" onClick={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }}>Copia de datos</button>
               <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
                 Archivados{archivedCount > 0 && <span>{archivedCount}</span>}
               </button>
@@ -1969,6 +2009,17 @@ export default function Home() {
           </div>
         </div>
       </div>}
+      {backupManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setBackupManagerOpen(false)}><div className="modal backup-modal" role="dialog" aria-modal="true" aria-labelledby="backup-title" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="close" onClick={() => setBackupManagerOpen(false)} aria-label="Cerrar">×</button>
+        <p className="eyebrow">PORTABILIDAD Y RECUPERACIÓN</p><h2 id="backup-title">Copia de tus datos</h2>
+        <p>Descarga una copia completa de hábitos, objetivos, bloques, historial y frases. Guárdala en un lugar seguro.</p>
+        <button className="add-button full" type="button" onClick={exportBackup}>Descargar copia JSON</button>
+        <div className="backup-divider"><span>Restaurar una copia</span></div>
+        <input ref={backupInputRef} className="backup-file-input" type="file" accept="application/json,.json" onChange={(event) => void inspectBackup(event.target.files?.[0])} />
+        <button className="reset-button full" type="button" onClick={() => backupInputRef.current?.click()}>Seleccionar archivo</button>
+        {backupMessage && <p className="import-message" role="alert">{backupMessage}</p>}
+        {backupPreview && <div className="backup-preview"><strong>Copia válida</strong><span>{backupPreview.daily} hábitos diarios · {backupPreview.weekly} semanales</span><span>{backupPreview.goals} objetivos · {backupPreview.categories} bloques · {backupPreview.motivations} frases</span><p>Restaurar sustituirá todos los datos actuales. No se fusionarán ambas versiones.</p><button className="danger-button full" type="button" onClick={restoreBackup}>Confirmar y sustituir mis datos</button></div>}
+      </div></div>}
       {archivedManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setArchivedManagerOpen(false)}>
         <div className="modal archived-modal" role="dialog" aria-modal="true" aria-labelledby="archived-title" onMouseDown={(e) => e.stopPropagation()}>
           <button className="close" onClick={() => setArchivedManagerOpen(false)} aria-label="Cerrar">×</button>

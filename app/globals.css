@@ -842,6 +842,13 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .health-upload input { position: absolute; opacity: 0; pointer-events: none; }
 .health-upload span { color: #176a58; font-weight: 800; }
 .import-message, .form-note { color: #667872; font-size: .82rem; line-height: 1.45; }
+.backup-modal { max-width: 520px; }
+.backup-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 14px; color: #7b879d; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.backup-divider::before, .backup-divider::after { content: ""; height: 1px; flex: 1; background: #26344d; }
+.backup-file-input { display: none; }
+.backup-preview { display: grid; gap: 8px; margin-top: 16px; padding: 16px; border: 1px solid #315f59; border-radius: 12px; background: #0d211f; }
+.backup-preview span { color: #aab5c7; font-size: .86rem; }
+.backup-preview p { margin: 6px 0; color: #e1b8ad; font-size: .86rem; line-height: 1.45; }
 .fitness-fields { grid-template-columns: repeat(3, 1fr); }
 .fitness-chart-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
 .fitness-chart-controls select { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: #0c162a; color: var(--ink); padding: 6px 8px; font-size: 9px; }
