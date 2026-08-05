@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calendarWeekForDate,
   calculateDailyScore,
   calculateWeeklyGoalBonus,
   daysForMonthWeek,
@@ -10,6 +11,31 @@ import {
 } from "./tracking";
 
 describe("calendar rules", () => {
+  it("uses one Monday-to-Sunday week across a month boundary", () => {
+    expect(calendarWeekForDate(new Date(2026, 7, 1, 12))).toEqual({
+      start: "2026-07-27",
+      end: "2026-08-02",
+    });
+  });
+
+  it("uses one Monday-to-Sunday week across a year boundary", () => {
+    expect(calendarWeekForDate(new Date(2027, 0, 1, 12))).toEqual({
+      start: "2026-12-28",
+      end: "2027-01-03",
+    });
+  });
+
+  it("keeps calendar dates stable around daylight-saving changes", () => {
+    expect(calendarWeekForDate(new Date(2026, 2, 29, 12))).toEqual({
+      start: "2026-03-23",
+      end: "2026-03-29",
+    });
+    expect(calendarWeekForDate(new Date(2026, 9, 25, 12))).toEqual({
+      start: "2026-10-19",
+      end: "2026-10-25",
+    });
+  });
+
   it("builds a Monday-to-Sunday goal period across month boundaries", () => {
     expect(goalPeriodDetails("weekly", new Date(2026, 7, 1, 12))).toEqual({
       key: "2026-07-27",

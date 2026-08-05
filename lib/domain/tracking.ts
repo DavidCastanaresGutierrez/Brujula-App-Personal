@@ -16,8 +16,27 @@ export type DailyScoreBreakdown = {
   eligibleWeeklyDoneToday: number;
 };
 
+export type CalendarWeek = {
+  start: string;
+  end: string;
+};
+
 export function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+export function calendarWeekForDate(value: Date): CalendarWeek {
+  const year = value.getFullYear();
+  const month = value.getMonth();
+  const day = value.getDate();
+  const mondayOffset = (value.getDay() + 6) % 7;
+  const monday = new Date(Date.UTC(year, month, day - mondayOffset));
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return {
+    start: monday.toISOString().slice(0, 10),
+    end: sunday.toISOString().slice(0, 10),
+  };
 }
 
 export function isWeekday(year: number, monthIndex: number, day: number) {
@@ -51,13 +70,10 @@ export function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
   const month = now.getMonth();
   if (period === "daily") return { key: isoDate(year, month, now.getDate()), due: isoDate(year, month, now.getDate()) };
   if (period === "weekly") {
-    const day = now.getDay() || 7;
-    const monday = new Date(year, month, now.getDate() - day + 1);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+    const week = calendarWeekForDate(now);
     return {
-      key: isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate()),
-      due: isoDate(sunday.getFullYear(), sunday.getMonth(), sunday.getDate()),
+      key: week.start,
+      due: week.end,
     };
   }
   if (period === "monthly") {
