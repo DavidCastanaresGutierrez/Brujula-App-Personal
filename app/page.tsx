@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import Image from "next/image";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
+import { decideRemoteRevision } from "../lib/domain/sync";
 import {
   calculateDailyScore,
   calculateWeeklyGoalBonus,
@@ -208,43 +209,6 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
 
 function statesEqual(a: TrackerState | null, b: TrackerState | null) {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function mergeStates(serverState: TrackerState, localState: TrackerState): Required<TrackerState> {
-  const server = normalizeState(serverState);
-  const local = normalizeState(localState);
-  const mergeHabits = <T extends Habit | WeeklyHabit>(remote: T[], device: T[]) => {
-    const merged = new Map(remote.map((habit) => [habit.id, habit]));
-    device.forEach((habit) => {
-      const existing = merged.get(habit.id);
-      if (!existing) {
-        merged.set(habit.id, habit);
-        return;
-      }
-      const history = { ...(habit.history ?? {}), ...(existing.history ?? {}) };
-      Object.keys(history).forEach((key) => {
-        history[key] = [...new Set([...(habit.history?.[key] ?? []), ...(existing.history?.[key] ?? [])])].sort((a, b) => a - b);
-      });
-      // This merge only runs while the device has unsaved changes. Keep the
-      // server history, but never let an older server snapshot overwrite the
-      // fields the user has just edited (for example a weekly goal of 2).
-      merged.set(habit.id, { ...existing, ...habit, history });
-    });
-    return [...merged.values()];
-  };
-  const categories = new Map(local.categories.map((category) => [category.id, category]));
-  server.categories.forEach((category) => categories.set(category.id, category));
-  return {
-    daily: mergeHabits(server.daily, local.daily),
-    weekly: mergeHabits(server.weekly, local.weekly),
-    categories: [...categories.values()],
-    motivations: server.motivations.length ? server.motivations : local.motivations,
-    goals: (() => {
-      const merged = new Map(local.goals.map((goal) => [goal.id, goal]));
-      server.goals.forEach((goal) => merged.set(goal.id, goal));
-      return [...merged.values()];
-    })(),
-  };
 }
 
 function linkedGoalProgress(goal: Goal, habits: Array<Habit | WeeklyHabit>) {
@@ -543,6 +507,7 @@ export default function Home() {
   const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline" | "conflict">("loading");
+  const [remoteConflict, setRemoteConflict] = useState<{ state: TrackerState; revision: number } | null>(null);
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -551,6 +516,8 @@ export default function Home() {
   const baselineRef = useRef<TrackerState | null>(null);
   const revisionRef = useRef(0);
   const conflictRef = useRef(false);
+  const pendingRemoteRevisionRef = useRef<number | null>(null);
+  const pullLatestRef = useRef<(() => Promise<void>) | null>(null);
   const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
   const syncInFlight = useRef(false);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -568,6 +535,8 @@ export default function Home() {
       setSyncStatus("loading");
       revisionRef.current = 0;
       conflictRef.current = false;
+      pendingRemoteRevisionRef.current = null;
+      setRemoteConflict(null);
       setSession(nextSession);
       setAuthReady(true);
     });
@@ -599,6 +568,7 @@ export default function Home() {
     } catch {
       localBaseline = null;
     }
+    const storedRevision = Number(localStorage.getItem(revisionKey));
 
     async function loadState() {
       try {
@@ -612,9 +582,9 @@ export default function Home() {
         if (!response.ok) throw new Error("No se pudo cargar la base de datos");
         const payload = await response.json() as { state: TrackerState | null; revision: number };
         const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
-        const state = payload.state
-          ? (hasPendingLocalChanges && localState ? mergeStates(payload.state, localState) : payload.state)
-          : localState;
+        const remoteChangedSinceLocalBaseline = !Number.isSafeInteger(storedRevision) || payload.revision > storedRevision;
+        const hasStartupConflict = Boolean(payload.state && localState && hasPendingLocalChanges && remoteChangedSinceLocalBaseline);
+        const state = hasPendingLocalChanges && localState ? localState : (payload.state ?? localState);
         if (cancelled) return;
         if (state) {
           const normalized = normalizeState(state);
@@ -629,7 +599,15 @@ export default function Home() {
         revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
         localStorage.setItem(revisionKey, String(payload.revision));
-        setSyncStatus("synced");
+        if (hasStartupConflict && payload.state) {
+          conflictRef.current = true;
+          setRemoteConflict({ state: normalizeState(payload.state), revision: payload.revision });
+          setSyncStatus("conflict");
+        } else {
+          conflictRef.current = false;
+          setRemoteConflict(null);
+          setSyncStatus("synced");
+        }
       } catch {
         if (!cancelled && localState) {
           const normalized = normalizeState(localState);
@@ -657,6 +635,7 @@ export default function Home() {
     const state = { daily, weekly, categories: habitCategories, motivations, goals };
     localStorage.setItem(storageKey, JSON.stringify(state));
     if (statesEqual(state, baselineRef.current)) return;
+    if (conflictRef.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       if (syncInFlight.current) return;
@@ -694,6 +673,10 @@ export default function Home() {
         setSyncStatus("offline");
       } finally {
         syncInFlight.current = false;
+        if (pendingRemoteRevisionRef.current !== null) {
+          pendingRemoteRevisionRef.current = null;
+          void pullLatestRef.current?.();
+        }
       }
     }, 600);
     return () => {
@@ -726,8 +709,13 @@ export default function Home() {
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
 
     const pullLatest = async () => {
-      if (pulling || syncInFlight.current || conflictRef.current || !navigator.onLine) return;
+      if (pulling || !navigator.onLine) return;
+      if (syncInFlight.current) {
+        pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, revisionRef.current + 1);
+        return;
+      }
       pulling = true;
+      pendingRemoteRevisionRef.current = null;
       try {
         const supabase = getSupabaseBrowserClient();
         const { data } = await supabase.auth.getSession();
@@ -742,12 +730,17 @@ export default function Home() {
         if (!response.ok) return;
         const payload = await response.json() as { state: TrackerState | null; revision: number };
         if (cancelled || !payload.state) return;
-        if (payload.revision <= revisionRef.current) return;
         const serverState = normalizeState(payload.state);
         const localState = stateRef.current;
         const hasPendingLocalChanges = !statesEqual(localState, baselineRef.current);
-        if (hasPendingLocalChanges) {
+        const action = decideRemoteRevision(revisionRef.current, payload.revision, hasPendingLocalChanges);
+        if (action === "ignore") {
+          if (!hasPendingLocalChanges && !conflictRef.current) setSyncStatus("synced");
+          return;
+        }
+        if (action === "conflict") {
           conflictRef.current = true;
+          setRemoteConflict({ state: serverState, revision: payload.revision });
           setSyncStatus("conflict");
           return;
         }
@@ -762,20 +755,39 @@ export default function Home() {
         setHabitCategories(nextState.categories);
         setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
         setGoals(nextState.goals);
-        setSyncStatus(hasPendingLocalChanges ? "saving" : "synced");
+        conflictRef.current = false;
+        setRemoteConflict(null);
+        setSyncStatus("synced");
       } finally {
         pulling = false;
       }
     };
+    pullLatestRef.current = pullLatest;
 
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
     const onPageShow = () => void pullLatest();
     const supabase = getSupabaseBrowserClient();
     const realtime = supabase
       .channel(`brujula-sync:${session.user.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracker_state_versions", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
-      .subscribe();
-    const interval = window.setInterval(() => void pullLatest(), 3_000);
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracker_state_versions", filter: `user_id=eq.${session.user.id}` }, (event) => {
+        const notifiedRevision = Number((event.new as { revision?: unknown }).revision);
+        if (Number.isSafeInteger(notifiedRevision)) {
+          pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
+        }
+        if (!syncInFlight.current) void pullLatest();
+      })
+      .subscribe((status) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "synced");
+          void pullLatest();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "offline");
+        }
+      });
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void pullLatest();
+    }, 5_000);
     window.addEventListener("focus", onFocus);
     window.addEventListener("pageshow", onPageShow);
     window.addEventListener("online", onPageShow);
@@ -788,9 +800,46 @@ export default function Home() {
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("online", onPageShow);
       document.removeEventListener("visibilitychange", onFocus);
+      pullLatestRef.current = null;
       void supabase.removeChannel(realtime);
     };
   }, [hydrated, session]);
+
+  const resolveConflictWithRemote = () => {
+    if (!session || !remoteConflict) return;
+    const nextState = normalizeState(remoteConflict.state);
+    const storageKey = `brujula-state-v1:${session.user.id}`;
+    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+    const revisionKey = `brujula-revision-v1:${session.user.id}`;
+    baselineRef.current = nextState;
+    revisionRef.current = remoteConflict.revision;
+    conflictRef.current = false;
+    pendingRemoteRevisionRef.current = null;
+    localStorage.setItem(storageKey, JSON.stringify(nextState));
+    localStorage.setItem(baselineKey, JSON.stringify(nextState));
+    localStorage.setItem(revisionKey, String(remoteConflict.revision));
+    setDaily(nextState.daily);
+    setWeekly(nextState.weekly);
+    setHabitCategories(nextState.categories);
+    setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
+    setGoals(nextState.goals);
+    setRemoteConflict(null);
+    setSyncStatus("synced");
+  };
+
+  const resolveConflictWithLocal = () => {
+    if (!session || !remoteConflict) return;
+    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
+    const revisionKey = `brujula-revision-v1:${session.user.id}`;
+    baselineRef.current = normalizeState(remoteConflict.state);
+    revisionRef.current = remoteConflict.revision;
+    conflictRef.current = false;
+    localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
+    localStorage.setItem(revisionKey, String(remoteConflict.revision));
+    setRemoteConflict(null);
+    setSyncStatus("saving");
+    setDaily((items) => [...items]);
+  };
 
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -1775,7 +1824,11 @@ export default function Home() {
             {syncStatus === "saving" && " Guardando cambios…"}
             {syncStatus === "synced" && " Sincronizado en todos tus dispositivos."}
             {syncStatus === "offline" && " Sin conexión: los cambios quedan guardados temporalmente en este dispositivo."}
-            {syncStatus === "conflict" && " Hay cambios más recientes en otro dispositivo. Conservamos tus cambios locales; recarga para combinarlos antes de guardar."}
+            {syncStatus === "conflict" && <>
+              {" Hay cambios en este dispositivo y en otro. Elige qué versión conservar."}
+              <button type="button" onClick={resolveConflictWithRemote}>Usar cambios del otro dispositivo</button>
+              <button type="button" onClick={resolveConflictWithLocal}>Conservar los de este dispositivo</button>
+            </>}
           </p>
         </section>
         </>}
