@@ -838,6 +838,8 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .habit-link-fieldset legend { padding: 0 6px; font-size: .82rem; font-weight: 800; color: #314840; }
 .habit-link-option { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 10px !important; }
 .habit-link-option input { width: auto !important; }
+.day-grid button.future-day:not(.checked), .week-counter.future-week { opacity: .42; }
+.day-grid button.future-day.checked { outline: 1px dashed #e7a96b; outline-offset: -2px; }
 .health-upload { margin-top: 16px; padding: 18px; border: 1px dashed #8ab9aa; border-radius: 14px; background: #f3faf7; text-align: center; cursor: pointer; }
 .health-upload input { position: absolute; opacity: 0; pointer-events: none; }
 .health-upload span { color: #176a58; font-weight: 800; }

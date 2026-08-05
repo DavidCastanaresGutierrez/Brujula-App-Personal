@@ -75,6 +75,14 @@ export function daysForMonthWeek(year: number, monthIndex: number, week: number)
   return start > monthDays ? [] : Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
+export function isCalendarDayInFuture(year: number, monthIndex: number, day: number, today = new Date()) {
+  return isoDate(year, monthIndex, day) > isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+export function availableDaysForMonthWeek(year: number, monthIndex: number, week: number, today = new Date()) {
+  return daysForMonthWeek(year, monthIndex, week).filter((day) => !isCalendarDayInFuture(year, monthIndex, day, today));
+}
+
 export function goalPeriodDetails(period: GoalPeriod, now = new Date()) {
   const year = now.getFullYear();
   const month = now.getMonth();

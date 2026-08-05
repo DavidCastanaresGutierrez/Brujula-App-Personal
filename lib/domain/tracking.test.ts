@@ -5,9 +5,11 @@ import {
   calculateDailyScore,
   calculateProportionalGoalBonus,
   calculateWeeklyGoalBonus,
+  availableDaysForMonthWeek,
   daysForMonthWeek,
   goalPeriodDetails,
   linkedGoalProgress,
+  isCalendarDayInFuture,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -53,6 +55,21 @@ describe("calendar rules", () => {
 
   it("counts only working days through the requested date", () => {
     expect(weekdaysInMonth(2026, 7, 9)).toBe(5);
+  });
+
+  it("distinguishes past, current and future calendar days", () => {
+    const today = new Date(2026, 7, 5, 12);
+    expect(isCalendarDayInFuture(2026, 7, 4, today)).toBe(false);
+    expect(isCalendarDayInFuture(2026, 7, 5, today)).toBe(false);
+    expect(isCalendarDayInFuture(2026, 7, 6, today)).toBe(true);
+    expect(isCalendarDayInFuture(2026, 8, 1, today)).toBe(true);
+  });
+
+  it("offers weekly completions only through today", () => {
+    const today = new Date(2026, 7, 5, 12);
+    expect(availableDaysForMonthWeek(2026, 7, 1, today)).toEqual([1, 2, 3, 4, 5]);
+    expect(availableDaysForMonthWeek(2026, 7, 2, today)).toEqual([]);
+    expect(availableDaysForMonthWeek(2026, 6, 5, today)).toEqual([29, 30, 31]);
   });
 });
 

@@ -10,12 +10,14 @@ import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupP
 import {
   calculateProportionalGoalBonus,
   calculateWeightedHabitDays,
+  availableDaysForMonthWeek,
   calculateDailyScore,
   calculateWeeklyGoalBonus,
   daysForMonthWeek,
   goalPeriodDetails,
   isoDate,
   isWeekday,
+  isCalendarDayInFuture,
   linkedGoalProgress,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
@@ -1034,6 +1036,8 @@ export default function Home() {
   function toggleDaily(id: number, day: number) {
     const habit = daily.find((item) => item.id === id);
     if (habit?.weekdaysOnly && !isWeekday(year, month, day)) return;
+    const current = habit ? checksFor(habit) : [];
+    if (isCalendarDayInFuture(year, month, day, today) && !current.includes(day)) return;
     setDaily((items) => items.map((habit) => {
       if (habit.id !== id) return habit;
       const current = checksFor(habit);
@@ -1081,10 +1085,11 @@ export default function Home() {
       if (habit.id !== id) return habit;
       const current = weeklyChecksFor(habit);
       const weekDays = daysForMonthWeek(year, month, week);
+      const availableDays = availableDaysForMonthWeek(year, month, week, today);
       const weekChecks = current.filter((day) => weekDays.includes(day)).sort((a, b) => a - b);
       let next = current;
-      if (direction === 1 && weekChecks.length < weekDays.length) {
-        const availableDay = weekDays.find((day) => !current.includes(day));
+      if (direction === 1 && weekChecks.length < availableDays.length) {
+        const availableDay = availableDays.find((day) => !current.includes(day));
         if (availableDay) next = [...current, availableDay].sort((a, b) => a - b);
       }
       if (direction === -1 && weekChecks.length) {
@@ -1826,14 +1831,15 @@ export default function Home() {
                     {categoryHabits.map((habit) => {
                   const effectiveGoal = goalFor(habit);
                   const currentChecks = checksFor(habit);
-                  const progress = Math.min(100, Math.round(currentChecks.filter((d) => d <= days).length / effectiveGoal * 100));
+                  const completedThroughToday = currentChecks.filter((d) => d <= evaluatedThrough).length;
+                  const progress = Math.min(100, Math.round(completedThroughToday / effectiveGoal * 100));
                   return <div className={`habit-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "daily" && reorderHabit("daily", dragging.id, habit.id)}>
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const disabled = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); return <button key={d.day} disabled={disabled} className={`${currentChecks.includes(d.day) ? "checked" : ""} ${d.day === todayNumber ? "today-column" : ""} ${disabled ? "non-working-day" : ""}`.trim()} onClick={() => toggleDaily(habit.id, d.day)} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${disabled ? ", fin de semana" : ""}`}>{currentChecks.includes(d.day) ? "✓" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} onClick={() => toggleDaily(habit.id, d.day)} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : ""}</button>; })}
                     </div>
-                    <div className="result-cell"><strong>{progress}%</strong><span>{currentChecks.filter((d) => d <= days).length}/{effectiveGoal}</span></div>
+                    <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
                     })}
                   </div>;
@@ -1854,11 +1860,12 @@ export default function Home() {
                 const currentChecks = weeklyChecksFor(habit);
                 const availableWeeks = [1, 2, 3, 4, 5].filter((week) => daysForMonthWeek(year, month, week).length);
                 const monthlyTarget = habit.goal * availableWeeks.length;
-                const progress = Math.min(100, Math.round(currentChecks.length / Math.max(1, monthlyTarget) * 100));
+                const validChecks = currentChecks.filter((day) => !isCalendarDayInFuture(year, month, day, today));
+                const progress = Math.min(100, Math.round(validChecks.length / Math.max(1, monthlyTarget) * 100));
                 return <div className={`weekly-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "weekly" && reorderHabit("weekly", dragging.id, habit.id)}>
                   <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "weekly", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "weekly", habit })}>⋯</button></div></div>
-                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const count = currentChecks.filter((day) => weekDays.includes(day)).length; return <div className={`week-counter ${count >= habit.goal ? "checked" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{count}/{habit.goal}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={count >= weekDays.length} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
-                  <div className="weekly-result"><strong>{progress}%</strong><span>{currentChecks.length}/{monthlyTarget}</span></div>
+                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const eligibleDays = availableDaysForMonthWeek(year, month, week, today); const count = currentChecks.filter((day) => weekDays.includes(day)).length; const eligibleCount = currentChecks.filter((day) => eligibleDays.includes(day)).length; const canAdd = eligibleDays.some((day) => !currentChecks.includes(day)); return <div className={`week-counter ${eligibleCount >= habit.goal ? "checked" : ""} ${eligibleDays.length === 0 ? "future-week" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{eligibleCount}/{habit.goal}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={!canAdd} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
+                  <div className="weekly-result"><strong>{progress}%</strong><span>{validChecks.length}/{monthlyTarget}</span></div>
                 </div>;
                   })}
                 </div>;
