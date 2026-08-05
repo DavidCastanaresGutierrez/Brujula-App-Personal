@@ -24,6 +24,7 @@ import {
   weekdaysInMonth,
 } from "../lib/domain/tracking";
 import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
+import { parseStoredStringSet, parseStoredTrackerState } from "../lib/domain/storage";
 
 type Habit = {
   id: number;
@@ -587,20 +588,8 @@ export default function Home() {
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
     let cancelled = false;
-    const localSaved = localStorage.getItem(storageKey);
-    let localState: TrackerState | null = null;
-    try {
-      if (localSaved) localState = JSON.parse(localSaved);
-    } catch {
-      localState = null;
-    }
-    let localBaseline: TrackerState | null = null;
-    try {
-      const savedBaseline = localStorage.getItem(baselineKey);
-      if (savedBaseline) localBaseline = JSON.parse(savedBaseline);
-    } catch {
-      localBaseline = null;
-    }
+    const localState = parseStoredTrackerState(localStorage.getItem(storageKey)) as TrackerState | null;
+    const localBaseline = parseStoredTrackerState(localStorage.getItem(baselineKey)) as TrackerState | null;
     const storedRevision = Number(localStorage.getItem(revisionKey));
 
     async function loadState() {
@@ -1509,7 +1498,7 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || !session || closureNotice) return;
     const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = new Set<string>(JSON.parse(localStorage.getItem(deliveredKey) ?? "[]") as string[]);
+    const delivered = parseStoredStringSet(localStorage.getItem(deliveredKey));
     const now = new Date();
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     const yesterdayKey = `daily:${isoDate(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())}`;
@@ -1570,7 +1559,7 @@ export default function Home() {
   function dismissClosureNotice() {
     if (!closureNotice || !session) return;
     const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = new Set<string>(JSON.parse(localStorage.getItem(deliveredKey) ?? "[]") as string[]);
+    const delivered = parseStoredStringSet(localStorage.getItem(deliveredKey));
     delivered.add(closureNotice.key);
     localStorage.setItem(deliveredKey, JSON.stringify([...delivered].slice(-120)));
     setClosureNotice(null);
