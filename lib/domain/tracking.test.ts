@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   calendarWeekForDate,
+  calculateWeightedHabitDays,
   calculateDailyScore,
+  calculateProportionalGoalBonus,
   calculateWeeklyGoalBonus,
   daysForMonthWeek,
   goalPeriodDetails,
+  linkedGoalProgress,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -78,6 +81,36 @@ describe("completion rules", () => {
   });
 });
 
+describe("linked goal progress", () => {
+  const habits = [
+    { id: 1, goal: 31, history: { "2026-08": [3, 4] } },
+    { id: 2, goal: 31, history: { "2026-08": [4, 5] } },
+  ];
+
+  it("counts every linked habit completion inside a weekly period", () => {
+    expect(linkedGoalProgress({
+      period: "weekly", periodKey: "2026-08-03", dueDate: "2026-08-09",
+      currentValue: 0, linkedHabitIds: [1, 2],
+    }, habits)).toBe(4);
+  });
+
+  it("keeps over-completion visible instead of truncating it at the target", () => {
+    expect(linkedGoalProgress({
+      period: "monthly", periodKey: "2026-08", dueDate: "2026-08-31",
+      currentValue: 0, linkedHabitIds: [1],
+    }, habits)).toBe(2);
+  });
+
+  it("weights several fitness habits equally per day", () => {
+    expect(calculateWeightedHabitDays(habits, [1, 2], "2026-08-03", new Date(2026, 7, 5, 12))).toBe(2);
+  });
+
+  it("starts on January first when tracking began in a previous year", () => {
+    const yearly = [{ id: 1, goal: 365, history: { "2026-01": [1, 2, 3] } }];
+    expect(calculateWeightedHabitDays(yearly, [1], "2025-08-15", new Date(2026, 0, 3, 12))).toBe(3);
+  });
+});
+
 describe("score rules", () => {
   const date = new Date(2026, 7, 4, 12);
 
@@ -113,5 +146,20 @@ describe("score rules", () => {
     });
     expect(calculateWeeklyGoalBonus(8, [{ status: "active", currentValue: 0, targetValue: 1 }]).bonus).toBe(0);
     expect(calculateWeeklyGoalBonus(8, []).earned).toBe(false);
+  });
+
+  it("scales monthly and yearly closing bonus with completed goals", () => {
+    expect(calculateProportionalGoalBonus(8, [
+      { status: "completed", currentValue: 1, targetValue: 1 },
+      { status: "active", currentValue: 0, targetValue: 1 },
+    ])).toEqual({ completed: 1, total: 2, completionRate: 0.5, bonus: 0.1, finalScore: 8.1 });
+  });
+
+  it("does not grant a proportional bonus without goals", () => {
+    expect(calculateProportionalGoalBonus(7, [])).toEqual({ completed: 0, total: 0, completionRate: 0, bonus: 0, finalScore: 7 });
+  });
+
+  it("caps proportional closing scores at ten", () => {
+    expect(calculateProportionalGoalBonus(10, [{ status: "completed", currentValue: 2, targetValue: 1 }]).finalScore).toBe(10);
   });
 });

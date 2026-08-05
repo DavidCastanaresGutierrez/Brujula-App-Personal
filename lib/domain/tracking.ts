@@ -1,10 +1,20 @@
 export type GoalPeriod = "daily" | "weekly" | "monthly" | "yearly";
 
 export type TrackedHabit = {
+  id?: number;
   goal: number;
   archived?: boolean;
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
+};
+
+export type LinkedGoal = {
+  period: GoalPeriod;
+  periodKey: string;
+  dueDate: string;
+  currentValue: number;
+  linkedHabitId?: number;
+  linkedHabitIds?: number[];
 };
 
 export type DailyScoreBreakdown = {
@@ -93,6 +103,49 @@ export function toggleCompletionForDay(checks: number[], day: number) {
   return checks.includes(day) ? checks.filter((item) => item !== day) : [...checks, day].sort((a, b) => a - b);
 }
 
+export function linkedGoalProgress(goal: LinkedGoal, habits: TrackedHabit[]) {
+  const linkedIds = new Set([...(goal.linkedHabitIds ?? []), ...(goal.linkedHabitId ? [goal.linkedHabitId] : [])]);
+  if (!linkedIds.size) return goal.currentValue;
+  const linkedHabits = habits.filter((habit) => habit.id !== undefined && linkedIds.has(habit.id));
+  if (!linkedHabits.length) return goal.currentValue;
+
+  return linkedHabits.reduce((count, habit) => count + Object.entries(habit.history ?? {}).reduce((habitCount, [monthKey, values]) => (
+    habitCount + values.filter((value) => {
+      const date = `${monthKey}-${String(value).padStart(2, "0")}`;
+      if (goal.period === "daily") return date === goal.periodKey;
+      if (goal.period === "weekly") return date >= goal.periodKey && date <= goal.dueDate;
+      if (goal.period === "monthly") return monthKey === goal.periodKey;
+      return monthKey.startsWith(`${goal.periodKey}-`);
+    }).length
+  ), 0), 0);
+}
+
+export function calculateWeightedHabitDays(
+  habits: TrackedHabit[],
+  habitIds: number[],
+  trackingStart: string | undefined,
+  through: Date,
+) {
+  const selected = habits.filter((habit) => habit.id !== undefined && habitIds.includes(habit.id));
+  if (!selected.length) return 0;
+
+  const year = through.getFullYear();
+  const start = trackingStart ? new Date(`${trackingStart}T12:00:00`) : through;
+  const firstMonth = start.getFullYear() === year ? start.getMonth() : 0;
+  let completedWeight = 0;
+  for (let month = firstMonth; month <= through.getMonth(); month += 1) {
+    const key = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const monthDays = new Date(year, month + 1, 0).getDate();
+    const lastDay = month === through.getMonth() ? through.getDate() : monthDays;
+    const firstDay = start.getFullYear() === year && month === start.getMonth() ? start.getDate() : 1;
+    for (let day = firstDay; day <= lastDay; day += 1) {
+      const completed = selected.filter((habit) => (habit.history?.[key] ?? []).includes(day)).length;
+      completedWeight += completed / selected.length;
+    }
+  }
+  return Math.round(completedWeight * 100) / 100;
+}
+
 export function calculateDailyScore(
   value: Date,
   dailyHabits: TrackedHabit[],
@@ -131,4 +184,11 @@ export function calculateWeeklyGoalBonus(baseScore: number, goals: Array<{ statu
   const earned = goals.length > 0 && goals.every((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue);
   const bonus = earned ? (10 - baseScore) * 0.1 : 0;
   return { earned, bonus, finalScore: Math.min(10, baseScore + bonus) };
+}
+
+export function calculateProportionalGoalBonus(baseScore: number, goals: Array<{ status: string; currentValue: number; targetValue: number }>) {
+  const completed = goals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
+  const completionRate = goals.length ? completed / goals.length : 0;
+  const bonus = (10 - baseScore) * 0.1 * completionRate;
+  return { completed, total: goals.length, completionRate, bonus, finalScore: Math.min(10, baseScore + bonus) };
 }
