@@ -23,6 +23,7 @@ import {
   weeklyGoalIncludesDate,
   weekdaysInMonth,
 } from "../lib/domain/tracking";
+import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
 
 type Habit = {
   id: number;
@@ -1157,6 +1158,7 @@ export default function Home() {
     if (!deleting) return;
     if (deleting.type === "daily") setDaily((items) => items.filter((habit) => habit.id !== deleting.id));
     else setWeekly((items) => items.filter((habit) => habit.id !== deleting.id));
+    setGoals((items) => removeHabitFromGoals(items, deleting.id));
     setDeleting(null);
   }
 
@@ -1205,9 +1207,9 @@ export default function Home() {
 
   function deleteCategory() {
     if (!deletingCategoryId || deletingCategoryId === replacementCategoryId) return;
-    const move = (habit: Habit) => habit.category === deletingCategoryId ? { ...habit, category: replacementCategoryId } : habit;
-    setDaily((items) => items.map(move));
-    setWeekly((items) => items.map(move));
+    setDaily((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
+    setWeekly((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
+    setGoals((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
     setHabitCategories((items) => items.filter((category) => category.id !== deletingCategoryId));
     if (selectedChartCategory === deletingCategoryId) setSelectedChartCategory(replacementCategoryId);
     if (selectedCategory === deletingCategoryId) setSelectedCategory(replacementCategoryId);
@@ -1285,7 +1287,7 @@ export default function Home() {
   }
 
   function deleteGoal(id: number) {
-    setGoals((items) => items.filter((goal) => goal.id !== id));
+    setGoals((items) => removeGoalAndChildReferences(items, id));
     setDeletingGoal(null);
   }
 
@@ -1914,7 +1916,7 @@ export default function Home() {
       </div></div>}
 
       {deletingGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingGoal(null)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <p className="eyebrow">BORRAR OBJETIVO</p><h2>¿Borrar “{deletingGoal.title}”?</h2><p>También se eliminará su historial específico. Esta acción no afecta a los hábitos vinculados.</p>
+        <p className="eyebrow">BORRAR OBJETIVO</p><h2>¿Borrar “{deletingGoal.title}”?</h2><p>También se eliminará su historial específico. Los hábitos vinculados no se borrarán y, si es un objetivo anual, sus hitos quedarán desvinculados.</p>
         <button className="danger-button full" onClick={() => deleteGoal(deletingGoal.id)}>Borrar definitivamente</button>
       </div></div>}
 
@@ -1988,10 +1990,11 @@ export default function Home() {
           <h2 id="blocks-title">Gestionar bloques</h2>
           <div className="block-manager-list">
             {habitCategories.map((category) => {
-              const count = [...daily, ...weekly].filter((habit) => !habit.archived && habit.category === category.id).length;
+              const habitCount = [...daily, ...weekly].filter((habit) => !habit.archived && habit.category === category.id).length;
+              const goalCount = goals.filter((goal) => goal.status !== "discarded" && goal.category === category.id).length;
               return <div className="block-manager-row" key={category.id}>
                 <span className="block-manager-icon" style={{ background: `${category.color}26`, color: category.color }}>{category.icon}</span>
-                <div><strong>{category.label}</strong><small>{count} {count === 1 ? "hábito" : "hábitos"}</small></div>
+                <div><strong>{category.label}</strong><small>{habitCount} {habitCount === 1 ? "hábito" : "hábitos"} · {goalCount} {goalCount === 1 ? "objetivo" : "objetivos"}</small></div>
                 <button className="menu-trigger" onClick={() => startCategoryEdit(category)} aria-label={`Editar bloque ${category.label}`}>✎</button>
                 <button className="menu-trigger danger-text" disabled={habitCategories.length === 1} onClick={() => requestCategoryDelete(category.id)} aria-label={`Eliminar bloque ${category.label}`}>×</button>
               </div>;
@@ -2079,8 +2082,8 @@ export default function Home() {
       {deletingCategoryId && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingCategoryId(null)}>
         <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-block-title" onMouseDown={(e) => e.stopPropagation()}>
           <p className="eyebrow danger-text">ELIMINAR BLOQUE</p>
-          <h2 id="delete-block-title">¿Dónde movemos sus hábitos?</h2>
-          <p>El bloque desaparecerá, pero sus hábitos y todo su historial se conservarán.</p>
+          <h2 id="delete-block-title">¿Dónde movemos sus elementos?</h2>
+          <p>El bloque desaparecerá, pero sus hábitos, objetivos y todo su historial se conservarán.</p>
           <label>Bloque de destino<select value={replacementCategoryId} onChange={(e) => setReplacementCategoryId(e.target.value)}>{habitCategories.filter((category) => category.id !== deletingCategoryId).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           <div className="confirm-actions"><button className="reset-button" onClick={() => setDeletingCategoryId(null)}>Cancelar</button><button className="delete-button" onClick={deleteCategory}>Mover y eliminar</button></div>
         </div>
@@ -2123,7 +2126,7 @@ export default function Home() {
         <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onMouseDown={(e) => e.stopPropagation()}>
           <p className="eyebrow danger-text">ACCIÓN IRREVERSIBLE</p>
           <h2 id="delete-title">¿Eliminar “{deleting.name}”?</h2>
-          <p>Se borrarán también todos sus registros. Si quieres conservar el historial, utiliza “Archivar”.</p>
+          <p>Se borrarán también todos sus registros y se desvinculará de los objetivos que lo utilicen. Si quieres conservar el historial y los vínculos, utiliza “Archivar”.</p>
           <div className="confirm-actions"><button className="reset-button" onClick={() => setDeleting(null)}>Cancelar</button><button className="delete-button" onClick={deleteHabit}>Eliminar definitivamente</button></div>
         </div>
       </div>}
