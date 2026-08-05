@@ -742,10 +742,16 @@ export default function Home() {
         if (!response.ok) return;
         const payload = await response.json() as { state: TrackerState | null; revision: number };
         if (cancelled || !payload.state) return;
+        if (payload.revision <= revisionRef.current) return;
         const serverState = normalizeState(payload.state);
         const localState = stateRef.current;
         const hasPendingLocalChanges = !statesEqual(localState, baselineRef.current);
-        const nextState = hasPendingLocalChanges ? mergeStates(serverState, localState) : serverState;
+        if (hasPendingLocalChanges) {
+          conflictRef.current = true;
+          setSyncStatus("conflict");
+          return;
+        }
+        const nextState = serverState;
         baselineRef.current = serverState;
         revisionRef.current = payload.revision;
         localStorage.setItem(baselineKey, JSON.stringify(serverState));
@@ -767,9 +773,7 @@ export default function Home() {
     const supabase = getSupabaseBrowserClient();
     const realtime = supabase
       .channel(`brujula-sync:${session.user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "habit_completions", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
-      .on("postgres_changes", { event: "*", schema: "public", table: "habits", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
-      .on("postgres_changes", { event: "*", schema: "public", table: "goals", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracker_state_versions", filter: `user_id=eq.${session.user.id}` }, () => void pullLatest())
       .subscribe();
     const interval = window.setInterval(() => void pullLatest(), 3_000);
     window.addEventListener("focus", onFocus);
