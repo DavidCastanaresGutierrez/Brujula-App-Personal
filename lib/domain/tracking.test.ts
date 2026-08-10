@@ -8,6 +8,8 @@ import {
   availableDaysForMonthWeek,
   daysForMonthWeek,
   goalPeriodDetails,
+  habitAppliesOnDate,
+  isHabitVisibleInArchive,
   linkedGoalProgress,
   isCalendarDayInFuture,
   monthCalendarWeeks,
@@ -158,6 +160,31 @@ describe("score rules", () => {
     expect(result.finalScore).toBe(6);
   });
 
+  it("gives each block equal influence regardless of its number of habits", () => {
+    const result = calculateDailyScore(date, [
+      { goal: 31, category: "health", history: { "2026-08": [4] } },
+      { goal: 31, category: "health", history: { "2026-08": [4] } },
+      { goal: 31, category: "health", history: { "2026-08": [] } },
+      { goal: 31, category: "work", history: { "2026-08": [] } },
+    ], [], [{ id: "health" }, { id: "work" }]);
+    expect(result.baseScore).toBeCloseTo(10 / 3);
+  });
+
+  it("doubles the influence of priority blocks", () => {
+    const result = calculateDailyScore(date, [
+      { goal: 31, category: "health", history: { "2026-08": [4] } },
+      { goal: 31, category: "work", history: { "2026-08": [] } },
+    ], [], [{ id: "health" }, { id: "work", priority: true }]);
+    expect(result.baseScore).toBeCloseTo(10 / 3);
+  });
+
+  it("excludes blocks without scheduled habits", () => {
+    const result = calculateDailyScore(date, [
+      { goal: 31, category: "health", history: { "2026-08": [4] } },
+    ], [], [{ id: "health" }, { id: "empty", priority: true }]);
+    expect(result.baseScore).toBe(10);
+  });
+
   it("records extra weekly completions without granting another bonus", () => {
     const result = calculateDailyScore(
       date,
@@ -201,5 +228,20 @@ describe("score rules", () => {
 
   it("caps proportional closing scores at ten", () => {
     expect(calculateProportionalGoalBonus(10, [{ status: "completed", currentValue: 2, targetValue: 1 }]).finalScore).toBe(10);
+  });
+});
+
+describe("archived habit rules", () => {
+  const archived = { goal: 31, archived: true, archivedAt: "2026-08-05" };
+
+  it("keeps archived habits in scores before their archive date only", () => {
+    expect(habitAppliesOnDate(archived, "2026-08-04")).toBe(true);
+    expect(habitAppliesOnDate(archived, "2026-08-05")).toBe(false);
+  });
+
+  it("hides dated archives after seven days but keeps legacy archives visible", () => {
+    expect(isHabitVisibleInArchive(archived, new Date(2026, 7, 11, 12))).toBe(true);
+    expect(isHabitVisibleInArchive(archived, new Date(2026, 7, 12, 12))).toBe(false);
+    expect(isHabitVisibleInArchive({ goal: 31, archived: true }, new Date(2026, 7, 12, 12))).toBe(true);
   });
 });
