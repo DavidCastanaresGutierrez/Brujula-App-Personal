@@ -111,7 +111,7 @@ h1 em { font-style: normal; color: var(--teal); }
 .today-item strong, .today-item small { display: block; }
 .today-item strong { overflow: hidden; color: #edf2fa; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .today-item small { margin-top: 3px; color: var(--muted); font-size: 8px; }
-.today-item > b { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid #35435f; border-radius: 7px; color: #07131d; }
+.today-item > b { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid #35435f; border-radius: 7px; color: #07131d; font-size: 16px; font-weight: 900; line-height: 1; }
 .today-item.done { opacity: .72; }
 .today-item.done strong { text-decoration: line-through; color: #9eabc2; }
 .today-item.done > b { border-color: var(--teal); background: var(--teal); }
@@ -304,9 +304,11 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .day-grid > div { text-align: center; }
 .day-grid > div span { display: block; color: #64718d; font-size: 7px; margin-bottom: 2px; }
 .day-grid > div b { font-size: 9px; }
-.day-grid button { width: 25px; height: 25px; padding: 0; border: 1px solid #34415c; background: #18243c; border-radius: 5px; cursor: pointer; color: #07131d; font-weight: 900; font-size: 13px; transition: .15s ease; }
+.day-grid button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 1px solid #34415c; background: #18243c; border-radius: 5px; cursor: pointer; color: #07131d; font-weight: 900; font-size: 14px; line-height: 1; transition: .15s ease; }
+.day-grid > div.week-shaded { background: rgba(255,255,255,.055); border-radius: 5px; }
+.day-grid button.week-shaded:not(.checked):not(.missed) { background: #22304a; border-color: #40506d; }
 .day-grid .week-end { position: relative; }
-.day-grid .week-end::after { content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 2px; height: 47px; background: #03050a; transform: translateY(-50%); pointer-events: none; }
+.day-grid .week-end::after { content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 2px; height: 47px; background: rgba(255,255,255,.88); transform: translateY(-50%); pointer-events: none; }
 .header-row .day-grid .week-end::after { height: 52px; }
 .day-grid button:hover { border-color: var(--teal); transform: scale(1.08); }
 .day-grid button.checked, .week-checks button.checked { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
