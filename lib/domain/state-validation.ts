@@ -62,15 +62,21 @@ function validateHabit(value: unknown, kind: "daily" | "weekly") {
     && (value.celebratedStreak30 === undefined || isDate(value.celebratedStreak30))
     && (kind === "weekly" || value.everyDay === undefined || typeof value.everyDay === "boolean")
     && (kind === "weekly" || value.weekdaysOnly === undefined || typeof value.weekdaysOnly === "boolean")
-    && validateHistory(value.history);
+    && validateHistory(value.history)
+    && validateHistory(value.misses);
 }
 
 function validateBook(value: unknown) {
   return isRecord(value)
     && isPositiveId(value.id)
     && isText(value.title, 1, 200)
+    && (value.author === undefined || isText(value.author, 1, 160))
     && ["audio", "digital", "paper"].includes(String(value.format))
-    && isDate(value.completedAt);
+    && (value.status === undefined || ["reading", "completed"].includes(String(value.status)))
+    && (value.startedAt === undefined || isDate(value.startedAt))
+    && (value.completedAt === undefined || isDate(value.completedAt))
+    && (value.status !== "completed" || isDate(value.completedAt))
+    && (value.status !== undefined || isDate(value.completedAt));
 }
 
 function validateFitnessEntry(value: unknown) {

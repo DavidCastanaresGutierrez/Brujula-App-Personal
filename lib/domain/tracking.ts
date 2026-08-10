@@ -64,15 +64,26 @@ export function weekdaysInMonth(year: number, monthIndex: number, throughDay?: n
   return count;
 }
 
-export function weekOfMonth(day: number) {
-  return Math.floor((day - 1) / 7) + 1;
+export function monthCalendarWeeks(year: number, monthIndex: number) {
+  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
+  const weeks: number[][] = [];
+  let start = 1;
+  while (start <= monthDays) {
+    const weekday = new Date(year, monthIndex, start).getDay();
+    const daysUntilSunday = (7 - weekday) % 7;
+    const end = Math.min(monthDays, start + daysUntilSunday);
+    weeks.push(Array.from({ length: end - start + 1 }, (_, index) => start + index));
+    start = end + 1;
+  }
+  return weeks;
+}
+
+export function weekOfMonth(year: number, monthIndex: number, day: number) {
+  return monthCalendarWeeks(year, monthIndex).findIndex((week) => week.includes(day)) + 1;
 }
 
 export function daysForMonthWeek(year: number, monthIndex: number, week: number) {
-  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
-  const start = (week - 1) * 7 + 1;
-  const end = Math.min(start + 6, monthDays);
-  return start > monthDays ? [] : Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  return monthCalendarWeeks(year, monthIndex)[week - 1] ?? [];
 }
 
 export function isCalendarDayInFuture(year: number, monthIndex: number, day: number, today = new Date()) {
@@ -168,13 +179,13 @@ export function calculateDailyScore(
   const scheduled = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
   const completed = scheduled.filter((habit) => (habit.history?.[monthKey] ?? []).includes(day)).length;
   const baseScore = scheduled.length ? completed / scheduled.length * 10 : 0;
-  const weekDays = daysForMonthWeek(year, month, weekOfMonth(day));
-  const totalWeeklyTarget = activeWeekly.reduce((sum, habit) => sum + Math.max(1, habit.goal), 0);
+  const weekDays = daysForMonthWeek(year, month, weekOfMonth(year, month, day));
+  const totalWeeklyTarget = activeWeekly.reduce((sum, habit) => sum + Math.min(weekDays.length, Math.max(1, habit.goal)), 0);
   const eligibleWeeklyDoneToday = activeWeekly.reduce((sum, habit) => {
     const history = habit.history?.[monthKey] ?? [];
     if (!history.includes(day)) return sum;
     const checksThroughToday = history.filter((checkedDay) => weekDays.includes(checkedDay) && checkedDay <= day).length;
-    return sum + (checksThroughToday <= habit.goal ? 1 : 0);
+    return sum + (checksThroughToday <= Math.min(weekDays.length, habit.goal) ? 1 : 0);
   }, 0);
   const contribution = totalWeeklyTarget ? Math.min(1, eligibleWeeklyDoneToday / totalWeeklyTarget) : 0;
   const bonus = (10 - baseScore) * 0.2 * contribution;

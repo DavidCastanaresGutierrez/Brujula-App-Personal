@@ -19,6 +19,7 @@ import {
   isWeekday,
   isCalendarDayInFuture,
   linkedGoalProgress,
+  monthCalendarWeeks,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -36,6 +37,7 @@ type Habit = {
   everyDay?: boolean;
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
+  misses?: Record<string, number[]>;
   category?: HabitCategory;
   celebratedStreak30?: string;
 };
@@ -48,6 +50,7 @@ type WeeklyHabit = {
   checks: number[];
   archived?: boolean;
   history?: Record<string, number[]>;
+  misses?: Record<string, number[]>;
   category?: HabitCategory;
 };
 
@@ -56,7 +59,7 @@ type Category = { id: HabitCategory; label: string; icon: string; color: string 
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
-type BookEntry = { id: number; title: string; format: BookFormat; completedAt: string };
+type BookEntry = { id: number; title: string; author?: string; format: BookFormat; status?: "reading" | "completed"; startedAt?: string; completedAt?: string };
 type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi" | "basalMetabolicRate";
 type FitnessEntry = { id: number; recordedAt: string; weight: number; muscle: number; fatMass: number; bodyWater: number; bodyFat: number; bmi: number; basalMetabolicRate: number };
 type Goal = {
@@ -98,7 +101,7 @@ const palette = [
   "#6366f1", "#8b5cf6", "#a78bfa", "#d946ef", "#ff3b88", "#f472b6", "#fb7185",
   "#ef476f", "#94a3b8",
 ];
-const weeklyBarPalette = ["#3cc9ab", "#ffb51b", "#ff3b6b", "#50b8e7", "#a78bfa"];
+const weeklyBarPalette = ["#3cc9ab", "#ffb51b", "#ff3b6b", "#50b8e7", "#a78bfa", "#f472b6"];
 const defaultCategories: Category[] = [
   { id: "health", label: "Salud", icon: "♥", color: "#39c6a4" },
   { id: "family", label: "Familia", icon: "⌂", color: "#f472b6" },
@@ -430,6 +433,7 @@ function ResetPassword({ onComplete }: { onComplete: () => void }) {
 
 export default function Home() {
   const [mainView, setMainView] = useState<MainView>("summary");
+  const [dayViewDate, setDayViewDate] = useState(() => new Date());
   const [daily, setDaily] = useState(initialDaily);
   const [weekly, setWeekly] = useState(initialWeekly);
   const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
@@ -456,7 +460,10 @@ export default function Home() {
   const [readingTarget, setReadingTarget] = useState(12);
   const [bookGoal, setBookGoal] = useState<Goal | null>(null);
   const [bookTitle, setBookTitle] = useState("");
+  const [bookAuthor, setBookAuthor] = useState("");
   const [bookFormat, setBookFormat] = useState<BookFormat>("paper");
+  const [bookStatus, setBookStatus] = useState<"reading" | "completed">("reading");
+  const [editingBookId, setEditingBookId] = useState<number | null>(null);
   const [fitnessGoal, setFitnessGoal] = useState<Goal | null>(null);
   const [fitnessDraft, setFitnessDraft] = useState({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" });
   const [fitnessMetric, setFitnessMetric] = useState<FitnessMetric>("weight");
@@ -472,6 +479,8 @@ export default function Home() {
   const [editing, setEditing] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
   const [deleting, setDeleting] = useState<{ type: "daily" | "weekly"; id: number; name: string } | null>(null);
   const [actionHabit, setActionHabit] = useState<{ type: "daily" | "weekly"; habit: Habit } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
   const [chartPeriod, setChartPeriod] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [chartScope, setChartScope] = useState<"general" | "category" | "habit">("general");
@@ -918,6 +927,7 @@ export default function Home() {
   ];
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
+  const missesFor = (habit: Habit | WeeklyHabit, key = monthKey) => habit.misses?.[key] ?? [];
   const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
   const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
   const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= evaluatedThrough).length, 0);
@@ -976,9 +986,10 @@ export default function Home() {
   const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
-  const weeklyProgress = Array.from({ length: Math.ceil(days / 7) }, (_, index) => {
-    const start = index * 7 + 1;
-    const end = Math.min(days, start + 6);
+  const monthWeeks = monthCalendarWeeks(year, month);
+  const weeklyProgress = monthWeeks.map((weekDays) => {
+    const start = weekDays[0];
+    const end = weekDays.at(-1)!;
     const projected = !isPastMonth && new Date(year, month, start) > today;
     const evaluatedEnd = projected ? start - 1 : Math.min(end, isCurrentMonth ? today.getDate() : end);
     let completed = 0; let possible = 0;
@@ -1047,6 +1058,7 @@ export default function Home() {
   rollingPeriodStart.setDate(rollingPeriodEnd.getDate() - 6);
   const shortDate = (value: Date) => value.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(".", "");
   const rollingPeriodLabel = `${shortDate(rollingPeriodStart)} – ${shortDate(rollingPeriodEnd)}`;
+  const isPastDay = (targetYear: number, targetMonth: number, targetDay: number) => isoDate(targetYear, targetMonth, targetDay) < isoDate(today.getFullYear(), today.getMonth(), today.getDate());
 
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
@@ -1063,21 +1075,63 @@ export default function Home() {
       const isRemoving = current.includes(day);
       const next = toggleCompletionForDay(current, day);
       const history = { ...(habit.history ?? {}), [monthKey]: next };
+      const misses = { ...(habit.misses ?? {}), [monthKey]: missesFor(habit).filter((item) => item !== day) };
       if (!isRemoving) {
         const streak = streakContaining(history, isoDate(year, month, day));
         if (streak.length >= 30 && habit.celebratedStreak30 !== streak.start) {
           setStreakCelebration({ name: habit.name, color: habit.color });
-          return { ...habit, history, celebratedStreak30: streak.start };
+          return { ...habit, history, misses, celebratedStreak30: streak.start };
         }
       }
-      return { ...habit, history };
+      return { ...habit, history, misses };
     }));
   }
 
-  function toggleTodayHabit(id: number) {
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
-    const currentDay = today.getDate();
+  function markMissed(type: "daily" | "weekly", id: number, targetDate: Date) {
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth();
+    const day = targetDate.getDate();
+    if (isCalendarDayInFuture(targetYear, targetMonth, day, today)) return;
+    const key = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}`;
+    const update = (item: Habit | WeeklyHabit) => {
+      if (item.id !== id) return item;
+      if ("weekdaysOnly" in item && item.weekdaysOnly && !isWeekday(targetYear, targetMonth, day)) return item;
+      const history = { ...(item.history ?? {}), [key]: (item.history?.[key] ?? []).filter((value) => value !== day) };
+      const misses = { ...(item.misses ?? {}), [key]: Array.from(new Set([...(item.misses?.[key] ?? []), day])).sort((a, b) => a - b) };
+      return { ...item, history, misses };
+    };
+    if (type === "daily") setDaily((items) => items.map(update) as Habit[]);
+    else setWeekly((items) => items.map(update) as WeeklyHabit[]);
+  }
+
+  function longPressProps(onTap: () => void, onLongPress: () => void) {
+    const cancel = () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    };
+    return {
+      onPointerDown: () => {
+        longPressTriggered.current = false;
+        cancel();
+        longPressTimer.current = setTimeout(() => {
+          longPressTriggered.current = true;
+          onLongPress();
+        }, 550);
+      },
+      onPointerUp: () => {
+        cancel();
+        if (!longPressTriggered.current) onTap();
+      },
+      onPointerCancel: cancel,
+      onPointerLeave: cancel,
+      onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
+    };
+  }
+
+  function toggleDayViewHabit(id: number) {
+    const currentYear = dayViewDate.getFullYear();
+    const currentMonth = dayViewDate.getMonth();
+    const currentDay = dayViewDate.getDate();
     const key = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
     const habit = daily.find((item) => item.id === id);
     if (habit?.weekdaysOnly && !isWeekday(currentYear, currentMonth, currentDay)) return;
@@ -1085,17 +1139,17 @@ export default function Home() {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
       const next = toggleCompletionForDay(current, currentDay);
-      return { ...item, history: { ...(item.history ?? {}), [key]: next } };
+      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== currentDay) } };
     }));
   }
 
-  function toggleCurrentWeekHabit(id: number) {
-    const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  function toggleDayViewWeeklyHabit(id: number) {
+    const key = `${dayViewDate.getFullYear()}-${String(dayViewDate.getMonth() + 1).padStart(2, "0")}`;
     setWeekly((items) => items.map((item) => {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
-      const next = toggleCompletionForDay(current, today.getDate());
-      return { ...item, history: { ...(item.history ?? {}), [key]: next } };
+      const next = toggleCompletionForDay(current, dayViewDate.getDate());
+      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== dayViewDate.getDate()) } };
     }));
   }
 
@@ -1383,17 +1437,42 @@ export default function Home() {
     setTemplateModal(null); setTemplateHabitIds([]); setGoalFilter("yearly");
   }
 
-  function addBook() {
+  const isBookCompleted = (book: BookEntry) => book.status === "completed" || (book.status === undefined && Boolean(book.completedAt));
+
+  function withReadingProgress(goal: Goal, books: BookEntry[]) {
+    const completed = books.filter(isBookCompleted).length;
+    return { ...goal, books, currentValue: Math.min(goal.targetValue, completed), status: completed >= goal.targetValue ? "completed" as const : "active" as const };
+  }
+
+  function openBookEditor(goal: Goal, book?: BookEntry, status: "reading" | "completed" = "reading") {
+    setBookGoal(goal); setEditingBookId(book?.id ?? null); setBookTitle(book?.title ?? ""); setBookAuthor(book?.author ?? "");
+    setBookFormat(book?.format ?? "paper"); setBookStatus(book ? (isBookCompleted(book) ? "completed" : "reading") : status);
+  }
+
+  function closeBookEditor() {
+    setBookGoal(null); setEditingBookId(null); setBookTitle(""); setBookAuthor(""); setBookFormat("paper"); setBookStatus("reading");
+  }
+
+  function saveBook() {
     if (!bookGoal || !bookTitle.trim()) return;
-    const entry: BookEntry = { id: Date.now(), title: bookTitle.trim(), format: bookFormat, completedAt: new Date().toISOString().slice(0, 10) };
+    const now = new Date();
+    const todayKey = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
+    const previous = bookGoal.books?.find((book) => book.id === editingBookId);
+    const entry: BookEntry = { id: editingBookId ?? Date.now(), title: bookTitle.trim(), author: bookAuthor.trim() || undefined, format: bookFormat, status: bookStatus, startedAt: previous?.startedAt ?? todayKey, completedAt: bookStatus === "completed" ? previous?.completedAt ?? todayKey : undefined };
     setGoals((items) => items.map((goal) => goal.id === bookGoal.id
-      ? { ...goal, books: [...(goal.books ?? []), entry], currentValue: Math.min(goal.targetValue, (goal.books?.length ?? 0) + 1), status: (goal.books?.length ?? 0) + 1 >= goal.targetValue ? "completed" : "active" }
+      ? withReadingProgress(goal, editingBookId === null ? [...(goal.books ?? []), entry] : (goal.books ?? []).map((book) => book.id === editingBookId ? entry : book))
       : goal));
-    setBookGoal(null); setBookTitle(""); setBookFormat("paper");
+    closeBookEditor();
+  }
+
+  function completeBook(goalId: number, bookId: number) {
+    const now = new Date();
+    const todayKey = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
+    setGoals((items) => items.map((goal) => goal.id === goalId ? withReadingProgress(goal, (goal.books ?? []).map((book) => book.id === bookId ? { ...book, status: "completed", completedAt: todayKey } : book)) : goal));
   }
 
   function removeBook(goalId: number, bookId: number) {
-    setGoals((items) => items.map((goal) => goal.id === goalId ? { ...goal, books: (goal.books ?? []).filter((book) => book.id !== bookId) } : goal));
+    setGoals((items) => items.map((goal) => goal.id === goalId ? withReadingProgress(goal, (goal.books ?? []).filter((book) => book.id !== bookId)) : goal));
   }
 
   function saveFitnessEntry() {
@@ -1485,15 +1564,26 @@ export default function Home() {
     && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter)
     && (goal.period !== "weekly" || weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, realTodayKey) || (goal.status === "active" && goal.dueDate < realTodayKey)));
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active" && !goal.archived);
-  const todayMonthKey = realTodayKey.slice(0, 7);
-  const currentWeekIndex = Math.floor((today.getDate() - 1) / 7) + 1;
-  const todayHabits = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(today.getFullYear(), today.getMonth(), today.getDate()));
-  const todayHabitGroups = habitCategories.map((category) => ({ category, habits: todayHabits.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
+  const dayViewKey = isoDate(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate());
+  const dayViewMonthKey = dayViewKey.slice(0, 7);
+  const dayViewWeekIndex = monthCalendarWeeks(dayViewDate.getFullYear(), dayViewDate.getMonth()).findIndex((week) => week.includes(dayViewDate.getDate())) + 1;
+  const dayViewHabits = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
+  const dayViewHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewHabits.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
   const weeklyHabitGroups = habitCategories.map((category) => ({ category, habits: activeWeekly.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
-  const todayGoals = activeGoals
-    .filter((goal) => goal.period === "daily" ? goal.periodKey === realTodayKey : goal.dueDate >= realTodayKey)
+  const dayViewGoals = resolvedGoals.filter((goal) => !goal.archived && goal.status !== "discarded")
+    .filter((goal) => goal.period === "daily" ? goal.periodKey === dayViewKey : goal.period === "weekly" ? weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, dayViewKey) : goal.dueDate >= dayViewKey)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 6);
+  const dayViewScore = calculateDailyScore(dayViewDate, activeDaily, activeWeekly);
+  const dayViewCompleted = dayViewHabits.filter((habit) => (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate())).length;
+  const isViewingToday = dayViewKey === realTodayKey;
+
+  function shiftDayView(direction: -1 | 1) {
+    setDayViewDate((current) => {
+      const next = new Date(current.getFullYear(), current.getMonth(), current.getDate() + direction);
+      return next > new Date(today.getFullYear(), today.getMonth(), today.getDate()) ? current : next;
+    });
+  }
 
   useEffect(() => {
     if (!hydrated || !session || closureNotice) return;
@@ -1623,32 +1713,35 @@ export default function Home() {
         <section className="view-intro"><p className="eyebrow">ACCIÓN DIARIA</p><h1>Tu día</h1><p>Lo que requiere tu atención hoy, sin ruido.</p></section>
         <section className="panel today-panel" id="today">
           <div className="today-head">
-            <div><p className="eyebrow">HOY · {today.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}</p><h2>Tu día, en una sola vista</h2><p>Marca lo que completas y mantén a la vista los resultados que estás persiguiendo.</p></div>
-            <strong>{todayHabits.filter((habit) => (habit.history?.[todayMonthKey] ?? []).includes(today.getDate())).length}/{todayHabits.length} hábitos</strong>
+            <div><p className="eyebrow">{isViewingToday ? "HOY" : "DÍA CONSULTADO"} · {dayViewDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}</p><h2>Tu día, en una sola vista</h2><p>Marca lo que completas y mantén a la vista los resultados que estás persiguiendo.</p></div>
+            <div className="today-head-summary"><strong>{dayViewCompleted}/{dayViewHabits.length} hábitos</strong><strong>Nota {scoreLabel(dayViewScore.finalScore)} / 10</strong></div>
           </div>
+          <div className="day-navigation"><button onClick={() => shiftDayView(-1)} aria-label="Ver el día anterior">← Día anterior</button><button onClick={() => shiftDayView(1)} disabled={isViewingToday} aria-label="Ver el día siguiente">Día siguiente →</button>{!isViewingToday && <button onClick={() => setDayViewDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}>Volver a hoy</button>}</div>
           <div className="today-grid">
             <article className="today-column-card">
-              <div className="today-section-title"><h3>Hábitos de hoy</h3><span>{todayHabits.length}</span></div>
+              <div className="today-section-title"><h3>Hábitos del día</h3><span>{dayViewHabits.length}</span></div>
               <div className="today-list grouped">
-                {todayHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
-                  const checked = (habit.history?.[todayMonthKey] ?? []).includes(today.getDate());
-                  return <button key={habit.id} className={`today-item ${checked ? "done" : ""}`} onClick={() => toggleTodayHabit(habit.id)} aria-pressed={checked}>
-                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : "Pendiente"}</small></span><b>{checked ? "✓" : ""}</b>
+                {dayViewHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
+                  const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                  const missed = !checked && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
+                  return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => markMissed("daily", habit.id, dayViewDate))} aria-pressed={checked}>
+                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "×" : ""}</b>
                   </button>;
                 })}</div>)}
-                {!todayHabits.length && <p className="today-empty">No tienes hábitos previstos para hoy.</p>}
+                {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
               </div>
               {!!activeWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{activeWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
-                const weekDays = daysForMonthWeek(today.getFullYear(), today.getMonth(), currentWeekIndex);
-                const count = (habit.history?.[todayMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
-                const doneToday = (habit.history?.[todayMonthKey] ?? []).includes(today.getDate());
-                return <button key={habit.id} className={`today-item ${doneToday ? "done" : ""}`} onClick={() => toggleCurrentWeekHabit(habit.id)} aria-pressed={doneToday}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{habit.goal} esta semana{doneToday ? " · hecho hoy" : ""}</small></span><b>{doneToday ? "✓" : "+"}</b></button>;
+                const weekDays = daysForMonthWeek(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewWeekIndex);
+                const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
+                const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                const missed = !doneOnDay && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
+                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => markMissed("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "×" : "+"}</b></button>;
               })}</div>)}</div></>}
             </article>
             <article className="today-column-card">
-              <div className="today-section-title"><h3>Objetivos en foco</h3><span>{todayGoals.length}</span></div>
+              <div className="today-section-title"><h3>Objetivos en foco</h3><span>{dayViewGoals.length}</span></div>
               <div className="today-goals">
-                {todayGoals.map((goal) => {
+                {dayViewGoals.map((goal) => {
                   const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
                   const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
                   return <div className="today-goal" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
@@ -1656,7 +1749,7 @@ export default function Home() {
                     {goal.measurement === "complete" ? <button onClick={() => updateGoalProgress(goal, 1)}>✓</button> : <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
                   </div>;
                 })}
-                {!todayGoals.length && <p className="today-empty">No hay objetivos activos que requieran tu atención.</p>}
+                {!dayViewGoals.length && <p className="today-empty">No hay objetivos que requieran atención este día.</p>}
               </div>
             </article>
           </div>
@@ -1790,7 +1883,7 @@ export default function Home() {
               <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {linkedMilestones.length ? <div className="goal-milestones"><strong>{linkedMilestones.filter((item) => item.status === "completed").length} de {linkedMilestones.length} hitos completados</strong>{visibleMilestones.map((item) => <span key={item.id} className={item.status === "completed" ? "done" : ""}>{item.status === "completed" ? "✓" : "○"} {item.title}</span>)}{archivedMilestones > 0 && <small>{archivedMilestones} {archivedMilestones === 1 ? "hito archivado incluido" : "hitos archivados incluidos"}</small>}</div>
-                : goal.template === "reading" ? <><button className="goal-complete" onClick={() => setBookGoal(goal)}>+ Registrar libro terminado</button><div className="goal-entry-list">{(goal.books ?? []).slice(-3).reverse().map((book) => <div key={book.id}><span>{book.title}</span><small>{{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small><button onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></div>)}</div><small className="goal-consistency">Constancia de lectura: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
+                : goal.template === "reading" ? <><div className="book-add-actions"><button className="goal-complete" onClick={() => openBookEditor(goal)}>+ Libro en proceso</button><button className="goal-complete" onClick={() => openBookEditor(goal, undefined, "completed")}>+ Libro terminado</button></div><div className="goal-entry-list">{(goal.books ?? []).slice().reverse().map((book) => <div className="book-entry" key={book.id}><span><strong>{book.title}</strong><small>{book.author || "Autor no indicado"} · {{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small></span><span className="book-entry-actions">{!isBookCompleted(book) && <button onClick={() => completeBook(goal.id, book.id)}>Terminar</button>}<button onClick={() => openBookEditor(goal, book)} aria-label={`Editar ${book.title}`}>Editar</button><button className="danger" onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></span></div>)}</div><small className="goal-consistency">{(goal.books ?? []).filter((book) => !isBookCompleted(book)).length} en proceso · {(goal.books ?? []).filter(isBookCompleted).length} terminados · Constancia: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
                 : goal.template === "fitness" ? <><small className="goal-consistency">{(goal.linkedHabitIds ?? []).length ? `${(goal.linkedHabitIds ?? []).length} hábitos · cada uno pondera ${(100 / (goal.linkedHabitIds ?? []).length).toFixed(2)}% al día` : "Sin hábitos vinculados"}</small><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
                 : isOverdueWeekly ? <div className="goal-weekly-actions"><button onClick={() => moveWeeklyGoalToCurrentWeek(goal.id)}>Mover a esta semana</button><button className="danger" onClick={() => setDeletingGoal(goal)}>Eliminar</button></div>
                 : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
@@ -1857,7 +1950,7 @@ export default function Home() {
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} onClick={() => toggleDaily(habit.id, d.day)} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
@@ -1878,13 +1971,13 @@ export default function Home() {
                   </div>
                   {categoryHabits.map((habit) => {
                 const currentChecks = weeklyChecksFor(habit);
-                const availableWeeks = [1, 2, 3, 4, 5].filter((week) => daysForMonthWeek(year, month, week).length);
-                const monthlyTarget = habit.goal * availableWeeks.length;
+                const availableWeeks = monthWeeks.map((_, index) => index + 1);
+                const monthlyTarget = availableWeeks.reduce((sum, week) => sum + Math.min(habit.goal, daysForMonthWeek(year, month, week).length), 0);
                 const validChecks = currentChecks.filter((day) => !isCalendarDayInFuture(year, month, day, today));
                 const progress = Math.min(100, Math.round(validChecks.length / Math.max(1, monthlyTarget) * 100));
                 return <div className={`weekly-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "weekly" && reorderHabit("weekly", dragging.id, habit.id)}>
                   <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "weekly", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "weekly", habit })}>⋯</button></div></div>
-                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const eligibleDays = availableDaysForMonthWeek(year, month, week, today); const count = currentChecks.filter((day) => weekDays.includes(day)).length; const eligibleCount = currentChecks.filter((day) => eligibleDays.includes(day)).length; const canAdd = eligibleDays.some((day) => !currentChecks.includes(day)); return <div className={`week-counter ${eligibleCount >= habit.goal ? "checked" : ""} ${eligibleDays.length === 0 ? "future-week" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{eligibleCount}/{habit.goal}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={!canAdd} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
+                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const weekTarget = Math.min(habit.goal, weekDays.length); const eligibleDays = availableDaysForMonthWeek(year, month, week, today); const count = currentChecks.filter((day) => weekDays.includes(day)).length; const eligibleCount = currentChecks.filter((day) => eligibleDays.includes(day)).length; const canAdd = eligibleDays.some((day) => !currentChecks.includes(day)); return <div className={`week-counter ${eligibleCount >= weekTarget ? "checked" : ""} ${eligibleDays.length === 0 ? "future-week" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{eligibleCount}/{weekTarget}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={!canAdd} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
                   <div className="weekly-result"><strong>{progress}%</strong><span>{validChecks.length}/{monthlyTarget}</span></div>
                 </div>;
                   })}
@@ -1917,11 +2010,13 @@ export default function Home() {
         <button className="add-button full" onClick={createTemplateGoal}>Crear objetivo</button>
       </div></div>}
 
-      {bookGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setBookGoal(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={() => setBookGoal(null)} aria-label="Cerrar">×</button><p className="eyebrow">LECTURA ANUAL</p><h2>Registrar libro terminado</h2>
+      {bookGoal && <div className="modal-backdrop" role="presentation" onMouseDown={closeBookEditor}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="close" onClick={closeBookEditor} aria-label="Cerrar">×</button><p className="eyebrow">LECTURA ANUAL</p><h2>{editingBookId === null ? "Registrar libro" : "Editar libro"}</h2>
         <label>Título<input autoFocus value={bookTitle} onChange={(event) => setBookTitle(event.target.value)} placeholder="Título del libro" /></label>
+        <label>Autor<input value={bookAuthor} onChange={(event) => setBookAuthor(event.target.value)} placeholder="Autor del libro" /></label>
+        <label>Estado<select value={bookStatus} onChange={(event) => setBookStatus(event.target.value as "reading" | "completed")}><option value="reading">En proceso</option><option value="completed">Terminado</option></select></label>
         <label>Formato<select value={bookFormat} onChange={(event) => setBookFormat(event.target.value as BookFormat)}><option value="paper">Papel</option><option value="digital">Electrónico</option><option value="audio">Audiolibro</option></select></label>
-        <button className="add-button full" disabled={!bookTitle.trim()} onClick={addBook}>Añadir libro</button>
+        <button className="add-button full" disabled={!bookTitle.trim()} onClick={saveBook}>{editingBookId === null ? "Añadir libro" : "Guardar cambios"}</button>
       </div></div>}
 
       {fitnessGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setFitnessGoal(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>

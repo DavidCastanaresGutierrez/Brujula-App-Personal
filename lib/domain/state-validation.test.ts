@@ -38,6 +38,32 @@ describe("tracker state validation", () => {
     state.daily[0].history = { "2026-08": [1, 1] };
     expect(validateTrackerState(state)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
   });
+
+  it("accepts explicit missed days and rejects malformed missed-day history", () => {
+    const state = validState();
+    Object.assign(state.daily[0], { misses: { "2026-08": [2, 4] } });
+    expect(validateTrackerState(state).success).toBe(true);
+
+    const malformed = validState();
+    Object.assign(malformed.daily[0], { misses: { "2026-08": [2, 2] } });
+    expect(validateTrackerState(malformed)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
+  });
+
+  it("accepts legacy completed books and new reading entries", () => {
+    const legacy = validState();
+    Object.assign(legacy.goals[0], { template: "reading", books: [{ id: 10, title: "Sapiens", format: "paper", completedAt: "2026-08-01" }] });
+    expect(validateTrackerState(legacy).success).toBe(true);
+
+    const current = validState();
+    Object.assign(current.goals[0], { template: "reading", books: [{ id: 11, title: "Dune", author: "Frank Herbert", format: "digital", status: "reading", startedAt: "2026-08-10" }] });
+    expect(validateTrackerState(current).success).toBe(true);
+  });
+
+  it("rejects a completed book without a completion date", () => {
+    const state = validState();
+    Object.assign(state.goals[0], { template: "reading", books: [{ id: 12, title: "Dune", author: "Frank Herbert", format: "paper", status: "completed" }] });
+    expect(validateTrackerState(state).success).toBe(false);
+  });
 });
 
 describe("state revision validation", () => {

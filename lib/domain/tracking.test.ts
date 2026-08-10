@@ -10,6 +10,7 @@ import {
   goalPeriodDetails,
   linkedGoalProgress,
   isCalendarDayInFuture,
+  monthCalendarWeeks,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -48,9 +49,20 @@ describe("calendar rules", () => {
     });
   });
 
-  it("keeps the existing 1-7, 8-14 monthly tracking groups", () => {
-    expect(daysForMonthWeek(2026, 7, 1)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(daysForMonthWeek(2026, 7, 5)).toEqual([29, 30, 31]);
+  it("splits a month into Monday-to-Sunday weeks, clipped at its boundaries", () => {
+    expect(monthCalendarWeeks(2026, 7)).toEqual([
+      [1, 2],
+      [3, 4, 5, 6, 7, 8, 9],
+      [10, 11, 12, 13, 14, 15, 16],
+      [17, 18, 19, 20, 21, 22, 23],
+      [24, 25, 26, 27, 28, 29, 30],
+      [31],
+    ]);
+  });
+
+  it("starts the first partial week on day one and ends it on Sunday", () => {
+    expect(daysForMonthWeek(2026, 3, 1)).toEqual([1, 2, 3, 4, 5]);
+    expect(daysForMonthWeek(2026, 3, 2)).toEqual([6, 7, 8, 9, 10, 11, 12]);
   });
 
   it("counts only working days through the requested date", () => {
@@ -67,9 +79,10 @@ describe("calendar rules", () => {
 
   it("offers weekly completions only through today", () => {
     const today = new Date(2026, 7, 5, 12);
-    expect(availableDaysForMonthWeek(2026, 7, 1, today)).toEqual([1, 2, 3, 4, 5]);
-    expect(availableDaysForMonthWeek(2026, 7, 2, today)).toEqual([]);
-    expect(availableDaysForMonthWeek(2026, 6, 5, today)).toEqual([29, 30, 31]);
+    expect(availableDaysForMonthWeek(2026, 7, 1, today)).toEqual([1, 2]);
+    expect(availableDaysForMonthWeek(2026, 7, 2, today)).toEqual([3, 4, 5]);
+    expect(availableDaysForMonthWeek(2026, 7, 3, today)).toEqual([]);
+    expect(availableDaysForMonthWeek(2026, 6, 5, today)).toEqual([27, 28, 29, 30, 31]);
   });
 });
 
@@ -153,6 +166,16 @@ describe("score rules", () => {
     );
     expect(result.eligibleWeeklyDoneToday).toBe(0);
     expect(result.bonus).toBe(0);
+  });
+
+  it("caps a weekly target to the days in a partial month week", () => {
+    const result = calculateDailyScore(
+      new Date(2026, 7, 1, 12),
+      [{ goal: 31, history: { "2026-08": [] } }],
+      [{ goal: 5, history: { "2026-08": [1] } }],
+    );
+    expect(result.eligibleWeeklyDoneToday).toBe(1);
+    expect(result.bonus).toBe(1);
   });
 
   it("awards 10% of the missing weekly score only when every goal is complete", () => {
