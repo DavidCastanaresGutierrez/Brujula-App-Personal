@@ -59,6 +59,7 @@ function validateHabit(value: unknown, kind: "daily" | "weekly") {
     && isText(value.category, 1, 80)
     && (value.checks === undefined || (Array.isArray(value.checks) && value.checks.every((day) => Number.isInteger(day) && day >= 1 && day <= 31)))
     && (value.archived === undefined || typeof value.archived === "boolean")
+    && (value.archivedAt === undefined || isDate(value.archivedAt))
     && (value.celebratedStreak30 === undefined || isDate(value.celebratedStreak30))
     && (kind === "weekly" || value.everyDay === undefined || typeof value.everyDay === "boolean")
     && (kind === "weekly" || value.weekdaysOnly === undefined || typeof value.weekdaysOnly === "boolean")
@@ -131,7 +132,7 @@ export function validateTrackerState(value: unknown): StateValidationResult {
   if (!daily.every((habit) => validateHabit(habit, "daily")) || !weekly.every((habit) => validateHabit(habit, "weekly"))) {
     return { success: false, error: "Hay hábitos con datos no válidos" };
   }
-  if (!categories.every((category) => isRecord(category) && isText(category.id, 1, 80) && isText(category.label, 1, 80) && isText(category.icon, 1, 16) && isColor(category.color))) {
+  if (!categories.every((category) => isRecord(category) && isText(category.id, 1, 80) && isText(category.label, 1, 80) && isText(category.icon, 1, 16) && isColor(category.color) && (category.priority === undefined || typeof category.priority === "boolean"))) {
     return { success: false, error: "Hay categorías con datos no válidos" };
   }
   if (motivations !== undefined && (!Array.isArray(motivations) || motivations.length > LIMITS.motivations || !motivations.every((text) => isText(text, 1, 220)))) {
