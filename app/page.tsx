@@ -24,7 +24,7 @@ import {
   weekdaysInMonth,
 } from "../lib/domain/tracking";
 import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
-import { parseStoredStringSet, parseStoredTrackerState } from "../lib/domain/storage";
+import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 
 type Habit = {
   id: number;
@@ -588,9 +588,9 @@ export default function Home() {
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
     let cancelled = false;
-    const localState = parseStoredTrackerState(localStorage.getItem(storageKey)) as TrackerState | null;
-    const localBaseline = parseStoredTrackerState(localStorage.getItem(baselineKey)) as TrackerState | null;
-    const storedRevision = Number(localStorage.getItem(revisionKey));
+    const localState = parseStoredTrackerState(readStoredValue(localStorage, storageKey)) as TrackerState | null;
+    const localBaseline = parseStoredTrackerState(readStoredValue(localStorage, baselineKey)) as TrackerState | null;
+    const storedRevision = Number(readStoredValue(localStorage, revisionKey));
 
     async function loadState() {
       try {
@@ -619,8 +619,8 @@ export default function Home() {
         }
         baselineRef.current = payload.state ? normalizeState(payload.state) : null;
         revisionRef.current = payload.revision;
-        localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
-        localStorage.setItem(revisionKey, String(payload.revision));
+        writeStoredValue(localStorage, baselineKey, JSON.stringify(baselineRef.current));
+        writeStoredValue(localStorage, revisionKey, String(payload.revision));
         if (hasStartupConflict && payload.state) {
           conflictRef.current = true;
           setRemoteConflict({ state: normalizeState(payload.state), revision: payload.revision });
@@ -656,7 +656,7 @@ export default function Home() {
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
     const state = { daily, weekly, categories: habitCategories, motivations, goals };
-    localStorage.setItem(storageKey, JSON.stringify(state));
+    writeStoredValue(localStorage, storageKey, JSON.stringify(state));
     if (statesEqual(state, baselineRef.current)) return;
     if (conflictRef.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -695,8 +695,8 @@ export default function Home() {
         if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         baselineRef.current = snapshot;
         revisionRef.current = payload.revision;
-        localStorage.setItem(baselineKey, JSON.stringify(snapshot));
-        localStorage.setItem(revisionKey, String(payload.revision));
+        writeStoredValue(localStorage, baselineKey, JSON.stringify(snapshot));
+        writeStoredValue(localStorage, revisionKey, String(payload.revision));
         setSyncStatus("synced");
       } catch {
         if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) setSyncStatus("offline");
@@ -789,9 +789,9 @@ export default function Home() {
         const nextState = serverState;
         baselineRef.current = serverState;
         revisionRef.current = payload.revision;
-        localStorage.setItem(baselineKey, JSON.stringify(serverState));
-        localStorage.setItem(revisionKey, String(payload.revision));
-        localStorage.setItem(storageKey, JSON.stringify(nextState));
+        writeStoredValue(localStorage, baselineKey, JSON.stringify(serverState));
+        writeStoredValue(localStorage, revisionKey, String(payload.revision));
+        writeStoredValue(localStorage, storageKey, JSON.stringify(nextState));
         setDaily(nextState.daily);
         setWeekly(nextState.weekly);
         setHabitCategories(nextState.categories);
@@ -857,9 +857,9 @@ export default function Home() {
     revisionRef.current = remoteConflict.revision;
     conflictRef.current = false;
     pendingRemoteRevisionRef.current = null;
-    localStorage.setItem(storageKey, JSON.stringify(nextState));
-    localStorage.setItem(baselineKey, JSON.stringify(nextState));
-    localStorage.setItem(revisionKey, String(remoteConflict.revision));
+    writeStoredValue(localStorage, storageKey, JSON.stringify(nextState));
+    writeStoredValue(localStorage, baselineKey, JSON.stringify(nextState));
+    writeStoredValue(localStorage, revisionKey, String(remoteConflict.revision));
     setDaily(nextState.daily);
     setWeekly(nextState.weekly);
     setHabitCategories(nextState.categories);
@@ -876,8 +876,8 @@ export default function Home() {
     baselineRef.current = normalizeState(remoteConflict.state);
     revisionRef.current = remoteConflict.revision;
     conflictRef.current = false;
-    localStorage.setItem(baselineKey, JSON.stringify(baselineRef.current));
-    localStorage.setItem(revisionKey, String(remoteConflict.revision));
+    writeStoredValue(localStorage, baselineKey, JSON.stringify(baselineRef.current));
+    writeStoredValue(localStorage, revisionKey, String(remoteConflict.revision));
     setRemoteConflict(null);
     setSyncStatus("saving");
     setDaily((items) => [...items]);
@@ -1498,7 +1498,7 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || !session || closureNotice) return;
     const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = parseStoredStringSet(localStorage.getItem(deliveredKey));
+    const delivered = parseStoredStringSet(readStoredValue(localStorage, deliveredKey));
     const now = new Date();
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
     const yesterdayKey = `daily:${isoDate(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())}`;
@@ -1559,9 +1559,9 @@ export default function Home() {
   function dismissClosureNotice() {
     if (!closureNotice || !session) return;
     const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = parseStoredStringSet(localStorage.getItem(deliveredKey));
+    const delivered = parseStoredStringSet(readStoredValue(localStorage, deliveredKey));
     delivered.add(closureNotice.key);
-    localStorage.setItem(deliveredKey, JSON.stringify([...delivered].slice(-120)));
+    writeStoredValue(localStorage, deliveredKey, JSON.stringify([...delivered].slice(-120)));
     setClosureNotice(null);
   }
 

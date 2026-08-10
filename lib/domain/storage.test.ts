@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStoredStringSet, parseStoredTrackerState } from "./storage";
+import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "./storage";
 
 const validState = {
   daily: [{ id: 1, name: "Leer", goal: 20, color: "#123456", category: "growth", checks: [] }],
@@ -27,5 +27,15 @@ describe("caché local de Brújula", () => {
   it("usa un conjunto vacío si los avisos están corruptos", () => {
     expect(parseStoredStringSet("not-json").size).toBe(0);
     expect(parseStoredStringSet(JSON.stringify({ key: "daily:2026-08-04" })).size).toBe(0);
+  });
+
+  it("ignora una lectura bloqueada por el navegador", () => {
+    const storage = { getItem: () => { throw new Error("SecurityError"); } };
+    expect(readStoredValue(storage, "brujula-state")).toBeNull();
+  });
+
+  it("ignora una escritura bloqueada o sin cuota", () => {
+    const storage = { setItem: () => { throw new Error("QuotaExceededError"); } };
+    expect(writeStoredValue(storage, "brujula-state", "{}")).toBe(false);
   });
 });
