@@ -16,6 +16,7 @@ type CategoryRow = {
   icon: string;
   color: string;
   position: number;
+  priority: boolean;
 };
 
 type HabitRow = {
@@ -27,6 +28,8 @@ type HabitRow = {
   color: string;
   position: number;
   archived: boolean;
+  archived_at: string | null;
+  misses: Record<string, number[]> | null;
   every_day: boolean;
   weekdays_only: boolean;
   celebrated_streak_30: string | null;
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
       label: category.label,
       icon: category.icon,
       color: category.color,
+      priority: category.priority || undefined,
     }));
     const completions = completionsResult.data as CompletionRow[];
     const historyByHabit = new Map<number, Record<string, number[]>>();
@@ -126,6 +130,8 @@ export async function GET(request: Request) {
       color: habit.color,
       checks: [],
       archived: habit.archived || undefined,
+      archivedAt: habit.archived_at ?? undefined,
+      misses: habit.misses ?? undefined,
       everyDay: habit.kind === "daily" ? habit.every_day : undefined,
       weekdaysOnly: habit.kind === "daily" ? habit.weekdays_only : undefined,
       history: historyByHabit.get(Number(habit.id)) ?? {},
@@ -172,8 +178,8 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
   if (versionBeforeResult.error) throw versionBeforeResult.error;
 
   const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult] = await Promise.all([
-    supabase.from("categories").select("id,label,icon,color,position").order("position"),
-    supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,every_day,weekdays_only,celebrated_streak_30").order("position"),
+    supabase.from("categories").select("id,label,icon,color,position,priority").order("position"),
+    supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,archived_at,misses,every_day,weekdays_only,celebrated_streak_30").order("position"),
     supabase.from("habit_completions").select("habit_id,period_key,value"),
     supabase.from("motivational_quotes").select("text,position").order("position"),
     supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
