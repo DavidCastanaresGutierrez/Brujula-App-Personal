@@ -922,12 +922,19 @@ export default function Home() {
   const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
   const todayNumber = isCurrentMonth ? today.getDate() : null;
   const elapsedDays = isPastMonth ? days : isCurrentMonth ? today.getDate() : 0;
-  const calendar = Array.from({ length: days }, (_, i) => ({
-    day: i + 1,
-    week: Math.floor(i / 7) + 1,
-    weekEnd: new Date(year, month, i + 1).getDay() === 0,
-    label: dayNames[new Date(year, month, i + 1).getDay()],
-  }));
+  const monthStartMondayOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+  const calendar = Array.from({ length: days }, (_, i) => {
+    const day = i + 1;
+    const dayOfWeek = new Date(year, month, day).getDay();
+    const calendarWeek = Math.floor((monthStartMondayOffset + i) / 7);
+    return {
+      day,
+      week: calendarWeek + 1,
+      weekEnd: dayOfWeek === 0,
+      weekShaded: calendarWeek % 2 === 1,
+      label: dayNames[dayOfWeek],
+    };
+  });
 
   useEffect(() => {
     if (!hydrated || activeTab !== "daily" || !todayNumber) return;
@@ -1756,7 +1763,7 @@ export default function Home() {
                   const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
                   const missed = !checked && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
                   return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => markMissed("daily", habit.id, dayViewDate))} aria-pressed={checked}>
-                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "×" : ""}</b>
+                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "✕" : ""}</b>
                   </button>;
                 })}</div>; })}
                 {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
@@ -1766,7 +1773,7 @@ export default function Home() {
                 const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
                 const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
                 const missed = !doneOnDay && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
-                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => markMissed("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "×" : "+"}</b></button>;
+                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => markMissed("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "✕" : "+"}</b></button>;
               })}</div>; })}</div></>}
             </article>
             <article className="today-column-card">
@@ -1781,8 +1788,8 @@ export default function Home() {
                     <span className="today-goal-status">
                       {goal.measurement !== "complete" && <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
                       {goal.measurement === "complete"
-                        ? <button className={completed ? "done" : "missed"} onClick={() => updateGoalProgress(goal, completed ? 0 : 1)} aria-label={completed ? `Reabrir ${goal.title}` : `Marcar ${goal.title} como completado`}>{completed ? "✓" : "×"}</button>
-                        : <i className={completed ? "done" : "missed"} aria-label={completed ? "Objetivo completado" : "Objetivo no completado"}>{completed ? "✓" : "×"}</i>}
+                        ? <button className={completed ? "done" : "missed"} onClick={() => updateGoalProgress(goal, completed ? 0 : 1)} aria-label={completed ? `Reabrir ${goal.title}` : `Marcar ${goal.title} como completado`}>{completed ? "✓" : "✕"}</button>
+                        : <i className={completed ? "done" : "missed"} aria-label={completed ? "Objetivo completado" : "Objetivo no completado"}>{completed ? "✓" : "✕"}</i>}
                     </span>
                   </div>;
                 })}
@@ -1966,7 +1973,7 @@ export default function Home() {
                   <div className="habit-name">HÁBITO</div>
                   <div className="goal-cell">META</div>
                   <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                    {calendar.map((d) => <div className={`${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
+                    {calendar.map((d) => <div className={`${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
                   </div>
                   <div className="result-cell">PROGRESO</div>
                 </div>
@@ -1989,7 +1996,7 @@ export default function Home() {
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "✕" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
