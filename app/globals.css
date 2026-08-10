@@ -472,7 +472,9 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .archived-empty strong { font-size: 13px; }
 .archived-empty p { max-width: 360px; margin: 7px auto 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .block-manager-list { display: grid; gap: 7px; margin: -6px 0 20px; }
-.block-manager-row { display: grid; grid-template-columns: 38px 1fr 34px 34px; align-items: center; gap: 9px; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: rgba(8,16,31,.36); }
+.block-manager-row { display: grid; grid-template-columns: 38px 1fr 34px 34px 34px; align-items: center; gap: 9px; padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: rgba(8,16,31,.36); }
+.priority-toggle { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: #60706b; cursor: pointer; }
+.priority-toggle.active { border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.12); color: #fbbf24; }
 .block-manager-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; font-weight: 850; }
 .block-manager-row strong, .block-manager-row small { display: block; }
 .block-manager-row strong { font-size: 12px; }
