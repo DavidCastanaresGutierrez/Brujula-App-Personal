@@ -302,11 +302,12 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .header-row .goal-cell, .header-row .result-cell { color: var(--muted); font-size: 8px; letter-spacing: .13em; }
 .day-grid { display: grid; align-items: center; gap: 4px; padding: 0 8px; }
 .day-grid > div { text-align: center; }
-.day-grid > div.week-tone { margin: -7px -2px; padding: 7px 2px; border-radius: 5px; background: color-mix(in srgb, var(--week-color) 13%, #101a2f); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--week-color) 16%, transparent); }
 .day-grid > div span { display: block; color: #64718d; font-size: 7px; margin-bottom: 2px; }
 .day-grid > div b { font-size: 9px; }
 .day-grid button { width: 25px; height: 25px; padding: 0; border: 1px solid #34415c; background: #18243c; border-radius: 5px; cursor: pointer; color: #07131d; font-weight: 900; font-size: 13px; transition: .15s ease; }
-.day-grid button.week-tone:not(.checked):not(.missed):not(.today-column) { border-color: color-mix(in srgb, var(--week-color) 29%, #34415c); background: color-mix(in srgb, var(--week-color) 13%, #18243c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--week-color) 7%, transparent); }
+.day-grid .week-end { position: relative; }
+.day-grid .week-end::after { content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 2px; height: 47px; background: #03050a; transform: translateY(-50%); pointer-events: none; }
+.header-row .day-grid .week-end::after { height: 52px; }
 .day-grid button:hover { border-color: var(--teal); transform: scale(1.08); }
 .day-grid button.checked, .week-checks button.checked { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
 .day-grid button.missed { border-color: #ef4444; background: #ef4444; color: #07131d; box-shadow: 0 0 12px rgba(239,68,68,.16); }
