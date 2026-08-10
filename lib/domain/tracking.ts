@@ -4,9 +4,14 @@ export type TrackedHabit = {
   id?: number;
   goal: number;
   archived?: boolean;
+  archivedAt?: string;
+  category?: string;
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
 };
+
+export type ScoreCategory = { id: string; priority?: boolean };
+export type CategoryScore = { categoryId: string; completed: number; scheduled: number; percent: number; weight: number };
 
 export type LinkedGoal = {
   period: GoalPeriod;
@@ -25,6 +30,19 @@ export type DailyScoreBreakdown = {
   scheduled: number;
   eligibleWeeklyDoneToday: number;
 };
+
+export function habitAppliesOnDate(habit: TrackedHabit, dateKey: string) {
+  if (!habit.archived) return true;
+  return Boolean(habit.archivedAt && dateKey < habit.archivedAt);
+}
+
+export function isHabitVisibleInArchive(habit: TrackedHabit, today: Date) {
+  if (!habit.archived) return false;
+  if (!habit.archivedAt) return true;
+  const archived = new Date(`${habit.archivedAt}T12:00:00`);
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  return Math.floor((current.getTime() - archived.getTime()) / 86_400_000) < 7;
+}
 
 export type CalendarWeek = {
   start: string;
@@ -169,16 +187,21 @@ export function calculateDailyScore(
   value: Date,
   dailyHabits: TrackedHabit[],
   weeklyHabits: TrackedHabit[],
+  categories: ScoreCategory[] = [],
 ): DailyScoreBreakdown {
   const year = value.getFullYear();
   const month = value.getMonth();
   const day = value.getDate();
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const activeDaily = dailyHabits.filter((habit) => !habit.archived);
-  const activeWeekly = weeklyHabits.filter((habit) => !habit.archived);
+  const dateKey = isoDate(year, month, day);
+  const activeDaily = dailyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
+  const activeWeekly = weeklyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
   const scheduled = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
   const completed = scheduled.filter((habit) => (habit.history?.[monthKey] ?? []).includes(day)).length;
-  const baseScore = scheduled.length ? completed / scheduled.length * 10 : 0;
+  const categoryScores = calculateCategoryScores(value, scheduled, categories);
+  const weightedScore = categoryScores.reduce((sum, category) => sum + category.percent / 10 * category.weight, 0);
+  const totalWeight = categoryScores.reduce((sum, category) => sum + category.weight, 0);
+  const baseScore = totalWeight ? weightedScore / totalWeight : 0;
   const weekDays = daysForMonthWeek(year, month, weekOfMonth(year, month, day));
   const totalWeeklyTarget = activeWeekly.reduce((sum, habit) => sum + Math.min(weekDays.length, Math.max(1, habit.goal)), 0);
   const eligibleWeeklyDoneToday = activeWeekly.reduce((sum, habit) => {
@@ -197,6 +220,29 @@ export function calculateDailyScore(
     scheduled: scheduled.length,
     eligibleWeeklyDoneToday,
   };
+}
+
+export function calculateCategoryScores(value: Date, habits: TrackedHabit[], categories: ScoreCategory[]): CategoryScore[] {
+  const year = value.getFullYear();
+  const month = value.getMonth();
+  const day = value.getDate();
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const grouped = new Map<string, TrackedHabit[]>();
+  habits.forEach((habit, index) => {
+    const key = habit.category ?? `__uncategorized-${index}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), habit]);
+  });
+  return [...grouped.entries()].map(([categoryId, items]) => {
+    const completed = items.filter((habit) => (habit.history?.[monthKey] ?? []).includes(day)).length;
+    return {
+      categoryId,
+      completed,
+      scheduled: items.length,
+      percent: completed / items.length * 100,
+      weight: categoryById.get(categoryId)?.priority ? 2 : 1,
+    };
+  });
 }
 
 export function calculateWeeklyGoalBonus(baseScore: number, goals: Array<{ status: string; currentValue: number; targetValue: number }>) {
