@@ -11,6 +11,7 @@ import {
   calculateProportionalGoalBonus,
   calculateWeightedHabitDays,
   availableDaysForMonthWeek,
+  calculateCategoryScores,
   calculateDailyScore,
   calculateWeeklyGoalBonus,
   daysForMonthWeek,
@@ -18,6 +19,8 @@ import {
   isoDate,
   isWeekday,
   isCalendarDayInFuture,
+  habitAppliesOnDate,
+  isHabitVisibleInArchive,
   linkedGoalProgress,
   monthCalendarWeeks,
   toggleCompletionForDay,
@@ -34,6 +37,7 @@ type Habit = {
   color: string;
   checks: number[];
   archived?: boolean;
+  archivedAt?: string;
   everyDay?: boolean;
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
@@ -49,13 +53,14 @@ type WeeklyHabit = {
   color: string;
   checks: number[];
   archived?: boolean;
+  archivedAt?: string;
   history?: Record<string, number[]>;
   misses?: Record<string, number[]>;
   category?: HabitCategory;
 };
 
 type HabitCategory = string;
-type Category = { id: HabitCategory; label: string; icon: string; color: string };
+type Category = { id: HabitCategory; label: string; icon: string; color: string; priority?: boolean };
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
@@ -205,6 +210,7 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
           label: category.label?.trim() || fallback?.label || `Bloque ${index + 1}`,
           icon: category.icon?.trim() || fallback?.icon || "●",
           color: category.color?.trim() || fallback?.color || palette[index % palette.length],
+          priority: Boolean(category.priority),
         };
       })
     : defaultCategories;
@@ -922,8 +928,8 @@ export default function Home() {
   const activeDaily = daily.filter((habit) => !habit.archived);
   const activeWeekly = weekly.filter((habit) => !habit.archived);
   const archivedHabits = [
-    ...daily.filter((habit) => habit.archived).map((habit) => ({ type: "daily" as const, habit })),
-    ...weekly.filter((habit) => habit.archived).map((habit) => ({ type: "weekly" as const, habit })),
+    ...daily.filter((habit) => isHabitVisibleInArchive(habit, today)).map((habit) => ({ type: "daily" as const, habit })),
+    ...weekly.filter((habit) => isHabitVisibleInArchive(habit, today)).map((habit) => ({ type: "weekly" as const, habit })),
   ];
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
@@ -940,14 +946,17 @@ export default function Home() {
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const dailyScoreForDate = (value: Date) => calculateDailyScore(value, activeDaily, activeWeekly);
+  const dailyScoreForDate = (value: Date) => calculateDailyScore(value, daily, weekly, habitCategories);
   const referenceDay = isCurrentMonth ? today.getDate() : days;
   const referenceDate = new Date(year, month, referenceDay);
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
   const weekStart = Math.max(1, referenceDay - mondayOffset);
   const weekEnd = Math.min(days, weekStart + 6);
   const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
-  const habitsScheduledForDay = (day: number) => activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
+  const habitsScheduledForDay = (day: number) => {
+    const dateKey = isoDate(year, month, day);
+    return daily.filter((habit) => habitAppliesOnDate(habit, dateKey) && (!habit.weekdaysOnly || isWeekday(year, month, day)));
+  };
   const referenceDayHabits = habitsScheduledForDay(referenceDay);
   const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
   const currentDayProgress = referenceDayHabits.length ? dayChecks / referenceDayHabits.length * 100 : 0;
@@ -1214,14 +1223,14 @@ export default function Home() {
   }
 
   function archiveHabit(type: "daily" | "weekly", id: number) {
-    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: true } : habit;
+    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: true, archivedAt: isoDate(today.getFullYear(), today.getMonth(), today.getDate()) } : habit;
     if (type === "daily") setDaily((items) => items.map(update));
     else setWeekly((items) => items.map(update));
     setActionHabit(null);
   }
 
   function restoreHabit(type: "daily" | "weekly", id: number) {
-    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: false } : habit;
+    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: false, archivedAt: undefined } : habit;
     if (type === "daily") setDaily((items) => items.map(update));
     else setWeekly((items) => items.map(update));
   }
@@ -1268,6 +1277,10 @@ export default function Home() {
     }
     setEditingCategoryId(null);
     setCategoryName("");
+  }
+
+  function toggleCategoryPriority(categoryId: HabitCategory) {
+    setHabitCategories((items) => items.map((category) => category.id === categoryId ? { ...category, priority: !category.priority } : category));
   }
 
   function requestCategoryDelete(categoryId: HabitCategory) {
@@ -1567,14 +1580,16 @@ export default function Home() {
   const dayViewKey = isoDate(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate());
   const dayViewMonthKey = dayViewKey.slice(0, 7);
   const dayViewWeekIndex = monthCalendarWeeks(dayViewDate.getFullYear(), dayViewDate.getMonth()).findIndex((week) => week.includes(dayViewDate.getDate())) + 1;
-  const dayViewHabits = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
+  const dayViewHabits = daily.filter((habit) => habitAppliesOnDate(habit, dayViewKey) && (!habit.weekdaysOnly || isWeekday(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate())));
   const dayViewHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewHabits.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
-  const weeklyHabitGroups = habitCategories.map((category) => ({ category, habits: activeWeekly.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
+  const dayViewWeekly = weekly.filter((habit) => habitAppliesOnDate(habit, dayViewKey));
+  const weeklyHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewWeekly.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
   const dayViewGoals = resolvedGoals.filter((goal) => !goal.archived && goal.status !== "discarded")
     .filter((goal) => goal.period === "daily" ? goal.periodKey === dayViewKey : goal.period === "weekly" ? weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, dayViewKey) : goal.dueDate >= dayViewKey)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 6);
-  const dayViewScore = calculateDailyScore(dayViewDate, activeDaily, activeWeekly);
+  const dayViewScore = calculateDailyScore(dayViewDate, daily, weekly, habitCategories);
+  const dayViewCategoryScores = new Map(calculateCategoryScores(dayViewDate, dayViewHabits, habitCategories).map((score) => [score.categoryId, score]));
   const dayViewCompleted = dayViewHabits.filter((habit) => (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate())).length;
   const isViewingToday = dayViewKey === realTodayKey;
 
@@ -1603,7 +1618,7 @@ export default function Home() {
       let total = 0; let count = 0;
       const cursor = new Date(start);
       while (cursor <= end) {
-        total += calculateDailyScore(cursor, daily, weekly).finalScore;
+        total += calculateDailyScore(cursor, daily, weekly, habitCategories).finalScore;
         count += 1;
         cursor.setDate(cursor.getDate() + 1);
       }
@@ -1630,7 +1645,7 @@ export default function Home() {
       const weeklyKey = `weekly:${isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate())}`;
       if (!delivered.has(weeklyKey)) {
         const closedWeekDates = Array.from({ length: 7 }, (_, index) => { const item = new Date(monday); item.setDate(monday.getDate() + index); return item; });
-        const baseScore = closedWeekDates.reduce((sum, item) => sum + calculateDailyScore(item, daily, weekly).finalScore, 0) / 7;
+        const baseScore = closedWeekDates.reduce((sum, item) => sum + calculateDailyScore(item, daily, weekly, habitCategories).finalScore, 0) / 7;
         const period = goalPeriodDetails("weekly", monday);
         const weekGoals = resolvedGoals.filter((goal) => goal.period === "weekly" && goal.periodKey === period.key && goal.status !== "discarded");
         const completed = weekGoals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
@@ -1640,11 +1655,11 @@ export default function Home() {
     }
 
     if (!nextNotice && !delivered.has(yesterdayKey)) {
-      const result = calculateDailyScore(yesterday, daily, weekly);
+      const result = calculateDailyScore(yesterday, daily, weekly, habitCategories);
       nextNotice = { key: yesterdayKey, kind: "daily", eyebrow: "CIERRE DEL DÍA", title: result.bonus > 0 ? "Tu constancia sumó un bonus" : "Así terminó tu día", detail: `${result.completed} de ${result.scheduled} hábitos diarios · ${result.eligibleWeeklyDoneToday} aportaciones semanales con bonus.`, baseScore: result.baseScore, bonus: result.bonus, finalScore: result.finalScore };
     }
     if (nextNotice) queueMicrotask(() => setClosureNotice(nextNotice));
-  }, [closureNotice, daily, hydrated, resolvedGoals, session, weekly]);
+  }, [closureNotice, daily, habitCategories, hydrated, resolvedGoals, session, weekly]);
 
   function dismissClosureNotice() {
     if (!closureNotice || !session) return;
@@ -1721,7 +1736,7 @@ export default function Home() {
             <article className="today-column-card">
               <div className="today-section-title"><h3>Hábitos del día</h3><span>{dayViewHabits.length}</span></div>
               <div className="today-list grouped">
-                {dayViewHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
+                {dayViewHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{Math.round(dayViewCategoryScores.get(category.id)?.percent ?? 0)}%</small></div>{habits.map((habit) => {
                   const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
                   const missed = !checked && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
                   return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => markMissed("daily", habit.id, dayViewDate))} aria-pressed={checked}>
@@ -1730,7 +1745,7 @@ export default function Home() {
                 })}</div>)}
                 {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
               </div>
-              {!!activeWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{activeWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
+              {!!dayViewWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{dayViewWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
                 const weekDays = daysForMonthWeek(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewWeekIndex);
                 const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
                 const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
@@ -2108,6 +2123,7 @@ export default function Home() {
               return <div className="block-manager-row" key={category.id}>
                 <span className="block-manager-icon" style={{ background: `${category.color}26`, color: category.color }}>{category.icon}</span>
                 <div><strong>{category.label}</strong><small>{habitCount} {habitCount === 1 ? "hábito" : "hábitos"} · {goalCount} {goalCount === 1 ? "objetivo" : "objetivos"}</small></div>
+                <button className={`priority-toggle ${category.priority ? "active" : ""}`} onClick={() => toggleCategoryPriority(category.id)} aria-label={`${category.priority ? "Quitar prioridad a" : "Marcar como prioritario"} ${category.label}`} aria-pressed={Boolean(category.priority)} title={category.priority ? "Bloque prioritario (peso 2)" : "Bloque normal (peso 1)"}>★</button>
                 <button className="menu-trigger" onClick={() => startCategoryEdit(category)} aria-label={`Editar bloque ${category.label}`}>✎</button>
                 <button className="menu-trigger danger-text" disabled={habitCategories.length === 1} onClick={() => requestCategoryDelete(category.id)} aria-label={`Eliminar bloque ${category.label}`}>×</button>
               </div>;
