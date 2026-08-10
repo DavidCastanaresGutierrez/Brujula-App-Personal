@@ -480,6 +480,7 @@ export default function Home() {
   const [motivationDraft, setMotivationDraft] = useState("");
   const [editingMotivationIndex, setEditingMotivationIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"daily" | "weekly">("daily");
+  const [collapsedHabitBlocks, setCollapsedHabitBlocks] = useState<Set<string>>(() => new Set());
   const [date, setDate] = useState(() => new Date());
   const [modal, setModal] = useState<null | "daily" | "weekly">(null);
   const [editing, setEditing] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
@@ -531,6 +532,20 @@ export default function Home() {
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
+
+  function toggleHabitBlock(scope: "today-daily" | "today-weekly" | "habits-daily" | "habits-weekly", categoryId: HabitCategory) {
+    const key = `${scope}:${categoryId}`;
+    setCollapsedHabitBlocks((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function isHabitBlockCollapsed(scope: "today-daily" | "today-weekly" | "habits-daily" | "habits-weekly", categoryId: HabitCategory) {
+    return collapsedHabitBlocks.has(`${scope}:${categoryId}`);
+  }
 
   function exportBackup() {
     const backup = createTrackerBackup({ daily, weekly, categories: habitCategories, motivations, goals });
@@ -907,9 +922,11 @@ export default function Home() {
   const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
   const todayNumber = isCurrentMonth ? today.getDate() : null;
   const elapsedDays = isPastMonth ? days : isCurrentMonth ? today.getDate() : 0;
+  const firstDayMondayOffset = (new Date(year, month, 1).getDay() + 6) % 7;
   const calendar = Array.from({ length: days }, (_, i) => ({
     day: i + 1,
     week: Math.floor(i / 7) + 1,
+    alternateWeek: Math.floor((i + firstDayMondayOffset) / 7) % 2 === 1,
     label: dayNames[new Date(year, month, i + 1).getDay()],
   }));
 
@@ -1736,22 +1753,22 @@ export default function Home() {
             <article className="today-column-card">
               <div className="today-section-title"><h3>Hábitos del día</h3><span>{dayViewHabits.length}</span></div>
               <div className="today-list grouped">
-                {dayViewHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{Math.round(dayViewCategoryScores.get(category.id)?.percent ?? 0)}%</small></div>{habits.map((habit) => {
+                {dayViewHabitGroups.map(({ category, habits }) => { const collapsed = isHabitBlockCollapsed("today-daily", category.id); return <div className={`today-block ${collapsed ? "is-collapsed" : ""}`} key={category.id}><button type="button" className="today-block-title" style={{ color: category.color }} onClick={() => toggleHabitBlock("today-daily", category.id)} aria-expanded={!collapsed}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{Math.round(dayViewCategoryScores.get(category.id)?.percent ?? 0)}%</small><i aria-hidden="true">⌄</i></button>{!collapsed && habits.map((habit) => {
                   const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
                   const missed = !checked && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
                   return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => markMissed("daily", habit.id, dayViewDate))} aria-pressed={checked}>
                     <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "×" : ""}</b>
                   </button>;
-                })}</div>)}
+                })}</div>; })}
                 {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
               </div>
-              {!!dayViewWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{dayViewWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => <div className="today-block" key={category.id}><div className="today-block-title" style={{ color: category.color }}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{habits.length}</small></div>{habits.map((habit) => {
+              {!!dayViewWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{dayViewWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => { const collapsed = isHabitBlockCollapsed("today-weekly", category.id); return <div className={`today-block ${collapsed ? "is-collapsed" : ""}`} key={category.id}><button type="button" className="today-block-title" style={{ color: category.color }} onClick={() => toggleHabitBlock("today-weekly", category.id)} aria-expanded={!collapsed}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{habits.length}</small><i aria-hidden="true">⌄</i></button>{!collapsed && habits.map((habit) => {
                 const weekDays = daysForMonthWeek(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewWeekIndex);
                 const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
                 const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
                 const missed = !doneOnDay && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
                 return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => markMissed("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "×" : "+"}</b></button>;
-              })}</div>)}</div></>}
+              })}</div>; })}</div></>}
             </article>
             <article className="today-column-card">
               <div className="today-section-title"><h3>Objetivos en foco</h3><span>{dayViewGoals.length}</span></div>
@@ -1759,9 +1776,15 @@ export default function Home() {
                 {dayViewGoals.map((goal) => {
                   const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
                   const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
+                  const completed = goal.status === "completed" || goal.currentValue >= goal.targetValue;
                   return <div className="today-goal" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
                     <div><span>{category?.icon} {goal.period === "daily" ? "Hoy" : goal.period === "weekly" ? "Semana" : goal.period === "monthly" ? "Mes" : "Año"}</span><strong>{goal.title}</strong><small>{progress}% · vence {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></div>
-                    {goal.measurement === "complete" ? <button onClick={() => updateGoalProgress(goal, 1)}>✓</button> : <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
+                    <span className="today-goal-status">
+                      {goal.measurement !== "complete" && <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
+                      {goal.measurement === "complete"
+                        ? <button className={completed ? "done" : "missed"} onClick={() => updateGoalProgress(goal, completed ? 0 : 1)} aria-label={completed ? `Reabrir ${goal.title}` : `Marcar ${goal.title} como completado`}>{completed ? "✓" : "×"}</button>
+                        : <i className={completed ? "done" : "missed"} aria-label={completed ? "Objetivo completado" : "Objetivo no completado"}>{completed ? "✓" : "×"}</i>}
+                    </span>
                   </div>;
                 })}
                 {!dayViewGoals.length && <p className="today-empty">No hay objetivos que requieran atención este día.</p>}
@@ -1944,19 +1967,21 @@ export default function Home() {
                   <div className="habit-name">HÁBITO</div>
                   <div className="goal-cell">META</div>
                   <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                    {calendar.map((d) => <div className={d.day === todayNumber ? "today-column today-header" : ""} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
+                    {calendar.map((d) => <div className={`${d.alternateWeek ? "alternate-week" : ""} ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
                   </div>
                   <div className="result-cell">PROGRESO</div>
                 </div>
                 {habitCategories.map((category) => {
                   const categoryHabits = activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
                   if (!categoryHabits.length) return null;
+                  const collapsed = isHabitBlockCollapsed("habits-daily", category.id);
                   return <div className="category-group" key={category.id}>
-                    <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}>
+                    <button type="button" className="category-band" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => toggleHabitBlock("habits-daily", category.id)} aria-expanded={!collapsed}>
                       <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
                       <small>{categoryHabits.length}</small>
-                    </div>
-                    {categoryHabits.map((habit) => {
+                      <i aria-hidden="true">⌄</i>
+                    </button>
+                    {!collapsed && categoryHabits.map((habit) => {
                   const effectiveGoal = goalFor(habit);
                   const currentChecks = checksFor(habit);
                   const completedThroughToday = currentChecks.filter((d) => d <= evaluatedThrough).length;
@@ -1965,7 +1990,7 @@ export default function Home() {
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.alternateWeek ? "alternate-week" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
@@ -1979,12 +2004,14 @@ export default function Home() {
               {habitCategories.map((category) => {
                 const categoryHabits = activeWeekly.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
                 if (!categoryHabits.length) return null;
+                const collapsed = isHabitBlockCollapsed("habits-weekly", category.id);
                 return <div className="weekly-category" key={category.id}>
-                  <div className="category-band" style={{ "--category-color": category.color } as React.CSSProperties}>
+                  <button type="button" className="category-band" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => toggleHabitBlock("habits-weekly", category.id)} aria-expanded={!collapsed}>
                     <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
                     <small>{categoryHabits.length}</small>
-                  </div>
-                  {categoryHabits.map((habit) => {
+                    <i aria-hidden="true">⌄</i>
+                  </button>
+                  {!collapsed && categoryHabits.map((habit) => {
                 const currentChecks = weeklyChecksFor(habit);
                 const availableWeeks = monthWeeks.map((_, index) => index + 1);
                 const monthlyTarget = availableWeeks.reduce((sum, week) => sum + Math.min(habit.goal, daysForMonthWeek(year, month, week).length), 0);
