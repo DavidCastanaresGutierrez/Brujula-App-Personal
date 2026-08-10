@@ -922,11 +922,10 @@ export default function Home() {
   const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
   const todayNumber = isCurrentMonth ? today.getDate() : null;
   const elapsedDays = isPastMonth ? days : isCurrentMonth ? today.getDate() : 0;
-  const firstDayMondayOffset = (new Date(year, month, 1).getDay() + 6) % 7;
   const calendar = Array.from({ length: days }, (_, i) => ({
     day: i + 1,
     week: Math.floor(i / 7) + 1,
-    calendarWeek: Math.floor((i + firstDayMondayOffset) / 7),
+    weekEnd: new Date(year, month, i + 1).getDay() === 0,
     label: dayNames[new Date(year, month, i + 1).getDay()],
   }));
 
@@ -1967,7 +1966,7 @@ export default function Home() {
                   <div className="habit-name">HÁBITO</div>
                   <div className="goal-cell">META</div>
                   <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                    {calendar.map((d) => <div className={`week-tone ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} style={{ "--week-color": weeklyBarPalette[d.calendarWeek % weeklyBarPalette.length] } as CSSProperties} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
+                    {calendar.map((d) => <div className={`${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
                   </div>
                   <div className="result-cell">PROGRESO</div>
                 </div>
@@ -1990,7 +1989,7 @@ export default function Home() {
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} style={{ "--week-color": weeklyBarPalette[d.calendarWeek % weeklyBarPalette.length] } as CSSProperties} className={`${checked ? "checked" : missed ? "missed" : ""} week-tone ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "×" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
