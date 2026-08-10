@@ -49,6 +49,13 @@ describe("tracker state validation", () => {
     expect(validateTrackerState(malformed)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
   });
 
+  it("accepts priority blocks and dated archives while preserving legacy data", () => {
+    const state = validState();
+    Object.assign(state.categories[0], { priority: true });
+    Object.assign(state.daily[0], { archived: true, archivedAt: "2026-08-10" });
+    expect(validateTrackerState(state).success).toBe(true);
+  });
+
   it("accepts legacy completed books and new reading entries", () => {
     const legacy = validState();
     Object.assign(legacy.goals[0], { template: "reading", books: [{ id: 10, title: "Sapiens", format: "paper", completedAt: "2026-08-01" }] });
