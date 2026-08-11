@@ -8,6 +8,7 @@ export type TrackedHabit = {
   category?: string;
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
+  skips?: Record<string, number[]>;
 };
 
 export type ScoreCategory = { id: string; priority?: boolean };
@@ -196,7 +197,9 @@ export function calculateDailyScore(
   const dateKey = isoDate(year, month, day);
   const activeDaily = dailyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
   const activeWeekly = weeklyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
-  const scheduled = activeDaily.filter((habit) => !habit.weekdaysOnly || isWeekday(year, month, day));
+  const scheduled = activeDaily.filter((habit) =>
+    (!habit.weekdaysOnly || isWeekday(year, month, day))
+    && !(habit.skips?.[monthKey] ?? []).includes(day));
   const completed = scheduled.filter((habit) => (habit.history?.[monthKey] ?? []).includes(day)).length;
   const categoryScores = calculateCategoryScores(value, scheduled, categories);
   const weightedScore = categoryScores.reduce((sum, category) => sum + category.percent / 10 * category.weight, 0);
@@ -229,7 +232,7 @@ export function calculateCategoryScores(value: Date, habits: TrackedHabit[], cat
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const grouped = new Map<string, TrackedHabit[]>();
-  habits.forEach((habit, index) => {
+  habits.filter((habit) => !(habit.skips?.[monthKey] ?? []).includes(day)).forEach((habit, index) => {
     const key = habit.category ?? `__uncategorized-${index}`;
     grouped.set(key, [...(grouped.get(key) ?? []), habit]);
   });
