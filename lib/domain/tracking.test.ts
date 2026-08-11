@@ -9,6 +9,7 @@ import {
   daysForMonthWeek,
   goalPeriodDetails,
   habitAppliesOnDate,
+  habitScheduledOnDate,
   isHabitVisibleInArchive,
   linkedGoalProgress,
   isCalendarDayInFuture,
@@ -16,6 +17,7 @@ import {
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
+  scheduledDaysInMonth,
 } from "./tracking";
 
 describe("calendar rules", () => {
@@ -110,6 +112,40 @@ describe("completion rules", () => {
     const second = toggleCompletionForDay(first, 4);
     expect(second).toEqual([3, 4]);
     expect(second).toHaveLength(2);
+  });
+});
+
+describe("flexible habit schedules", () => {
+  it("schedules only the selected weekdays", () => {
+    const habit = { goal: 1, schedule: { mode: "selectedWeekdays" as const, weekdays: [1, 3, 5] } };
+    expect(habitScheduledOnDate(habit, "2026-08-10")).toBe(true);
+    expect(habitScheduledOnDate(habit, "2026-08-11")).toBe(false);
+    expect(scheduledDaysInMonth(habit, 2026, 7)).toBe(13);
+  });
+
+  it("repeats every X days from a stable start date", () => {
+    const habit = { goal: 1, schedule: { mode: "interval" as const, intervalDays: 3, startDate: "2026-08-01" } };
+    expect(habitScheduledOnDate(habit, "2026-08-01")).toBe(true);
+    expect(habitScheduledOnDate(habit, "2026-08-03")).toBe(false);
+    expect(habitScheduledOnDate(habit, "2026-08-04")).toBe(true);
+  });
+
+  it("excludes dates outside the active period and inside a pause", () => {
+    const habit = { goal: 1, schedule: { mode: "selectedWeekdays" as const, weekdays: [1, 2, 3, 4, 5, 6, 0], activeFrom: "2026-08-03", activeUntil: "2026-08-20", pausedFrom: "2026-08-10", pausedUntil: "2026-08-12" } };
+    expect(habitScheduledOnDate(habit, "2026-08-02")).toBe(false);
+    expect(habitScheduledOnDate(habit, "2026-08-05")).toBe(true);
+    expect(habitScheduledOnDate(habit, "2026-08-11")).toBe(false);
+    expect(habitScheduledOnDate(habit, "2026-08-21")).toBe(false);
+  });
+
+  it("removes unprogrammed habits from the daily score", () => {
+    const result = calculateDailyScore(new Date(2026, 7, 11, 12), [
+      { goal: 1, schedule: { mode: "selectedWeekdays", weekdays: [1] }, history: { "2026-08": [] } },
+      { goal: 1, schedule: { mode: "selectedWeekdays", weekdays: [2] }, history: { "2026-08": [11] } },
+    ], []);
+    expect(result.scheduled).toBe(1);
+    expect(result.completed).toBe(1);
+    expect(result.baseScore).toBe(10);
   });
 });
 
