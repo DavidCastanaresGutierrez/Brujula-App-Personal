@@ -185,6 +185,16 @@ describe("score rules", () => {
     expect(result.baseScore).toBe(10);
   });
 
+  it("excludes skipped habits from the daily score denominator", () => {
+    const result = calculateDailyScore(date, [
+      { goal: 31, category: "health", history: { "2026-08": [4] } },
+      { goal: 31, category: "health", history: { "2026-08": [] }, skips: { "2026-08": [4] } },
+    ], [], [{ id: "health" }]);
+    expect(result.completed).toBe(1);
+    expect(result.scheduled).toBe(1);
+    expect(result.baseScore).toBe(10);
+  });
+
   it("records extra weekly completions without granting another bonus", () => {
     const result = calculateDailyScore(
       date,
