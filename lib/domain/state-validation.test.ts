@@ -49,6 +49,22 @@ describe("tracker state validation", () => {
     expect(validateTrackerState(malformed)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
   });
 
+  it("accepts explicit skipped days and rejects malformed skipped-day history", () => {
+    const state = validState();
+    Object.assign(state.daily[0], { skips: { "2026-08": [2, 4] } });
+    expect(validateTrackerState(state).success).toBe(true);
+
+    const malformed = validState();
+    Object.assign(malformed.daily[0], { skips: { "2026-08": [2, 2] } });
+    expect(validateTrackerState(malformed)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
+  });
+
+  it("rejects the same day in more than one habit status", () => {
+    const state = validState();
+    Object.assign(state.daily[0], { misses: { "2026-08": [2] }, skips: { "2026-08": [2] } });
+    expect(validateTrackerState(state)).toEqual({ success: false, error: "Hay hábitos con datos no válidos" });
+  });
+
   it("accepts priority blocks and dated archives while preserving legacy data", () => {
     const state = validState();
     Object.assign(state.categories[0], { priority: true });
