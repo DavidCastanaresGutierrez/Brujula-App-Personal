@@ -72,6 +72,12 @@ describe("tracker state validation", () => {
     expect(validateTrackerState(state).success).toBe(true);
   });
 
+  it("accepts one validated weekly review per Monday", () => {
+    const state = validState();
+    Object.assign(state, { weeklyReviews: [{ weekStart: "2026-08-10", priorities: ["Cerrar entrega"], adjustment: "Bloquear dos mañanas", reflection: "Menos reuniones", updatedAt: "2026-08-11T10:00:00.000Z" }] });
+    expect(validateTrackerState(state).success).toBe(true);
+  });
+
   it("accepts legacy completed books and new reading entries", () => {
     const legacy = validState();
     Object.assign(legacy.goals[0], { template: "reading", books: [{ id: 10, title: "Sapiens", format: "paper", completedAt: "2026-08-01" }] });
