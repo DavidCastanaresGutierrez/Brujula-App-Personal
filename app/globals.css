@@ -184,6 +184,24 @@ h1 em { font-style: normal; color: var(--teal); }
 .goal-card-foot strong { font-size: 11px; }
 .goal-card-foot span { color: var(--muted); font-size: 8px; text-align: right; }
 .goal-complete { width: 100%; min-height: 36px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--goal-color) 42%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--goal-color) 11%, transparent); color: var(--goal-color); cursor: pointer; font-size: 10px; font-weight: 800; }
+.goal-add-step { width: 100%; min-height: 32px; margin-top: 12px; border: 1px dashed rgba(160,177,212,.28); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 700; }
+.goal-add-step:hover { border-color: var(--goal-color); color: var(--goal-color); }
+.goal-plan { display: grid; gap: 6px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); }
+.goal-plan-summary { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.goal-step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.goal-step > span { display: grid; min-width: 0; }
+.goal-step > span strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.goal-step > span small { color: var(--muted); font-size: 8px; }
+.goal-step.done > span strong { color: var(--muted); text-decoration: line-through; }
+.goal-step-toggle, .goal-step-delete { border: 0; background: transparent; cursor: pointer; }
+.goal-step-toggle { color: var(--goal-color); font-size: 16px; }
+.goal-step-delete { color: #70809d; font-size: 15px; }
+.goal-step-form { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 7px; margin-top: 12px; }
+.goal-step-form input, .goal-step-form select { min-width: 0; width: 100%; min-height: 34px; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: #0c162a; color: var(--ink); padding: 7px 9px; font-size: 9px; }
+.goal-step-form input[type="date"], .goal-step-form > div { grid-column: 1 / -1; }
+.goal-step-form > div { display: flex; justify-content: flex-end; gap: 7px; }
+.goal-step-form button { min-height: 30px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.04); color: var(--muted); padding: 0 10px; cursor: pointer; font-size: 9px; }
+.goal-step-form button[type="submit"] { border-color: color-mix(in srgb, var(--goal-color) 45%, transparent); color: var(--goal-color); }
 .goal-overdue-label { display: block; margin: -8px 0 12px; color: #fbbf24; font-size: 9px; font-weight: 800; }
 .goal-weekly-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 14px; }
 .goal-weekly-actions button { min-height: 36px; border: 1px solid color-mix(in srgb, var(--goal-color) 42%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--goal-color) 11%, transparent); color: var(--goal-color); cursor: pointer; font-size: 10px; font-weight: 800; padding: 0 12px; }
