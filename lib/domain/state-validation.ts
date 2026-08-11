@@ -52,6 +52,18 @@ function validateHistory(value: unknown) {
 
 function validateHabit(value: unknown, kind: "daily" | "weekly") {
   if (!isRecord(value)) return false;
+  const statusHistories = [value.history, value.misses, value.skips].filter(isRecord);
+  const statusEntries = new Set<string>();
+  for (const history of statusHistories) {
+    for (const [period, days] of Object.entries(history)) {
+      if (!Array.isArray(days)) continue;
+      for (const day of days) {
+        const entry = `${period}:${String(day)}`;
+        if (statusEntries.has(entry)) return false;
+        statusEntries.add(entry);
+      }
+    }
+  }
   return isPositiveId(value.id)
     && isText(value.name, 1, 120)
     && Number.isInteger(value.goal) && Number(value.goal) > 0 && Number(value.goal) <= 366
@@ -64,7 +76,8 @@ function validateHabit(value: unknown, kind: "daily" | "weekly") {
     && (kind === "weekly" || value.everyDay === undefined || typeof value.everyDay === "boolean")
     && (kind === "weekly" || value.weekdaysOnly === undefined || typeof value.weekdaysOnly === "boolean")
     && validateHistory(value.history)
-    && validateHistory(value.misses);
+    && validateHistory(value.misses)
+    && validateHistory(value.skips);
 }
 
 function validateBook(value: unknown) {
