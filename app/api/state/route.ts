@@ -33,6 +33,7 @@ type HabitRow = {
   skips: Record<string, number[]> | null;
   every_day: boolean;
   weekdays_only: boolean;
+  schedule: Record<string, unknown> | null;
   celebrated_streak_30: string | null;
 };
 
@@ -136,6 +137,7 @@ export async function GET(request: Request) {
       skips: habit.skips ?? undefined,
       everyDay: habit.kind === "daily" ? habit.every_day : undefined,
       weekdaysOnly: habit.kind === "daily" ? habit.weekdays_only : undefined,
+      schedule: habit.kind === "daily" ? habit.schedule ?? undefined : undefined,
       history: historyByHabit.get(Number(habit.id)) ?? {},
       category: habit.category_id,
       celebratedStreak30: habit.celebrated_streak_30 ?? undefined,
@@ -181,7 +183,7 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
 
   const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult] = await Promise.all([
     supabase.from("categories").select("id,label,icon,color,position,priority").order("position"),
-    supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,archived_at,misses,skips,every_day,weekdays_only,celebrated_streak_30").order("position"),
+    supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,archived_at,misses,skips,every_day,weekdays_only,schedule,celebrated_streak_30").order("position"),
     supabase.from("habit_completions").select("habit_id,period_key,value"),
     supabase.from("motivational_quotes").select("text,position").order("position"),
     supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
