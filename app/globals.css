@@ -126,6 +126,7 @@ h1 em { font-style: normal; color: var(--teal); }
 .today-goal-status > b { color: #d9e2f1; font-size: 10px; white-space: nowrap; }
 .today-goal-status > button, .today-goal-status > i { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid; border-radius: 8px; color: #07131d; font-size: 17px; font-style: normal; font-weight: 900; }
 .today-goal-status > button { cursor: pointer; }
+.today-goal-status > .pending { border-color: #35435f; background: #18243c; box-shadow: none; }
 .today-goal-status > .done { border-color: var(--teal); background: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
 .today-goal-status > .missed { border-color: #ef4444; background: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,.16); }
 .today-empty { margin: 0; padding: 18px; border: 1px dashed rgba(160,177,212,.18); border-radius: 10px; color: var(--muted); font-size: 10px; text-align: center; }
@@ -309,7 +310,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .day-grid button.week-shaded:not(.checked):not(.missed) { background: #22304a; border-color: #40506d; }
 .day-grid .week-end { position: relative; }
 .day-grid .week-end::after { content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 2px; height: 47px; background: rgba(255,255,255,.88); transform: translateY(-50%); pointer-events: none; }
-.header-row .day-grid .week-end::after { height: 52px; }
+.header-row .day-grid .week-end::after { content: none; }
 .day-grid button:hover { border-color: var(--teal); transform: scale(1.08); }
 .day-grid button.checked, .week-checks button.checked { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
 .day-grid button.missed { border-color: #ef4444; background: #ef4444; color: #07131d; box-shadow: 0 0 12px rgba(239,68,68,.16); }
