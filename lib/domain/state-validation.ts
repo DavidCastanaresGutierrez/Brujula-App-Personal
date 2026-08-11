@@ -15,7 +15,18 @@ export type ValidTrackerState = {
   categories: JsonRecord[];
   motivations?: string[];
   goals?: JsonRecord[];
+  weeklyReviews?: JsonRecord[];
 };
+
+function validateWeeklyReview(value: unknown) {
+  return isRecord(value)
+    && isDate(value.weekStart)
+    && new Date(`${String(value.weekStart)}T00:00:00Z`).getUTCDay() === 1
+    && Array.isArray(value.priorities) && value.priorities.length <= 3 && value.priorities.every((item) => isText(item, 1, 160))
+    && isText(value.adjustment, 0, 500)
+    && isText(value.reflection, 0, 1_500)
+    && typeof value.updatedAt === "string" && !Number.isNaN(Date.parse(value.updatedAt));
+}
 
 export type StateValidationResult =
   | { success: true; data: ValidTrackerState }
@@ -152,7 +163,7 @@ function validateGoal(value: unknown) {
 
 export function validateTrackerState(value: unknown): StateValidationResult {
   if (!isRecord(value)) return { success: false, error: "El estado debe ser un objeto" };
-  const { daily, weekly, categories, motivations, goals } = value;
+  const { daily, weekly, categories, motivations, goals, weeklyReviews } = value;
   if (!Array.isArray(daily) || !Array.isArray(weekly) || !Array.isArray(categories)) {
     return { success: false, error: "Faltan colecciones obligatorias" };
   }
@@ -170,6 +181,12 @@ export function validateTrackerState(value: unknown): StateValidationResult {
   }
   if (goals !== undefined && (!Array.isArray(goals) || goals.length > LIMITS.goals || !goals.every(validateGoal))) {
     return { success: false, error: "Hay objetivos con datos no válidos" };
+  }
+  if (weeklyReviews !== undefined && (!Array.isArray(weeklyReviews) || weeklyReviews.length > 260 || !weeklyReviews.every(validateWeeklyReview))) {
+    return { success: false, error: "Hay revisiones semanales no válidas" };
+  }
+  if (Array.isArray(weeklyReviews) && new Set(weeklyReviews.map((item) => String((item as JsonRecord).weekStart))).size !== weeklyReviews.length) {
+    return { success: false, error: "Hay revisiones semanales duplicadas" };
   }
 
   const categoryIds = categories.map((category) => String((category as JsonRecord).id));
