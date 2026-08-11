@@ -127,6 +127,15 @@ function validateFitnessEntry(value: unknown) {
     .every((field) => isFiniteNumber(value[field]) && Number(value[field]) >= 0 && Number(value[field]) <= 20_000);
 }
 
+function validateGoalStep(value: unknown) {
+  return isRecord(value)
+    && isPositiveId(value.id)
+    && ["milestone", "action"].includes(String(value.kind))
+    && isText(value.title, 1, 160)
+    && isDate(value.dueDate)
+    && typeof value.completed === "boolean";
+}
+
 function validPeriodKey(period: unknown, key: unknown) {
   if (typeof key !== "string") return false;
   if (period === "daily") return isDate(key);
@@ -158,6 +167,7 @@ function validateGoal(value: unknown) {
     && (books === undefined || (Array.isArray(books) && books.length <= LIMITS.entriesPerGoal && books.every(validateBook)))
     && (fitnessEntries === undefined || (Array.isArray(fitnessEntries) && fitnessEntries.length <= LIMITS.entriesPerGoal && fitnessEntries.every(validateFitnessEntry)))
     && (value.parentAnnualGoalId === undefined || isPositiveId(value.parentAnnualGoalId))
+    && (value.steps === undefined || (Array.isArray(value.steps) && value.steps.length <= 200 && new Set(value.steps.map((step) => isRecord(step) ? step.id : undefined)).size === value.steps.length && value.steps.every(validateGoalStep)))
     && (value.archived === undefined || typeof value.archived === "boolean");
 }
 
