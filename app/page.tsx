@@ -30,6 +30,7 @@ import {
 import type { HabitSchedule } from "../lib/domain/tracking";
 import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
 import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "../lib/domain/storage";
+import { goalsForWeek, previousWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 
 type Habit = {
   id: number;
@@ -66,7 +67,7 @@ type WeeklyHabit = {
 type HabitCategory = string;
 type Category = { id: HabitCategory; label: string; icon: string; color: string; priority?: boolean };
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
-type MainView = "summary" | "today" | "habits" | "goals";
+type MainView = "summary" | "today" | "week" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
 type BookEntry = { id: number; title: string; author?: string; format: BookFormat; status?: "reading" | "completed"; startedAt?: string; completedAt?: string };
 type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi" | "basalMetabolicRate";
@@ -91,6 +92,7 @@ type TrackerState = {
   categories?: Category[];
   motivations?: string[];
   goals?: Goal[];
+  weeklyReviews?: WeeklyReview[];
 };
 
 type ClosureNotice = {
@@ -225,6 +227,7 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
     categories,
     motivations: state.motivations?.filter((item) => item.trim()) ?? [],
     goals: state.goals ?? [],
+    weeklyReviews: state.weeklyReviews ?? [],
   };
 }
 
@@ -449,6 +452,9 @@ export default function Home() {
   const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
   const [motivations, setMotivations] = useState<string[]>(dailyMotivations);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [weeklyReviews, setWeeklyReviews] = useState<WeeklyReview[]>([]);
+  const [weeklyPlanDraft, setWeeklyPlanDraft] = useState({ priorities: ["", "", ""], adjustment: "", reflection: "" });
+  const [weeklyPlanSaved, setWeeklyPlanSaved] = useState(false);
   const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [goalTitle, setGoalTitle] = useState("");
@@ -536,7 +542,7 @@ export default function Home() {
   const conflictRef = useRef(false);
   const pendingRemoteRevisionRef = useRef<number | null>(null);
   const pullLatestRef = useRef<(() => Promise<void>) | null>(null);
-  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [] });
+  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [], weeklyReviews: [] });
   const syncInFlight = useRef(false);
   const pendingLocalSaveRef = useRef(false);
   const activeUserIdRef = useRef<string | null>(null);
@@ -560,7 +566,7 @@ export default function Home() {
   }
 
   function exportBackup() {
-    const backup = createTrackerBackup({ daily, weekly, categories: habitCategories, motivations, goals });
+    const backup = createTrackerBackup({ daily, weekly, categories: habitCategories, motivations, goals, weeklyReviews });
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -588,6 +594,7 @@ export default function Home() {
     setHabitCategories(restored.categories as Category[]);
     setMotivations(restored.motivations?.length ? restored.motivations : dailyMotivations);
     setGoals((restored.goals ?? []) as Goal[]);
+    setWeeklyReviews((restored.weeklyReviews ?? []) as WeeklyReview[]);
     setBackupPreview(null);
     setBackupManagerOpen(false);
     setBackupMessage("Copia restaurada. Los datos se sincronizarán automáticamente.");
@@ -620,8 +627,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    stateRef.current = { daily, weekly, categories: habitCategories, motivations, goals };
-  }, [daily, weekly, habitCategories, motivations, goals]);
+    stateRef.current = { daily, weekly, categories: habitCategories, motivations, goals, weeklyReviews };
+  }, [daily, weekly, habitCategories, motivations, goals, weeklyReviews]);
 
   useEffect(() => {
     if (!authReady || !session) return;
@@ -656,6 +663,7 @@ export default function Home() {
           setWeekly(normalized.weekly);
           setHabitCategories(normalized.categories);
           setGoals(normalized.goals);
+          setWeeklyReviews(normalized.weeklyReviews);
           const savedMotivations = (state.motivations?.length ? state.motivations : localState?.motivations)?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
@@ -679,6 +687,7 @@ export default function Home() {
           setWeekly(normalized.weekly);
           setHabitCategories(normalized.categories);
           setGoals(normalized.goals);
+          setWeeklyReviews(normalized.weeklyReviews);
           const savedMotivations = localState.motivations?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
@@ -697,7 +706,7 @@ export default function Home() {
     const storageKey = `brujula-state-v1:${session.user.id}`;
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
-    const state = { daily, weekly, categories: habitCategories, motivations, goals };
+    const state = { daily, weekly, categories: habitCategories, motivations, goals, weeklyReviews };
     writeStoredValue(localStorage, storageKey, JSON.stringify(state));
     if (statesEqual(state, baselineRef.current)) return;
     if (conflictRef.current) return;
@@ -766,7 +775,7 @@ export default function Home() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [daily, weekly, habitCategories, motivations, goals, hydrated, session]);
+  }, [daily, weekly, habitCategories, motivations, goals, weeklyReviews, hydrated, session]);
 
   useEffect(() => {
     if (!hydrated || !session) return;
@@ -839,6 +848,7 @@ export default function Home() {
         setHabitCategories(nextState.categories);
         setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
         setGoals(nextState.goals);
+        setWeeklyReviews(nextState.weeklyReviews);
         conflictRef.current = false;
         setRemoteConflict(null);
         setSyncStatus("synced");
@@ -907,6 +917,7 @@ export default function Home() {
     setHabitCategories(nextState.categories);
     setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
     setGoals(nextState.goals);
+    setWeeklyReviews(nextState.weeklyReviews);
     setRemoteConflict(null);
     setSyncStatus("synced");
   };
@@ -1767,9 +1778,35 @@ export default function Home() {
 
   function openView(view: MainView) {
     if (view === "goals") setGoalFilter("yearly");
+    if (view === "week") {
+      const review = weeklyReviews.find((item) => item.weekStart === weekBounds(today).key);
+      setWeeklyPlanDraft({ priorities: [review?.priorities[0] ?? "", review?.priorities[1] ?? "", review?.priorities[2] ?? ""], adjustment: review?.adjustment ?? "", reflection: review?.reflection ?? "" });
+    }
     setMainView(view);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  function saveWeeklyPlan() {
+    const weekStart = weekBounds(today).key;
+    const next: WeeklyReview = {
+      weekStart,
+      priorities: weeklyPlanDraft.priorities.map((item) => item.trim()).filter(Boolean).slice(0, 3),
+      adjustment: weeklyPlanDraft.adjustment.trim(),
+      reflection: weeklyPlanDraft.reflection.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    setWeeklyReviews((items) => [...items.filter((item) => item.weekStart !== weekStart), next].sort((a, b) => b.weekStart.localeCompare(a.weekStart)));
+    setWeeklyPlanSaved(true);
+    window.setTimeout(() => setWeeklyPlanSaved(false), 2200);
+  }
+
+  const currentWeek = weekBounds(today);
+  const previousWeek = previousWeekBounds(today);
+  const previousSummary = summarizeWeek(previousWeek.start, daily, weekly, habitCategories);
+  const previousReview = weeklyReviews.find((item) => item.weekStart === previousWeek.key);
+  const previousGoals = goalsForWeek(resolvedGoals, previousWeek.key);
+  const previousCompletedGoals = previousGoals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
+  const weakestWeeklyCategory = previousSummary.categories.at(-1);
 
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
@@ -1790,6 +1827,7 @@ export default function Home() {
         <nav aria-label="Navegación principal">
           <button className={mainView === "summary" ? "nav-active" : ""} onClick={() => openView("summary")}>Resumen</button>
           <button className={mainView === "today" ? "nav-active" : ""} onClick={() => openView("today")}>Tu día</button>
+          <button className={mainView === "week" ? "nav-active" : ""} onClick={() => openView("week")}>Semana</button>
           <button className={mainView === "habits" ? "nav-active" : ""} onClick={() => openView("habits")}>Hábitos</button>
           <button className={mainView === "goals" ? "nav-active" : ""} onClick={() => openView("goals")}>Objetivos</button>
         </nav>
@@ -1817,6 +1855,30 @@ export default function Home() {
           </div>
         </section>
 
+        </>}
+
+        {mainView === "week" && <>
+        <section className="view-intro"><p className="eyebrow">PLANIFICAR · EJECUTAR · REAJUSTAR</p><h1>Tu semana</h1><p>Decide qué importa y convierte los datos de la semana anterior en una mejora concreta.</p></section>
+        <section className="weekly-review-grid">
+          <article className="panel weekly-plan-card">
+            <div className="panel-head"><div><p className="eyebrow">SEMANA ACTUAL</p><h2>Del {currentWeek.start.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} al {currentWeek.end.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</h2></div><span className="weekly-step">01</span></div>
+            <p className="weekly-guidance">Elige como máximo tres resultados que justifiquen tu atención. Si todo es prioridad, nada lo es.</p>
+            <div className="weekly-priorities">
+              {weeklyPlanDraft.priorities.map((priority, index) => <label key={index}><span>Prioridad {index + 1}</span><input maxLength={160} value={priority} placeholder={index === 0 ? "Lo más importante de esta semana" : "Opcional"} onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, priorities: draft.priorities.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} /></label>)}
+            </div>
+            <label className="weekly-text-field"><span>Ajuste del sistema</span><textarea maxLength={500} value={weeklyPlanDraft.adjustment} placeholder="¿Qué vas a cambiar para que esta semana funcione mejor?" onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, adjustment: event.target.value }))} /></label>
+            <label className="weekly-text-field"><span>Reflexión en curso</span><textarea maxLength={1500} value={weeklyPlanDraft.reflection} placeholder="Anota contexto, decisiones o aprendizajes mientras avanza la semana." onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, reflection: event.target.value }))} /></label>
+            <button className="add-button weekly-save" onClick={saveWeeklyPlan}>{weeklyPlanSaved ? "Guardado ✓" : "Guardar planificación"}</button>
+          </article>
+
+          <article className="panel weekly-review-card">
+            <div className="panel-head"><div><p className="eyebrow">REVISIÓN ANTERIOR</p><h2>Del {previousWeek.start.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} al {previousWeek.end.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</h2></div><span className="weekly-step">02</span></div>
+            <div className="weekly-score-row"><div><span>Nota semanal</span><strong>{scoreLabel(previousSummary.score)}<small> / 10</small></strong></div><div><span>Hábitos</span><strong>{previousSummary.completed}<small> / {previousSummary.scheduled}</small></strong></div><div><span>Objetivos</span><strong>{previousCompletedGoals}<small> / {previousGoals.length}</small></strong></div></div>
+            <div className="weekly-blocks"><h3>Balance por bloques</h3>{previousSummary.categories.map((summary) => { const category = habitCategories.find((item) => item.id === summary.categoryId); return <div className="weekly-block-row" key={summary.categoryId}><span><i style={{ background: category?.color }} />{category?.label ?? "Sin bloque"}</span><div><i style={{ width: `${summary.percent}%`, background: category?.color }} /></div><strong>{Math.round(summary.percent)}%</strong></div>; })}{!previousSummary.categories.length && <p className="today-empty">No hay datos programados para esta semana.</p>}</div>
+            <div className="weekly-signal"><span>SEÑAL A REVISAR</span><strong>{weakestWeeklyCategory ? `${habitCategories.find((item) => item.id === weakestWeeklyCategory.categoryId)?.label ?? "Un bloque"} quedó en ${Math.round(weakestWeeklyCategory.percent)}%.` : "Aún no hay datos suficientes."}</strong><p>{weakestWeeklyCategory && weakestWeeklyCategory.percent < 60 ? "No añadas más carga: reduce fricción o reajusta la programación." : "Mantén el sistema estable antes de aumentar la exigencia."}</p></div>
+            <div className="weekly-reflection"><span>Reflexión registrada</span><p>{previousReview?.reflection || "No dejaste una reflexión para esta semana."}</p>{previousReview?.adjustment && <small>Ajuste decidido: {previousReview.adjustment}</small>}</div>
+          </article>
+        </section>
         </>}
 
         {mainView === "today" && <>
