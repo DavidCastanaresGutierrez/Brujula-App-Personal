@@ -1387,6 +1387,12 @@ export default function Home() {
       : item));
   }
 
+  function markGoalNotCompleted(goal: Goal) {
+    setGoals((items) => items.map((item) => item.id === goal.id
+      ? { ...item, status: "discarded" }
+      : item));
+  }
+
   function addGoalProgress(goal: Goal) {
     const amount = Number(goalProgressDrafts[goal.id] ?? "");
     if (!Number.isFinite(amount) || amount <= 0) return;
@@ -1563,6 +1569,7 @@ export default function Home() {
   };
 
   const progressResolvedGoals = goals.map((goal) => {
+    if (goal.status === "discarded") return goal;
     if (goal.template === "reading") {
       const currentValue = goal.books?.length ?? 0;
       return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
@@ -1572,7 +1579,7 @@ export default function Home() {
       const currentValue = calculateWeightedHabitDays(daily, ids, goal.trackingStart, today);
       return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
     }
-    if (!(goal.linkedHabitIds?.length || goal.linkedHabitId) || goal.status === "discarded") return goal;
+    if (!(goal.linkedHabitIds?.length || goal.linkedHabitId)) return goal;
     const currentValue = linkedGoalProgress(goal, daily);
     return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
   });
@@ -1607,7 +1614,7 @@ export default function Home() {
   const dayViewHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewHabits.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
   const dayViewWeekly = weekly.filter((habit) => habitAppliesOnDate(habit, dayViewKey));
   const weeklyHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewWeekly.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
-  const dayViewGoals = resolvedGoals.filter((goal) => !goal.archived && goal.status !== "discarded")
+  const dayViewGoals = resolvedGoals.filter((goal) => !goal.archived)
     .filter((goal) => goal.period === "daily" ? goal.periodKey === dayViewKey : goal.period === "weekly" ? weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, dayViewKey) : goal.dueDate >= dayViewKey)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 6);
@@ -1783,13 +1790,20 @@ export default function Home() {
                   const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
                   const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
                   const completed = goal.status === "completed" || goal.currentValue >= goal.targetValue;
+                  const missed = goal.status === "discarded";
                   return <div className="today-goal" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
                     <div><span>{category?.icon} {goal.period === "daily" ? "Hoy" : goal.period === "weekly" ? "Semana" : goal.period === "monthly" ? "Mes" : "Año"}</span><strong>{goal.title}</strong><small>{progress}% · vence {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></div>
                     <span className="today-goal-status">
                       {goal.measurement !== "complete" && <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
-                      {goal.measurement === "complete"
-                        ? <button className={completed ? "done" : "missed"} onClick={() => updateGoalProgress(goal, completed ? 0 : 1)} aria-label={completed ? `Reabrir ${goal.title}` : `Marcar ${goal.title} como completado`}>{completed ? "✓" : "✕"}</button>
-                        : <i className={completed ? "done" : "missed"} aria-label={completed ? "Objetivo completado" : "Objetivo no completado"}>{completed ? "✓" : "✕"}</i>}
+                      <button
+                        className={completed ? "done" : missed ? "missed" : "pending"}
+                        {...longPressProps(
+                          () => updateGoalProgress(goal, completed || missed ? 0 : goal.targetValue),
+                          () => markGoalNotCompleted(goal),
+                        )}
+                        aria-label={completed || missed ? `Dejar ${goal.title} pendiente` : `Marcar ${goal.title} como completado`}
+                        title="Pulsa para completar · mantén pulsado para marcar como no completado"
+                      >{completed ? "✓" : missed ? "✕" : ""}</button>
                     </span>
                   </div>;
                 })}
