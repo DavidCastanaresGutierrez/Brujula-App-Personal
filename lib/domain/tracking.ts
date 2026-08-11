@@ -7,8 +7,20 @@ export type TrackedHabit = {
   archivedAt?: string;
   category?: string;
   weekdaysOnly?: boolean;
+  schedule?: HabitSchedule;
   history?: Record<string, number[]>;
   skips?: Record<string, number[]>;
+};
+
+export type HabitSchedule = {
+  mode?: "selectedWeekdays" | "interval";
+  weekdays?: number[];
+  intervalDays?: number;
+  startDate?: string;
+  activeFrom?: string;
+  activeUntil?: string;
+  pausedFrom?: string;
+  pausedUntil?: string;
 };
 
 export type ScoreCategory = { id: string; priority?: boolean };
@@ -71,6 +83,41 @@ export function calendarWeekForDate(value: Date): CalendarWeek {
 export function isWeekday(year: number, monthIndex: number, day: number) {
   const weekday = new Date(year, monthIndex, day).getDay();
   return weekday >= 1 && weekday <= 5;
+}
+
+function dateKeyToUtcDays(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
+export function habitScheduledOnDate(habit: TrackedHabit, dateKey: string) {
+  if (!habitAppliesOnDate(habit, dateKey)) return false;
+  const schedule = habit.schedule;
+  if (schedule?.activeFrom && dateKey < schedule.activeFrom) return false;
+  if (schedule?.activeUntil && dateKey > schedule.activeUntil) return false;
+  if (schedule?.pausedFrom && schedule?.pausedUntil && dateKey >= schedule.pausedFrom && dateKey <= schedule.pausedUntil) return false;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  if (schedule?.mode === "selectedWeekdays") {
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    return (schedule.weekdays ?? []).includes(weekday);
+  }
+  if (schedule?.mode === "interval") {
+    const interval = Math.max(1, schedule.intervalDays ?? 1);
+    const start = schedule.startDate ?? schedule.activeFrom;
+    return Boolean(start && dateKey >= start && (dateKeyToUtcDays(dateKey) - dateKeyToUtcDays(start)) % interval === 0);
+  }
+  if (habit.weekdaysOnly) return isWeekday(year, month - 1, day);
+  return true;
+}
+
+export function scheduledDaysInMonth(habit: TrackedHabit, year: number, monthIndex: number, throughDay?: number) {
+  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
+  const limit = Math.min(throughDay ?? monthDays, monthDays);
+  let count = 0;
+  for (let day = 1; day <= limit; day += 1) {
+    if (habitScheduledOnDate(habit, isoDate(year, monthIndex, day))) count += 1;
+  }
+  return count;
 }
 
 export function weekdaysInMonth(year: number, monthIndex: number, throughDay?: number) {
@@ -195,11 +242,9 @@ export function calculateDailyScore(
   const day = value.getDate();
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const dateKey = isoDate(year, month, day);
-  const activeDaily = dailyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
+  const activeDaily = dailyHabits.filter((habit) => habitScheduledOnDate(habit, dateKey));
   const activeWeekly = weeklyHabits.filter((habit) => habitAppliesOnDate(habit, dateKey));
-  const scheduled = activeDaily.filter((habit) =>
-    (!habit.weekdaysOnly || isWeekday(year, month, day))
-    && !(habit.skips?.[monthKey] ?? []).includes(day));
+  const scheduled = activeDaily.filter((habit) => !(habit.skips?.[monthKey] ?? []).includes(day));
   const completed = scheduled.filter((habit) => (habit.history?.[monthKey] ?? []).includes(day)).length;
   const categoryScores = calculateCategoryScores(value, scheduled, categories);
   const weightedScore = categoryScores.reduce((sum, category) => sum + category.percent / 10 * category.weight, 0);
