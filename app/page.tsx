@@ -32,6 +32,7 @@ import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } f
 import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
+import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
 
 type Habit = {
   id: number;
@@ -71,8 +72,6 @@ type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "week" | "habits" | "goals";
 type BookFormat = "audio" | "digital" | "paper";
 type BookEntry = { id: number; title: string; author?: string; format: BookFormat; status?: "reading" | "completed"; startedAt?: string; completedAt?: string };
-type FitnessMetric = "weight" | "muscle" | "fatMass" | "bodyWater" | "bodyFat" | "bmi" | "basalMetabolicRate";
-type FitnessEntry = { id: number; recordedAt: string; weight: number; muscle: number; fatMass: number; bodyWater: number; bodyFat: number; bmi: number; basalMetabolicRate: number };
 type GoalStep = { id: number; kind: "milestone" | "action"; title: string; dueDate: string; completed: boolean };
 type Goal = {
   id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
@@ -177,28 +176,11 @@ const dailyMotivations = [
   "Hoy es una oportunidad concreta, no una promesa abstracta.",
 ];
 const PHRASES_OWNER_EMAIL = "david.castanares.gutierrez@gmail.com";
-const fitnessMetricMeta: Record<FitnessMetric, { label: string; unit: string }> = {
-  weight: { label: "Peso", unit: "kg" }, muscle: { label: "Masa muscular", unit: "kg" },
-  fatMass: { label: "Masa grasa", unit: "kg" }, bodyWater: { label: "Agua corporal", unit: "kg" },
-  bodyFat: { label: "Grasa corporal", unit: "%" }, bmi: { label: "IMC", unit: "" },
-  basalMetabolicRate: { label: "Tasa metabólica basal", unit: "kcal/día" },
-};
-
 function motivationForToday(motivations = dailyMotivations) {
   const available = motivations.length ? motivations : dailyMotivations;
   const now = new Date();
   const dayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000);
   return available[dayNumber % available.length];
-}
-
-function FitnessChart({ entries, metric, period }: { entries: FitnessEntry[]; metric: FitnessMetric; period: number }) {
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - period);
-  const points = entries.filter((entry) => new Date(`${entry.recordedAt}T12:00:00`) >= cutoff && Number.isFinite(entry[metric])).sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
-  if (!points.length) return <p className="fitness-chart-empty">Añade mediciones para ver tu evolución.</p>;
-  const values = points.map((entry) => entry[metric]); const min = Math.min(...values); const max = Math.max(...values); const span = Math.max(1, max - min);
-  const coords = points.map((entry, index) => ({ x: points.length === 1 ? 50 : 6 + index * 88 / (points.length - 1), y: 82 - (entry[metric] - min) / span * 64, entry }));
-  const meta = fitnessMetricMeta[metric]; const change = values.at(-1)! - values[0];
-  return <div className="fitness-chart"><div className="fitness-chart-summary"><span>Última <b>{values.at(-1)} {meta.unit}</b></span><span>Registros <b>{points.length}</b></span><span>Variación <b className={change <= 0 ? "positive" : ""}>{change > 0 ? "+" : ""}{change.toFixed(1)} {meta.unit}</b></span></div><svg viewBox="0 0 100 92" role="img" aria-label={`Evolución de ${meta.label}`} preserveAspectRatio="none"><path className="fitness-area" d={`M ${coords.map((p) => `${p.x} ${p.y}`).join(" L ")} L ${coords.at(-1)!.x} 88 L ${coords[0].x} 88 Z`} /><polyline points={coords.map((p) => `${p.x},${p.y}`).join(" ")} /><g>{coords.map((p) => <circle key={p.entry.id} cx={p.x} cy={p.y} r="1.7"><title>{p.entry.recordedAt}: {p.entry[metric]} {meta.unit}</title></circle>)}</g></svg><div className="fitness-chart-dates"><span>{points[0].recordedAt}</span><span>{points.at(-1)!.recordedAt}</span></div></div>;
 }
 
 function inferCategory(name: string): HabitCategory {
@@ -258,46 +240,6 @@ function streakContaining(history: Record<string, number[]> | undefined, target:
   let after = 0;
   while (completed.has(move(after + 1))) after += 1;
   return { length: before + 1 + after, start: move(-before) };
-}
-
-function Ring({ value }: { value: number }) {
-  const safe = Math.min(100, Math.max(0, value));
-  return (
-    <div className="ring" style={{ "--progress": `${safe * 3.6}deg` } as React.CSSProperties}>
-      <div><strong>{Math.round(safe)}%</strong><span>completado</span></div>
-    </div>
-  );
-}
-
-type ChartSeries = { name: string; color: string; data: { label: string; value: number }[] };
-
-function TrendChart({ series }: { series: ChartSeries[] }) {
-  const plotted = series.map((item) => ({
-    ...item,
-    points: item.data.map((point, index) => ({
-      ...point,
-      x: item.data.length <= 1 ? 60 : 60 + index * (900 / (item.data.length - 1)),
-      y: 220 - Math.min(100, Math.max(0, point.value)) * 1.8,
-    })),
-  }));
-  const labels = series[0]?.data ?? [];
-  const labelStep = labels.length > 16 ? 3 : 1;
-  return (
-    <div className="trend-chart">
-      {series.length > 1 && <div className="chart-legend">{series.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name}</span>)}</div>}
-      <svg viewBox="0 0 1000 260" role="img" aria-label="Evolución del porcentaje de cumplimiento">
-        {[0, 25, 50, 75, 100].map((tick) => {
-          const y = 220 - tick * 1.8;
-          return <g key={tick}><line x1="60" y1={y} x2="960" y2={y} className="chart-grid" /><text x="49" y={y + 4} textAnchor="end" className="chart-y-label">{tick}%</text></g>;
-        })}
-        {plotted.map((item) => <g key={item.name}>
-          <polyline points={item.points.map((point) => `${point.x},${point.y}`).join(" ")} className="trend-line" style={{ stroke: item.color }} />
-          {item.points.map((point, index) => <circle key={`${point.label}-${index}`} cx={point.x} cy={point.y} r={series.length > 1 ? 3 : 4} className="trend-point" style={{ stroke: item.color }}><title>{`${item.name} · ${point.label}: ${Math.round(point.value)}%`}</title></circle>)}
-        </g>)}
-        {labels.map((point, index) => index % labelStep === 0 && <text key={`${point.label}-${index}`} x={labels.length <= 1 ? 60 : 60 + index * (900 / (labels.length - 1))} y="245" textAnchor="middle" className="chart-x-label">{point.label}</text>)}
-      </svg>
-    </div>
-  );
 }
 
 function Brand({ lightBackground = false }: { lightBackground?: boolean }) {
