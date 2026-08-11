@@ -17,16 +17,17 @@ import {
   daysForMonthWeek,
   goalPeriodDetails,
   isoDate,
-  isWeekday,
   isCalendarDayInFuture,
   habitAppliesOnDate,
+  habitScheduledOnDate,
   isHabitVisibleInArchive,
   linkedGoalProgress,
   monthCalendarWeeks,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
-  weekdaysInMonth,
+  scheduledDaysInMonth,
 } from "../lib/domain/tracking";
+import type { HabitSchedule } from "../lib/domain/tracking";
 import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
 import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 
@@ -40,6 +41,7 @@ type Habit = {
   archivedAt?: string;
   everyDay?: boolean;
   weekdaysOnly?: boolean;
+  schedule?: HabitSchedule;
   history?: Record<string, number[]>;
   misses?: Record<string, number[]>;
   skips?: Record<string, number[]>;
@@ -498,8 +500,16 @@ export default function Home() {
   const [selectedHabitId, setSelectedHabitId] = useState<number>(initialDaily[0].id);
   const [newName, setNewName] = useState("");
   const [newGoal, setNewGoal] = useState(12);
-  const [everyDay, setEveryDay] = useState(false);
-  const [weekdaysOnly, setWeekdaysOnly] = useState(false);
+  const [, setEveryDay] = useState(false);
+  const [, setWeekdaysOnly] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<"monthly" | "daily" | "weekdays" | "selectedWeekdays" | "interval">("monthly");
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1, 3, 5]);
+  const [intervalDays, setIntervalDays] = useState(2);
+  const [scheduleStart, setScheduleStart] = useState(() => isoDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+  const [activeFrom, setActiveFrom] = useState("");
+  const [activeUntil, setActiveUntil] = useState("");
+  const [pausedFrom, setPausedFrom] = useState("");
+  const [pausedUntil, setPausedUntil] = useState("");
   const [selectedColor, setSelectedColor] = useState(palette[0]);
   const [selectedCategory, setSelectedCategory] = useState<HabitCategory>("health");
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
@@ -960,14 +970,14 @@ export default function Home() {
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
   const missesFor = (habit: Habit | WeeklyHabit, key = monthKey) => habit.misses?.[key] ?? [];
   const skipsFor = (habit: Habit | WeeklyHabit, key = monthKey) => habit.skips?.[key] ?? [];
-  const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
+  const goalFor = (habit: Habit) => habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
+    ? scheduledDaysInMonth(habit, year, month)
+    : habit.goal;
   const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
   const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= evaluatedThrough).length, 0);
-  const effectiveGoalThrough = (habit: Habit, through: number) => habit.everyDay
-    ? through
-    : habit.weekdaysOnly
-      ? weekdaysInMonth(year, month, through)
-      : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, days)));
+  const effectiveGoalThrough = (habit: Habit, through: number) => habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
+    ? scheduledDaysInMonth(habit, year, month, through)
+    : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, days)));
   const eligibleGoalThrough = (habit: Habit, through: number, key = monthKey) => Math.max(0,
     effectiveGoalThrough(habit, through) - skipsFor(habit, key).filter((day) => day <= through).length,
   );
@@ -984,7 +994,7 @@ export default function Home() {
   const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
   const habitsScheduledForDay = (day: number) => {
     const dateKey = isoDate(year, month, day);
-    return daily.filter((habit) => habitAppliesOnDate(habit, dateKey) && (!habit.weekdaysOnly || isWeekday(year, month, day)) && !skipsFor(habit).includes(day));
+    return daily.filter((habit) => habitScheduledOnDate(habit, dateKey) && !skipsFor(habit).includes(day));
   };
   const referenceDayHabits = habitsScheduledForDay(referenceDay);
   const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
@@ -1055,7 +1065,7 @@ export default function Home() {
       return weekDates.map((item) => {
         const key = `${item.getFullYear()}-${String(item.getMonth() + 1).padStart(2, "0")}`;
         const day = item.getDate();
-        const dueHabits = habits.filter((habit) => (!habit.weekdaysOnly || isWeekday(item.getFullYear(), item.getMonth(), day)) && !(habit.skips?.[key] ?? []).includes(day));
+        const dueHabits = habits.filter((habit) => habitScheduledOnDate(habit, isoDate(item.getFullYear(), item.getMonth(), day)) && !(habit.skips?.[key] ?? []).includes(day));
         const completed = dueHabits.filter((habit) => checksFor(habit, key).includes(day)).length;
         const label = item.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }).replace(".", "");
         return { label, value: dueHabits.length ? completed / dueHabits.length * 100 : 0 };
@@ -1066,7 +1076,7 @@ export default function Home() {
         const day = index + 1;
         const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
         const target = habits.reduce((sum, habit) => {
-          const scheduled = habit.everyDay ? day : habit.weekdaysOnly ? weekdaysInMonth(year, month, day) : Math.min(habit.goal, day);
+          const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, year, month, day) : Math.min(habit.goal, day);
           return sum + Math.max(0, scheduled - skipsFor(habit).filter((value) => value <= day).length);
         }, 0);
         return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
@@ -1079,10 +1089,9 @@ export default function Home() {
         : 0;
     return monthNames.slice(0, elapsedMonths).map((label, index) => {
       const key = `${year}-${String(index + 1).padStart(2, "0")}`;
-      const monthDays = new Date(year, index + 1, 0).getDate();
       const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
       const target = habits.reduce((sum, habit) => {
-        const scheduled = habit.everyDay ? monthDays : habit.weekdaysOnly ? weekdaysInMonth(year, index) : habit.goal;
+        const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, year, index) : habit.goal;
         return sum + Math.max(0, scheduled - skipsFor(habit, key).length);
       }, 0);
       return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
@@ -1108,7 +1117,7 @@ export default function Home() {
 
   function toggleDaily(id: number, day: number) {
     const habit = daily.find((item) => item.id === id);
-    if (habit?.weekdaysOnly && !isWeekday(year, month, day)) return;
+    if (habit && !habitScheduledOnDate(habit, isoDate(year, month, day))) return;
     const current = habit ? checksFor(habit) : [];
     if (isCalendarDayInFuture(year, month, day, today) && !current.includes(day)) return;
     setDaily((items) => items.map((habit) => {
@@ -1138,7 +1147,7 @@ export default function Home() {
     const key = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}`;
     const update = (item: Habit | WeeklyHabit) => {
       if (item.id !== id) return item;
-      if ("weekdaysOnly" in item && item.weekdaysOnly && !isWeekday(targetYear, targetMonth, day)) return item;
+      if (type === "daily" && !habitScheduledOnDate(item, isoDate(targetYear, targetMonth, day))) return item;
       const history = { ...(item.history ?? {}), [key]: (item.history?.[key] ?? []).filter((value) => value !== day) };
       const wasMissed = (item.misses?.[key] ?? []).includes(day);
       const wasSkipped = (item.skips?.[key] ?? []).includes(day);
@@ -1180,7 +1189,7 @@ export default function Home() {
     const currentDay = dayViewDate.getDate();
     const key = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
     const habit = daily.find((item) => item.id === id);
-    if (habit?.weekdaysOnly && !isWeekday(currentYear, currentMonth, currentDay)) return;
+    if (habit && !habitScheduledOnDate(habit, isoDate(currentYear, currentMonth, currentDay))) return;
     setDaily((items) => items.map((item) => {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
@@ -1219,11 +1228,38 @@ export default function Home() {
     }));
   }
 
+  function buildSchedule(): HabitSchedule | undefined {
+    const customMode = scheduleMode === "selectedWeekdays" || scheduleMode === "interval";
+    if (!customMode && !activeFrom && !activeUntil && !(pausedFrom && pausedUntil)) return undefined;
+    return {
+      ...(customMode ? { mode: scheduleMode } : {}),
+      ...(scheduleMode === "selectedWeekdays" ? { weekdays: [...selectedWeekdays].sort((a, b) => a - b) } : scheduleMode === "interval" ? { intervalDays, startDate: scheduleStart } : {}),
+      ...(activeFrom ? { activeFrom } : {}),
+      ...(activeUntil ? { activeUntil } : {}),
+      ...(pausedFrom && pausedUntil ? { pausedFrom, pausedUntil } : {}),
+    };
+  }
+
+  function resetScheduleDraft() {
+    setScheduleMode("monthly");
+    setSelectedWeekdays([1, 3, 5]);
+    setIntervalDays(2);
+    setScheduleStart(isoDate(today.getFullYear(), today.getMonth(), today.getDate()));
+    setActiveFrom("");
+    setActiveUntil("");
+    setPausedFrom("");
+    setPausedUntil("");
+  }
+
   function addHabit() {
     if (!newName.trim() || !modal) return;
     const color = palette[(daily.length + weekly.length) % palette.length];
     if (modal === "daily") {
-      setDaily((items) => [...items, { id: Date.now(), name: newName.trim(), goal: everyDay ? days : weekdaysOnly ? weekdaysInMonth(year, month) : newGoal, everyDay, weekdaysOnly, color, checks: [], category: selectedCategory }]);
+      const schedule = buildSchedule();
+      setDaily((items) => {
+        const draft = { id: Date.now(), name: newName.trim(), goal: newGoal, everyDay: scheduleMode === "daily", weekdaysOnly: scheduleMode === "weekdays", schedule, color, checks: [], category: selectedCategory };
+        return [...items, { ...draft, goal: schedule?.mode || draft.everyDay || draft.weekdaysOnly ? scheduledDaysInMonth(draft, year, month) : newGoal }];
+      });
     } else {
       setWeekly((items) => [...items, { id: Date.now(), name: newName.trim(), goal: Math.min(7, Math.max(1, newGoal)), color, checks: [], category: selectedCategory }]);
     }
@@ -1231,6 +1267,7 @@ export default function Home() {
     setNewGoal(12);
     setEveryDay(false);
     setWeekdaysOnly(false);
+    resetScheduleDraft();
     setSelectedCategory("health");
     setModal(null);
   }
@@ -1241,6 +1278,14 @@ export default function Home() {
     setNewGoal(habit.goal);
     setEveryDay(Boolean(habit.everyDay));
     setWeekdaysOnly(Boolean(habit.weekdaysOnly));
+    setScheduleMode(type === "weekly" ? "monthly" : habit.schedule?.mode ?? (habit.everyDay ? "daily" : habit.weekdaysOnly ? "weekdays" : "monthly"));
+    setSelectedWeekdays(habit.schedule?.weekdays ?? [1, 3, 5]);
+    setIntervalDays(habit.schedule?.intervalDays ?? 2);
+    setScheduleStart(habit.schedule?.startDate ?? isoDate(today.getFullYear(), today.getMonth(), today.getDate()));
+    setActiveFrom(habit.schedule?.activeFrom ?? "");
+    setActiveUntil(habit.schedule?.activeUntil ?? "");
+    setPausedFrom(habit.schedule?.pausedFrom ?? "");
+    setPausedUntil(habit.schedule?.pausedUntil ?? "");
     setSelectedColor(habit.color);
     setSelectedCategory(habit.category ?? inferCategory(habit.name));
     setActionHabit(null);
@@ -1248,13 +1293,19 @@ export default function Home() {
 
   function saveEdit() {
     if (!editing || !newName.trim()) return;
-    const update = (habit: Habit) => habit.id === editing.id ? { ...habit, name: newName.trim(), goal: editing.type === "daily" && everyDay ? days : editing.type === "daily" && weekdaysOnly ? weekdaysInMonth(year, month) : editing.type === "weekly" ? Math.min(7, Math.max(1, newGoal)) : newGoal, everyDay: editing.type === "daily" ? everyDay : false, weekdaysOnly: editing.type === "daily" ? weekdaysOnly : false, color: selectedColor, category: selectedCategory } : habit;
+    const update = (habit: Habit) => {
+      if (habit.id !== editing.id) return habit;
+      const schedule = editing.type === "daily" ? buildSchedule() : undefined;
+      const next = { ...habit, name: newName.trim(), goal: editing.type === "weekly" ? Math.min(7, Math.max(1, newGoal)) : newGoal, everyDay: editing.type === "daily" && scheduleMode === "daily", weekdaysOnly: editing.type === "daily" && scheduleMode === "weekdays", schedule, color: selectedColor, category: selectedCategory };
+      return { ...next, goal: editing.type === "daily" && (schedule?.mode || next.everyDay || next.weekdaysOnly) ? scheduledDaysInMonth(next, year, month) : next.goal };
+    };
     if (editing.type === "daily") setDaily((items) => items.map(update));
     else setWeekly((items) => items.map(update));
     setEditing(null);
     setNewName("");
     setEveryDay(false);
     setWeekdaysOnly(false);
+    resetScheduleDraft();
     setSelectedColor(palette[0]);
     setSelectedCategory("health");
   }
@@ -1577,7 +1628,7 @@ export default function Home() {
       const monthDays = new Date(today.getFullYear(), index + 1, 0).getDate();
       const through = index === today.getMonth() ? today.getDate() : monthDays;
       completed += (habit.history?.[key] ?? []).filter((day) => day <= through).length;
-      expected += habit.everyDay ? through : habit.weekdaysOnly ? weekdaysInMonth(today.getFullYear(), index, through) : Math.min(habit.goal, through);
+      expected += habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, today.getFullYear(), index, through) : Math.min(habit.goal, through);
     }
     return Math.min(100, Math.round(completed / Math.max(1, expected) * 100));
   };
@@ -1624,7 +1675,7 @@ export default function Home() {
   const dayViewKey = isoDate(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate());
   const dayViewMonthKey = dayViewKey.slice(0, 7);
   const dayViewWeekIndex = monthCalendarWeeks(dayViewDate.getFullYear(), dayViewDate.getMonth()).findIndex((week) => week.includes(dayViewDate.getDate())) + 1;
-  const dayViewHabits = daily.filter((habit) => habitAppliesOnDate(habit, dayViewKey) && (!habit.weekdaysOnly || isWeekday(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate())));
+  const dayViewHabits = daily.filter((habit) => habitScheduledOnDate(habit, dayViewKey));
   const dayViewHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewHabits.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
   const dayViewWeekly = weekly.filter((habit) => habitAppliesOnDate(habit, dayViewKey));
   const weeklyHabitGroups = habitCategories.map((category) => ({ category, habits: dayViewWeekly.filter((habit) => habit.category === category.id) })).filter((group) => group.habits.length);
@@ -1992,7 +2043,7 @@ export default function Home() {
                 <button className={activeTab === "daily" ? "active" : ""} onClick={() => setActiveTab("daily")}>Diarios</button>
                 <button className={activeTab === "weekly" ? "active" : ""} onClick={() => setActiveTab("weekly")}>Semanales</button>
               </div>
-              <button className="add-button" onClick={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); setEveryDay(false); setWeekdaysOnly(false); setSelectedCategory("health"); }}>+ Añadir hábito</button>
+              <button className="add-button" onClick={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); setEveryDay(false); setWeekdaysOnly(false); resetScheduleDraft(); setSelectedCategory("health"); }}>+ Añadir hábito</button>
             </div>
           </div>
 
@@ -2024,9 +2075,9 @@ export default function Home() {
                   const progress = Math.min(100, Math.round(completedThroughToday / effectiveGoal * 100));
                   return <div className={`habit-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "daily" && reorderHabit("daily", dragging.id, habit.id)}>
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
-                    <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
+                    <div className="goal-cell">{habit.schedule?.mode === "selectedWeekdays" ? <span className="daily-goal">{habit.schedule.weekdays?.map((day) => ["D", "L", "M", "X", "J", "V", "S"][day]).join(" · ")} · {effectiveGoal}</span> : habit.schedule?.mode === "interval" ? <span className="daily-goal">Cada {habit.schedule.intervalDays} días · {effectiveGoal}</span> : habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && missesFor(habit).includes(d.day); const skipped = !checked && skipsFor(habit).includes(d.day); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : skipped ? "skipped" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => cycleException("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : skipped ? ", omitido; no afecta a la puntuación" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`} title="Pulsación larga: no completado → omitido → pendiente">{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && missesFor(habit).includes(d.day); const skipped = !checked && skipsFor(habit).includes(d.day); const unscheduled = !habitScheduledOnDate(habit, isoDate(year, month, d.day)); const disabled = unscheduled || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : skipped ? "skipped" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${unscheduled ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => cycleException("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : skipped ? ", omitido; no afecta a la puntuación" : ""}${unscheduled ? ", no programado" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`} title={unscheduled ? "Día no programado" : "Pulsación larga: no completado → omitido → pendiente"}>{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
@@ -2134,12 +2185,13 @@ export default function Home() {
           <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ej. Caminar 30 minutos" /></label>
           <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           {modal === "daily" && <div className="frequency-options">
-            <label className="frequency-toggle"><input type="radio" name="new-frequency" checked={!everyDay && !weekdaysOnly} onChange={() => { setEveryDay(false); setWeekdaysOnly(false); }} /><span><strong>Días al mes</strong><small>Define cuántos días quieres completar el hábito cada mes.</small></span></label>
-            <label className="frequency-toggle"><input type="radio" name="new-frequency" checked={everyDay} onChange={() => { setEveryDay(true); setWeekdaysOnly(false); }} /><span><strong>Todos los días</strong><small>Objetivo automático de {days} días en {monthNames[month]}.</small></span></label>
-            <label className="frequency-toggle"><input type="radio" name="new-frequency" checked={weekdaysOnly} onChange={() => { setWeekdaysOnly(true); setEveryDay(false); }} /><span><strong>Días laborables</strong><small>De lunes a viernes; excluye sábados y domingos ({weekdaysInMonth(year, month)} días).</small></span></label>
+            {([['monthly', 'Días al mes', 'Define una meta mensual flexible.'], ['daily', 'Todos los días', `Objetivo automático de ${days} días.`], ['weekdays', 'Días laborables', 'De lunes a viernes.'], ['selectedWeekdays', 'Días concretos', 'Elige los días de la semana.'], ['interval', 'Cada X días', 'Repite desde una fecha de inicio.']] as const).map(([value, label, help]) => <label className="frequency-toggle" key={value}><input type="radio" name="new-frequency" checked={scheduleMode === value} onChange={() => { setScheduleMode(value); setEveryDay(value === 'daily'); setWeekdaysOnly(value === 'weekdays'); }} /><span><strong>{label}</strong><small>{help}</small></span></label>)}
+            {scheduleMode === "selectedWeekdays" && <fieldset className="weekday-picker"><legend>Días programados</legend>{[[1, "L"], [2, "M"], [3, "X"], [4, "J"], [5, "V"], [6, "S"], [0, "D"]].map(([value, label]) => <button type="button" key={value} className={selectedWeekdays.includes(Number(value)) ? "selected" : ""} onClick={() => setSelectedWeekdays((items) => items.includes(Number(value)) ? items.filter((day) => day !== Number(value)) : [...items, Number(value)])}>{label}</button>)}</fieldset>}
+            {scheduleMode === "interval" && <div className="schedule-fields"><label>Cada<input type="number" min="2" max="365" value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))} /><small>días</small></label><label>Desde<input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} /></label></div>}
+            <><div className="schedule-fields"><label>Activo desde (opcional)<input type="date" value={activeFrom} onChange={(e) => setActiveFrom(e.target.value)} /></label><label>Hasta<input type="date" value={activeUntil} min={activeFrom || undefined} onChange={(e) => setActiveUntil(e.target.value)} /></label></div><div className="schedule-fields"><label>Pausar desde (opcional)<input type="date" value={pausedFrom} onChange={(e) => setPausedFrom(e.target.value)} /></label><label>Hasta<input type="date" value={pausedUntil} min={pausedFrom || undefined} onChange={(e) => setPausedUntil(e.target.value)} /></label></div></>
           </div>}
-          {!everyDay && !weekdaysOnly && <label>{modal === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={modal === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{modal === "weekly" && <small className="field-help">Podrás registrar cada realización hasta alcanzar esta meta semanal.</small>}</label>}
-          <button className="add-button full" onClick={addHabit}>Crear hábito</button>
+          {(modal === "weekly" || scheduleMode === "monthly") && <label>{modal === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={modal === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{modal === "weekly" && <small className="field-help">Podrás registrar cada realización hasta alcanzar esta meta semanal.</small>}</label>}
+          <button className="add-button full" disabled={scheduleMode === "selectedWeekdays" && !selectedWeekdays.length} onClick={addHabit}>Crear hábito</button>
         </div>
       </div>}
       {canManagePhrases && motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
@@ -2288,11 +2340,12 @@ export default function Home() {
           <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} /></label>
           <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
           {editing.type === "daily" && <div className="frequency-options">
-            <label className="frequency-toggle"><input type="radio" name="edit-frequency" checked={!everyDay && !weekdaysOnly} onChange={() => { setEveryDay(false); setWeekdaysOnly(false); }} /><span><strong>Días al mes</strong><small>Define cuántos días quieres completar el hábito cada mes.</small></span></label>
-            <label className="frequency-toggle"><input type="radio" name="edit-frequency" checked={everyDay} onChange={() => { setEveryDay(true); setWeekdaysOnly(false); }} /><span><strong>Todos los días</strong><small>El objetivo se ajustará al número real de días del mes.</small></span></label>
-            <label className="frequency-toggle"><input type="radio" name="edit-frequency" checked={weekdaysOnly} onChange={() => { setWeekdaysOnly(true); setEveryDay(false); }} /><span><strong>Días laborables</strong><small>De lunes a viernes; excluye sábados y domingos ({weekdaysInMonth(year, month)} días).</small></span></label>
+            {([['monthly', 'Días al mes'], ['daily', 'Todos los días'], ['weekdays', 'Días laborables'], ['selectedWeekdays', 'Días concretos'], ['interval', 'Cada X días']] as const).map(([value, label]) => <label className="frequency-toggle" key={value}><input type="radio" name="edit-frequency" checked={scheduleMode === value} onChange={() => { setScheduleMode(value); setEveryDay(value === 'daily'); setWeekdaysOnly(value === 'weekdays'); }} /><span><strong>{label}</strong></span></label>)}
+            {scheduleMode === "selectedWeekdays" && <fieldset className="weekday-picker"><legend>Días programados</legend>{[[1, "L"], [2, "M"], [3, "X"], [4, "J"], [5, "V"], [6, "S"], [0, "D"]].map(([value, label]) => <button type="button" key={value} className={selectedWeekdays.includes(Number(value)) ? "selected" : ""} onClick={() => setSelectedWeekdays((items) => items.includes(Number(value)) ? items.filter((day) => day !== Number(value)) : [...items, Number(value)])}>{label}</button>)}</fieldset>}
+            {scheduleMode === "interval" && <div className="schedule-fields"><label>Cada<input type="number" min="2" max="365" value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))} /><small>días</small></label><label>Desde<input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} /></label></div>}
+            <><div className="schedule-fields"><label>Activo desde (opcional)<input type="date" value={activeFrom} onChange={(e) => setActiveFrom(e.target.value)} /></label><label>Hasta<input type="date" value={activeUntil} min={activeFrom || undefined} onChange={(e) => setActiveUntil(e.target.value)} /></label></div><div className="schedule-fields"><label>Pausar desde (opcional)<input type="date" value={pausedFrom} onChange={(e) => setPausedFrom(e.target.value)} /></label><label>Hasta<input type="date" value={pausedUntil} min={pausedFrom || undefined} onChange={(e) => setPausedUntil(e.target.value)} /></label></div></>
           </div>}
-          {!everyDay && !weekdaysOnly && <label>{editing.type === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={editing.type === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{editing.type === "weekly" && <small className="field-help">La meta se aplica de nuevo cada semana.</small>}</label>}
+          {(editing.type === "weekly" || scheduleMode === "monthly") && <label>{editing.type === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={editing.type === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{editing.type === "weekly" && <small className="field-help">La meta se aplica de nuevo cada semana.</small>}</label>}
           <fieldset className="color-picker">
             <legend>Color del hábito</legend>
             <div className="color-palette">
@@ -2311,7 +2364,7 @@ export default function Home() {
               ))}
             </div>
           </fieldset>
-          <button className="add-button full" onClick={saveEdit}>Guardar cambios</button>
+          <button className="add-button full" disabled={scheduleMode === "selectedWeekdays" && !selectedWeekdays.length} onClick={saveEdit}>Guardar cambios</button>
         </div>
       </div>}
       {deleting && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleting(null)}>
