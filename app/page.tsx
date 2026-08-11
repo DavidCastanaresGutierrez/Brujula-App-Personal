@@ -42,6 +42,7 @@ type Habit = {
   weekdaysOnly?: boolean;
   history?: Record<string, number[]>;
   misses?: Record<string, number[]>;
+  skips?: Record<string, number[]>;
   category?: HabitCategory;
   celebratedStreak30?: string;
 };
@@ -56,6 +57,7 @@ type WeeklyHabit = {
   archivedAt?: string;
   history?: Record<string, number[]>;
   misses?: Record<string, number[]>;
+  skips?: Record<string, number[]>;
   category?: HabitCategory;
 };
 
@@ -957,6 +959,7 @@ export default function Home() {
   const checksFor = (habit: Habit, key = monthKey) => habit.history?.[key] ?? [];
   const weeklyChecksFor = (habit: WeeklyHabit, key = monthKey) => habit.history?.[key] ?? [];
   const missesFor = (habit: Habit | WeeklyHabit, key = monthKey) => habit.misses?.[key] ?? [];
+  const skipsFor = (habit: Habit | WeeklyHabit, key = monthKey) => habit.skips?.[key] ?? [];
   const goalFor = (habit: Habit) => habit.everyDay ? days : habit.weekdaysOnly ? weekdaysInMonth(year, month) : habit.goal;
   const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
   const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= evaluatedThrough).length, 0);
@@ -965,7 +968,10 @@ export default function Home() {
     : habit.weekdaysOnly
       ? weekdaysInMonth(year, month, through)
       : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, days)));
-  const totalGoal = activeDaily.reduce((sum, habit) => sum + effectiveGoalThrough(habit, evaluatedThrough), 0);
+  const eligibleGoalThrough = (habit: Habit, through: number, key = monthKey) => Math.max(0,
+    effectiveGoalThrough(habit, through) - skipsFor(habit, key).filter((day) => day <= through).length,
+  );
+  const totalGoal = activeDaily.reduce((sum, habit) => sum + eligibleGoalThrough(habit, evaluatedThrough), 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -978,7 +984,7 @@ export default function Home() {
   const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
   const habitsScheduledForDay = (day: number) => {
     const dateKey = isoDate(year, month, day);
-    return daily.filter((habit) => habitAppliesOnDate(habit, dateKey) && (!habit.weekdaysOnly || isWeekday(year, month, day)));
+    return daily.filter((habit) => habitAppliesOnDate(habit, dateKey) && (!habit.weekdaysOnly || isWeekday(year, month, day)) && !skipsFor(habit).includes(day));
   };
   const referenceDayHabits = habitsScheduledForDay(referenceDay);
   const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
@@ -1015,7 +1021,7 @@ export default function Home() {
     ? `Media de ${pastMonthDailyValues.length} días con hábitos en ${monthNames[month].toLowerCase()}`
     : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
   const monthScore = scoreFromPercent(globalProgress);
-  const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit));
+  const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit) - skipsFor(habit).length);
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
   const monthWeeks = monthCalendarWeeks(year, month);
@@ -1049,7 +1055,7 @@ export default function Home() {
       return weekDates.map((item) => {
         const key = `${item.getFullYear()}-${String(item.getMonth() + 1).padStart(2, "0")}`;
         const day = item.getDate();
-        const dueHabits = habits.filter((habit) => !habit.weekdaysOnly || isWeekday(item.getFullYear(), item.getMonth(), day));
+        const dueHabits = habits.filter((habit) => (!habit.weekdaysOnly || isWeekday(item.getFullYear(), item.getMonth(), day)) && !(habit.skips?.[key] ?? []).includes(day));
         const completed = dueHabits.filter((habit) => checksFor(habit, key).includes(day)).length;
         const label = item.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }).replace(".", "");
         return { label, value: dueHabits.length ? completed / dueHabits.length * 100 : 0 };
@@ -1059,7 +1065,10 @@ export default function Home() {
       return Array.from({ length: elapsedDays }, (_, index) => {
         const day = index + 1;
         const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
-        const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? day : habit.weekdaysOnly ? weekdaysInMonth(year, month, day) : Math.min(habit.goal, day)), 0);
+        const target = habits.reduce((sum, habit) => {
+          const scheduled = habit.everyDay ? day : habit.weekdaysOnly ? weekdaysInMonth(year, month, day) : Math.min(habit.goal, day);
+          return sum + Math.max(0, scheduled - skipsFor(habit).filter((value) => value <= day).length);
+        }, 0);
         return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
       });
     }
@@ -1072,7 +1081,10 @@ export default function Home() {
       const key = `${year}-${String(index + 1).padStart(2, "0")}`;
       const monthDays = new Date(year, index + 1, 0).getDate();
       const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
-      const target = habits.reduce((sum, habit) => sum + (habit.everyDay ? monthDays : habit.weekdaysOnly ? weekdaysInMonth(year, index) : habit.goal), 0);
+      const target = habits.reduce((sum, habit) => {
+        const scheduled = habit.everyDay ? monthDays : habit.weekdaysOnly ? weekdaysInMonth(year, index) : habit.goal;
+        return sum + Math.max(0, scheduled - skipsFor(habit, key).length);
+      }, 0);
       return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
     });
   };
@@ -1090,8 +1102,6 @@ export default function Home() {
   rollingPeriodStart.setDate(rollingPeriodEnd.getDate() - 6);
   const shortDate = (value: Date) => value.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(".", "");
   const rollingPeriodLabel = `${shortDate(rollingPeriodStart)} – ${shortDate(rollingPeriodEnd)}`;
-  const isPastDay = (targetYear: number, targetMonth: number, targetDay: number) => isoDate(targetYear, targetMonth, targetDay) < isoDate(today.getFullYear(), today.getMonth(), today.getDate());
-
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
   }
@@ -1108,18 +1118,19 @@ export default function Home() {
       const next = toggleCompletionForDay(current, day);
       const history = { ...(habit.history ?? {}), [monthKey]: next };
       const misses = { ...(habit.misses ?? {}), [monthKey]: missesFor(habit).filter((item) => item !== day) };
+      const skips = { ...(habit.skips ?? {}), [monthKey]: skipsFor(habit).filter((item) => item !== day) };
       if (!isRemoving) {
         const streak = streakContaining(history, isoDate(year, month, day));
         if (streak.length >= 30 && habit.celebratedStreak30 !== streak.start) {
           setStreakCelebration({ name: habit.name, color: habit.color });
-          return { ...habit, history, misses, celebratedStreak30: streak.start };
+          return { ...habit, history, misses, skips, celebratedStreak30: streak.start };
         }
       }
-      return { ...habit, history, misses };
+      return { ...habit, history, misses, skips };
     }));
   }
 
-  function markMissed(type: "daily" | "weekly", id: number, targetDate: Date) {
+  function cycleException(type: "daily" | "weekly", id: number, targetDate: Date) {
     const targetYear = targetDate.getFullYear();
     const targetMonth = targetDate.getMonth();
     const day = targetDate.getDate();
@@ -1129,8 +1140,11 @@ export default function Home() {
       if (item.id !== id) return item;
       if ("weekdaysOnly" in item && item.weekdaysOnly && !isWeekday(targetYear, targetMonth, day)) return item;
       const history = { ...(item.history ?? {}), [key]: (item.history?.[key] ?? []).filter((value) => value !== day) };
-      const misses = { ...(item.misses ?? {}), [key]: Array.from(new Set([...(item.misses?.[key] ?? []), day])).sort((a, b) => a - b) };
-      return { ...item, history, misses };
+      const wasMissed = (item.misses?.[key] ?? []).includes(day);
+      const wasSkipped = (item.skips?.[key] ?? []).includes(day);
+      const misses = { ...(item.misses ?? {}), [key]: wasMissed ? (item.misses?.[key] ?? []).filter((value) => value !== day) : wasSkipped ? (item.misses?.[key] ?? []).filter((value) => value !== day) : Array.from(new Set([...(item.misses?.[key] ?? []), day])).sort((a, b) => a - b) };
+      const skips = { ...(item.skips ?? {}), [key]: wasMissed ? Array.from(new Set([...(item.skips?.[key] ?? []), day])).sort((a, b) => a - b) : (item.skips?.[key] ?? []).filter((value) => value !== day) };
+      return { ...item, history, misses, skips };
     };
     if (type === "daily") setDaily((items) => items.map(update) as Habit[]);
     else setWeekly((items) => items.map(update) as WeeklyHabit[]);
@@ -1171,7 +1185,7 @@ export default function Home() {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
       const next = toggleCompletionForDay(current, currentDay);
-      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== currentDay) } };
+      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== currentDay) }, skips: { ...(item.skips ?? {}), [key]: (item.skips?.[key] ?? []).filter((day) => day !== currentDay) } };
     }));
   }
 
@@ -1181,7 +1195,7 @@ export default function Home() {
       if (item.id !== id) return item;
       const current = item.history?.[key] ?? [];
       const next = toggleCompletionForDay(current, dayViewDate.getDate());
-      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== dayViewDate.getDate()) } };
+      return { ...item, history: { ...(item.history ?? {}), [key]: next }, misses: { ...(item.misses ?? {}), [key]: (item.misses?.[key] ?? []).filter((day) => day !== dayViewDate.getDate()) }, skips: { ...(item.skips ?? {}), [key]: (item.skips?.[key] ?? []).filter((day) => day !== dayViewDate.getDate()) } };
     }));
   }
 
@@ -1768,9 +1782,10 @@ export default function Home() {
               <div className="today-list grouped">
                 {dayViewHabitGroups.map(({ category, habits }) => { const collapsed = isHabitBlockCollapsed("today-daily", category.id); return <div className={`today-block ${collapsed ? "is-collapsed" : ""}`} key={category.id}><button type="button" className="today-block-title" style={{ color: category.color }} onClick={() => toggleHabitBlock("today-daily", category.id)} aria-expanded={!collapsed}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{Math.round(dayViewCategoryScores.get(category.id)?.percent ?? 0)}%</small><i aria-hidden="true">⌄</i></button>{!collapsed && habits.map((habit) => {
                   const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                  const missed = !checked && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
-                  return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => markMissed("daily", habit.id, dayViewDate))} aria-pressed={checked}>
-                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "✕" : ""}</b>
+                  const missed = !checked && (habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                  const skipped = !checked && (habit.skips?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                  return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : skipped ? "skipped" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => cycleException("daily", habit.id, dayViewDate))} aria-pressed={checked} title="Pulsación larga: no completado → omitido → pendiente">
+                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : skipped ? "Omitido · no afecta a la puntuación" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</b>
                   </button>;
                 })}</div>; })}
                 {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
@@ -1779,8 +1794,9 @@ export default function Home() {
                 const weekDays = daysForMonthWeek(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewWeekIndex);
                 const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
                 const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                const missed = !doneOnDay && ((habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate()) || isPastDay(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate()));
-                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => markMissed("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay}><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "✕" : "+"}</b></button>;
+                const missed = !doneOnDay && (habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                const skipped = !doneOnDay && (habit.skips?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
+                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : skipped ? "skipped" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => cycleException("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay} title="Pulsación larga: no completado → omitido → pendiente"><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : skipped ? " · omitido" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "✕" : skipped ? "—" : "+"}</b></button>;
               })}</div>; })}</div></>}
             </article>
             <article className="today-column-card">
@@ -2010,7 +2026,7 @@ export default function Home() {
                     <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
                     <div className="goal-cell">{habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
                     <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && (missesFor(habit).includes(d.day) || isPastDay(year, month, d.day)); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => markMissed("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`}>{checked ? "✓" : missed ? "✕" : ""}</button>; })}
+                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && missesFor(habit).includes(d.day); const skipped = !checked && skipsFor(habit).includes(d.day); const nonWorkingDay = Boolean(habit.weekdaysOnly && !isWeekday(year, month, d.day)); const disabled = nonWorkingDay || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : skipped ? "skipped" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${nonWorkingDay ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => cycleException("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : skipped ? ", omitido; no afecta a la puntuación" : ""}${nonWorkingDay ? ", fin de semana" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`} title="Pulsación larga: no completado → omitido → pendiente">{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</button>; })}
                     </div>
                     <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
                   </div>;
