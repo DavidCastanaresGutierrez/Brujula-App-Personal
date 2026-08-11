@@ -158,6 +158,7 @@ export async function GET(request: Request) {
       books: goal.metadata?.books ?? [],
       fitnessEntries: goal.metadata?.fitnessEntries ?? [],
       parentAnnualGoalId: goal.metadata?.parentAnnualGoalId ? Number(goal.metadata.parentAnnualGoalId) : undefined,
+      steps: Array.isArray(goal.metadata?.steps) ? goal.metadata.steps : [],
       archived: Boolean(goal.metadata?.archived),
     }));
     const state = habits.length || categories.length || goals.length
