@@ -75,9 +75,26 @@ function validateHabit(value: unknown, kind: "daily" | "weekly") {
     && (value.celebratedStreak30 === undefined || isDate(value.celebratedStreak30))
     && (kind === "weekly" || value.everyDay === undefined || typeof value.everyDay === "boolean")
     && (kind === "weekly" || value.weekdaysOnly === undefined || typeof value.weekdaysOnly === "boolean")
+    && (kind === "weekly" || validateSchedule(value.schedule))
     && validateHistory(value.history)
     && validateHistory(value.misses)
     && validateHistory(value.skips);
+}
+
+function validateSchedule(value: unknown) {
+  if (value === undefined) return true;
+  if (!isRecord(value) || (value.mode !== undefined && !["selectedWeekdays", "interval"].includes(String(value.mode)))) return false;
+  if (value.weekdays !== undefined && (!Array.isArray(value.weekdays) || !value.weekdays.length || new Set(value.weekdays).size !== value.weekdays.length || !value.weekdays.every((day) => Number.isInteger(day) && day >= 0 && day <= 6))) return false;
+  if (value.intervalDays !== undefined && (!Number.isInteger(value.intervalDays) || Number(value.intervalDays) < 2 || Number(value.intervalDays) > 365)) return false;
+  if (value.startDate !== undefined && !isDate(value.startDate)) return false;
+  if (value.activeFrom !== undefined && !isDate(value.activeFrom)) return false;
+  if (value.activeUntil !== undefined && !isDate(value.activeUntil)) return false;
+  if (value.pausedFrom !== undefined && !isDate(value.pausedFrom)) return false;
+  if (value.pausedUntil !== undefined && !isDate(value.pausedUntil)) return false;
+  if (value.mode === "selectedWeekdays" && !Array.isArray(value.weekdays)) return false;
+  if (value.mode === "interval" && (!Number.isInteger(value.intervalDays) || !isDate(value.startDate))) return false;
+  if (typeof value.activeFrom === "string" && typeof value.activeUntil === "string" && value.activeFrom > value.activeUntil) return false;
+  return !(typeof value.pausedFrom === "string" && typeof value.pausedUntil === "string" && value.pausedFrom > value.pausedUntil);
 }
 
 function validateBook(value: unknown) {
