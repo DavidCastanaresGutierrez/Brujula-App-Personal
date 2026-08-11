@@ -93,6 +93,28 @@ describe("tracker state validation", () => {
     Object.assign(state.goals[0], { template: "reading", books: [{ id: 12, title: "Dune", author: "Frank Herbert", format: "paper", status: "completed" }] });
     expect(validateTrackerState(state).success).toBe(false);
   });
+
+  it("accepts dated goal milestones and actions", () => {
+    const state = validState();
+    Object.assign(state.goals[0], { steps: [
+      { id: 20, kind: "milestone", title: "Prototipo validado", dueDate: "2026-09-30", completed: true },
+      { id: 21, kind: "action", title: "Pedir tres presupuestos", dueDate: "2026-08-20", completed: false },
+    ] });
+    expect(validateTrackerState(state).success).toBe(true);
+  });
+
+  it("rejects duplicated or malformed goal steps", () => {
+    const duplicated = validState();
+    Object.assign(duplicated.goals[0], { steps: [
+      { id: 20, kind: "action", title: "Primera acción", dueDate: "2026-08-20", completed: false },
+      { id: 20, kind: "milestone", title: "Hito duplicado", dueDate: "2026-09-30", completed: false },
+    ] });
+    expect(validateTrackerState(duplicated).success).toBe(false);
+
+    const malformed = validState();
+    Object.assign(malformed.goals[0], { steps: [{ id: 22, kind: "task", title: "Tipo incorrecto", dueDate: "2026-02-31", completed: "no" }] });
+    expect(validateTrackerState(malformed).success).toBe(false);
+  });
 });
 
 describe("state revision validation", () => {
