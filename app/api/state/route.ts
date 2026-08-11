@@ -64,6 +64,7 @@ type GoalRow = {
 };
 
 type TrackerState = ValidTrackerState;
+type WeeklyReviewRow = { week_start: string; priorities: string[]; adjustment: string; reflection: string; updated_at: string };
 
 async function applyStateChanges(
   supabase: ReturnType<typeof getSupabaseServerClient>,
@@ -101,11 +102,11 @@ export async function GET(request: Request) {
     }
     if (!snapshot) throw new Error("El estado cambió durante la lectura");
 
-    const { categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, versionResult } = snapshot;
+    const { categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, weeklyReviewsResult, versionResult } = snapshot;
 
     // La tabla de frases se incorpora de forma progresiva. Los hábitos deben seguir
     // cargando aunque el despliegue llegue antes que la migración de Supabase.
-    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error ?? goalsResult.error ?? versionResult.error;
+    const databaseError = categoriesResult.error ?? habitsResult.error ?? completionsResult.error ?? goalsResult.error ?? weeklyReviewsResult.error ?? versionResult.error;
     if (databaseError) throw databaseError;
 
     const categories = (categoriesResult.data as CategoryRow[]).map((category) => ({
@@ -166,9 +167,10 @@ export async function GET(request: Request) {
           categories,
           motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text),
           goals,
+          weeklyReviews: ((weeklyReviewsResult.data ?? []) as WeeklyReviewRow[]).map((review) => ({ weekStart: review.week_start, priorities: review.priorities, adjustment: review.adjustment, reflection: review.reflection, updatedAt: review.updated_at })),
         }
       : ((motivationsResult.data ?? []) as MotivationRow[]).length
-        ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text), goals }
+        ? { daily: [], weekly: [], categories: [], motivations: ((motivationsResult.data ?? []) as MotivationRow[]).map((item) => item.text), goals, weeklyReviews: ((weeklyReviewsResult.data ?? []) as WeeklyReviewRow[]).map((review) => ({ weekStart: review.week_start, priorities: review.priorities, adjustment: review.adjustment, reflection: review.reflection, updatedAt: review.updated_at })) }
         : null;
 
     return Response.json({ state, revision: Number(versionResult.data?.revision ?? 0) }, { headers: noStoreHeaders });
@@ -181,12 +183,13 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
   const versionBeforeResult = await supabase.from("tracker_state_versions").select("revision").maybeSingle();
   if (versionBeforeResult.error) throw versionBeforeResult.error;
 
-  const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult] = await Promise.all([
+  const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, weeklyReviewsResult] = await Promise.all([
     supabase.from("categories").select("id,label,icon,color,position,priority").order("position"),
     supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,archived_at,misses,skips,every_day,weekdays_only,schedule,celebrated_streak_30").order("position"),
     supabase.from("habit_completions").select("habit_id,period_key,value"),
     supabase.from("motivational_quotes").select("text,position").order("position"),
     supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
+    supabase.from("weekly_reviews").select("week_start,priorities,adjustment,reflection,updated_at").order("week_start", { ascending: false }),
   ]);
 
   const versionResult = await supabase.from("tracker_state_versions").select("revision").maybeSingle();
@@ -198,6 +201,7 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
     completionsResult,
     motivationsResult,
     goalsResult,
+    weeklyReviewsResult,
     versionResult,
     revisionBefore: Number(versionBeforeResult.data?.revision ?? 0),
     revisionAfter: Number(versionResult.data?.revision ?? 0),
