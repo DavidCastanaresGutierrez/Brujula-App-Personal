@@ -117,6 +117,8 @@ h1 em { font-style: normal; color: var(--teal); }
 .today-item.done > b { border-color: var(--teal); background: var(--teal); }
 .today-item.missed > b { border-color: #ef4444; background: #ef4444; color: #07131d; }
 .today-item.missed small { color: #ff7b7b; }
+.today-item.skipped > b { border-color: #7f8ba3; background: #7f8ba3; color: #07131d; }
+.today-item.skipped small { color: #aeb9d0; }
 .today-goal { --goal-color: var(--teal); min-height: 64px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--line); border-left: 3px solid var(--goal-color); border-radius: 10px; background: rgba(16,27,49,.64); }
 .today-goal div > span, .today-goal div > strong, .today-goal div > small { display: block; }
 .today-goal div > span { margin-bottom: 4px; color: var(--goal-color); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
@@ -307,13 +309,14 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .day-grid > div b { font-size: 9px; }
 .day-grid button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 1px solid #34415c; background: #18243c; border-radius: 5px; cursor: pointer; color: #07131d; font-weight: 900; font-size: 14px; line-height: 1; transition: .15s ease; }
 .day-grid > div.week-shaded { background: rgba(255,255,255,.055); border-radius: 5px; }
-.day-grid button.week-shaded:not(.checked):not(.missed) { background: #22304a; border-color: #40506d; }
+.day-grid button.week-shaded:not(.checked):not(.missed):not(.skipped) { background: #22304a; border-color: #40506d; }
 .day-grid .week-end { position: relative; }
 .day-grid .week-end::after { content: ""; position: absolute; z-index: 2; top: 50%; right: -7px; width: 2px; height: 47px; background: rgba(255,255,255,.88); transform: translateY(-50%); pointer-events: none; }
 .header-row .day-grid .week-end::after { content: none; }
 .day-grid button:hover { border-color: var(--teal); transform: scale(1.08); }
 .day-grid button.checked, .week-checks button.checked { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 12px rgba(60,201,171,.16); }
 .day-grid button.missed { border-color: #ef4444; background: #ef4444; color: #07131d; box-shadow: 0 0 12px rgba(239,68,68,.16); }
+.day-grid button.skipped { border-color: #7f8ba3; background: #7f8ba3; color: #07131d; box-shadow: none; }
 .result-cell { justify-content: center; gap: 7px; border-left: 1px solid var(--line); }
 .result-cell strong { font-size: 11px; }
 .result-cell span { color: var(--muted); font-size: 9px; }
