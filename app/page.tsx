@@ -35,69 +35,11 @@ import { generateActionableInsights } from "../lib/domain/insights";
 import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
 import { AuthGate, Brand, ResetPassword } from "./components/auth";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
+import { SyncStatus, type SyncStatusValue } from "./components/sync-status";
+import { trackerStatesEqual as statesEqual, type BookEntry, type BookFormat, type Category, type Goal, type GoalStep, type Habit, type HabitCategory, type TrackerState, type WeeklyHabit } from "../lib/domain/tracker-state";
 
-type Habit = {
-  id: number;
-  name: string;
-  goal: number;
-  color: string;
-  checks: number[];
-  archived?: boolean;
-  archivedAt?: string;
-  everyDay?: boolean;
-  weekdaysOnly?: boolean;
-  schedule?: HabitSchedule;
-  history?: Record<string, number[]>;
-  misses?: Record<string, number[]>;
-  skips?: Record<string, number[]>;
-  category?: HabitCategory;
-  celebratedStreak30?: string;
-};
-
-type WeeklyHabit = {
-  id: number;
-  name: string;
-  goal: number;
-  color: string;
-  checks: number[];
-  archived?: boolean;
-  archivedAt?: string;
-  history?: Record<string, number[]>;
-  misses?: Record<string, number[]>;
-  skips?: Record<string, number[]>;
-  category?: HabitCategory;
-};
-
-type HabitCategory = string;
-type Category = { id: HabitCategory; label: string; icon: string; color: string; priority?: boolean };
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "week" | "habits" | "goals";
-type BookFormat = "audio" | "digital" | "paper";
-type BookEntry = { id: number; title: string; author?: string; format: BookFormat; status?: "reading" | "completed"; startedAt?: string; completedAt?: string };
-type GoalStep = { id: number; kind: "milestone" | "action"; title: string; dueDate: string; completed: boolean };
-type Goal = {
-  id: number; title: string; category: HabitCategory; period: GoalPeriod; periodKey: string;
-  measurement: "complete" | "quantity"; targetValue: number; currentValue: number;
-  unit?: string; status: "active" | "completed" | "discarded"; dueDate: string;
-  linkedHabitId?: number;
-  linkedHabitIds?: number[];
-  trackingStart?: string;
-  template?: "fitness" | "reading";
-  books?: BookEntry[];
-  fitnessEntries?: FitnessEntry[];
-  parentAnnualGoalId?: number;
-  steps?: GoalStep[];
-  archived?: boolean;
-};
-
-type TrackerState = {
-  daily: Habit[];
-  weekly: WeeklyHabit[];
-  categories?: Category[];
-  motivations?: string[];
-  goals?: Goal[];
-  weeklyReviews?: WeeklyReview[];
-};
 
 type ClosureNotice = {
   key: string;
@@ -224,10 +166,6 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
   };
 }
 
-function statesEqual(a: TrackerState | null, b: TrackerState | null) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 function streakContaining(history: Record<string, number[]> | undefined, target: string) {
   const completed = new Set<string>();
   Object.entries(history ?? {}).forEach(([key, checkedDays]) => {
@@ -340,7 +278,7 @@ export default function Home() {
   const [deletingCategoryId, setDeletingCategoryId] = useState<HabitCategory | null>(null);
   const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
   const [hydrated, setHydrated] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline" | "error" | "conflict">("loading");
+  const [syncStatus, setSyncStatus] = useState<SyncStatusValue>("loading");
   const [remoteConflict, setRemoteConflict] = useState<{ state: TrackerState; revision: number } | null>(null);
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -2036,19 +1974,7 @@ export default function Home() {
           ) : (
             <WeeklyHabitTracker year={year} month={month} monthName={monthNames[month]} today={today} isPastMonth={isPastMonth} monthWeeks={monthWeeks} currentMonthWeek={currentMonthWeek} categories={habitCategories} habits={activeWeekly.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "weekly" ? dragging.id : undefined} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-weekly", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-weekly", categoryId)} checksFor={weeklyChecksFor} onChangeCount={changeWeeklyCount} onManageHabit={(habit) => setActionHabit({ type: "weekly", habit: habit as WeeklyHabit })} onDragStart={(id) => setDragging({ type: "weekly", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("weekly", sourceId, targetId)} />
           )}
-          <p className={`save-note ${syncStatus}`}>
-            <span>●</span>
-            {syncStatus === "loading" && " Cargando tus datos…"}
-            {syncStatus === "saving" && " Guardando cambios…"}
-            {syncStatus === "synced" && " Sincronizado en todos tus dispositivos."}
-            {syncStatus === "offline" && " Sin conexión: los cambios quedan guardados temporalmente en este dispositivo."}
-            {syncStatus === "error" && " Error de sincronización: tus cambios siguen guardados en este dispositivo y se reintentará automáticamente."}
-            {syncStatus === "conflict" && <>
-              {" Hay cambios en este dispositivo y en otro. Elige qué versión conservar."}
-              <button type="button" onClick={resolveConflictWithRemote}>Usar cambios del otro dispositivo</button>
-              <button type="button" onClick={resolveConflictWithLocal}>Conservar los de este dispositivo</button>
-            </>}
-          </p>
+          <SyncStatus status={syncStatus} onUseRemote={resolveConflictWithRemote} onKeepLocal={resolveConflictWithLocal} />
         </section>
         </>}
       </div>
