@@ -36,6 +36,7 @@ import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, ty
 import { AuthGate, Brand, ResetPassword } from "./components/auth";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { SyncStatus, type SyncStatusValue } from "./components/sync-status";
+import { DailyHabitTracker } from "./components/daily-habit-tracker";
 import { trackerStatesEqual as statesEqual, type BookEntry, type BookFormat, type Category, type Goal, type GoalStep, type Habit, type HabitCategory, type TrackerState, type WeeklyHabit } from "../lib/domain/tracker-state";
 import { fetchRemoteTrackerState, saveRemoteTrackerState, subscribeToTrackerRevisions, TrackerSyncError } from "../lib/supabase/tracker-sync";
 
@@ -1898,44 +1899,7 @@ export default function Home() {
           </div>
 
           {activeTab === "daily" ? (
-            <div className="table-scroll" ref={tableScrollRef}>
-              <div className="habit-table" style={{ minWidth: `${410 + days * 38}px` }}>
-                <div className="habit-row header-row">
-                  <div className="habit-name">HÁBITO</div>
-                  <div className="goal-cell">META</div>
-                  <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                    {calendar.map((d) => <div className={`${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column today-header" : ""}`.trim()} key={d.day}><span>{d.day === todayNumber ? "HOY" : d.label}</span><b>{d.day}</b></div>)}
-                  </div>
-                  <div className="result-cell">PROGRESO</div>
-                </div>
-                {habitCategories.map((category) => {
-                  const categoryHabits = activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
-                  if (!categoryHabits.length) return null;
-                  const collapsed = isHabitBlockCollapsed("habits-daily", category.id);
-                  return <div className="category-group" key={category.id}>
-                    <button type="button" className="category-band" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => toggleHabitBlock("habits-daily", category.id)} aria-expanded={!collapsed}>
-                      <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
-                      <small>{categoryHabits.length}</small>
-                      <i aria-hidden="true">⌄</i>
-                    </button>
-                    {!collapsed && categoryHabits.map((habit) => {
-                  const effectiveGoal = goalFor(habit);
-                  const currentChecks = checksFor(habit);
-                  const completedThroughToday = currentChecks.filter((d) => d <= evaluatedThrough).length;
-                  const progress = Math.min(100, Math.round(completedThroughToday / effectiveGoal * 100));
-                  return <div className={`habit-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "daily" && reorderHabit("daily", dragging.id, habit.id)}>
-                    <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "daily", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "daily", habit })}>⋯</button></div></div>
-                    <div className="goal-cell">{habit.schedule?.mode === "selectedWeekdays" ? <span className="daily-goal">{habit.schedule.weekdays?.map((day) => ["D", "L", "M", "X", "J", "V", "S"][day]).join(" · ")} · {effectiveGoal}</span> : habit.schedule?.mode === "interval" ? <span className="daily-goal">Cada {habit.schedule.intervalDays} días · {effectiveGoal}</span> : habit.everyDay ? <span className="daily-goal">Diario · {days}</span> : habit.weekdaysOnly ? <span className="daily-goal">Laborables · {effectiveGoal}</span> : habit.goal}</div>
-                    <div className="day-grid" style={{ gridTemplateColumns: `repeat(${days}, 34px)` }}>
-                      {calendar.map((d) => { const future = isCalendarDayInFuture(year, month, d.day, today); const checked = currentChecks.includes(d.day); const missed = !checked && missesFor(habit).includes(d.day); const skipped = !checked && skipsFor(habit).includes(d.day); const unscheduled = !habitScheduledOnDate(habit, isoDate(year, month, d.day)); const disabled = unscheduled || (future && !checked); return <button key={d.day} disabled={disabled} className={`${checked ? "checked" : missed ? "missed" : skipped ? "skipped" : ""} ${d.weekShaded ? "week-shaded" : ""} ${d.weekEnd ? "week-end" : ""} ${d.day === todayNumber ? "today-column" : ""} ${unscheduled ? "non-working-day" : ""} ${future ? "future-day" : ""}`.trim()} {...(!disabled ? longPressProps(() => toggleDaily(habit.id, d.day), () => cycleException("daily", habit.id, new Date(year, month, d.day))) : {})} aria-label={`${habit.name}, día ${d.day}${d.day === todayNumber ? ", hoy" : ""}${missed ? ", no completado" : skipped ? ", omitido; no afecta a la puntuación" : ""}${unscheduled ? ", no programado" : future ? checked ? ", registro futuro; se puede desmarcar" : ", todavía no disponible" : ""}`} title={unscheduled ? "Día no programado" : "Pulsación larga: no completado → omitido → pendiente"}>{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</button>; })}
-                    </div>
-                    <div className="result-cell"><strong>{progress}%</strong><span>{completedThroughToday}/{effectiveGoal}</span></div>
-                  </div>;
-                    })}
-                  </div>;
-                })}
-              </div>
-            </div>
+            <DailyHabitTracker year={year} month={month} days={days} today={today} todayNumber={todayNumber} evaluatedThrough={evaluatedThrough} calendar={calendar} categories={habitCategories} habits={activeDaily.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "daily" ? dragging.id : undefined} scrollRef={tableScrollRef} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-daily", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-daily", categoryId)} goalFor={goalFor} checksFor={checksFor} missesFor={missesFor} skipsFor={skipsFor} toggleProps={longPressProps} onToggleDay={toggleDaily} onCycleException={(habitId, targetDate) => cycleException("daily", habitId, targetDate)} onManageHabit={(habit) => setActionHabit({ type: "daily", habit })} onDragStart={(id) => setDragging({ type: "daily", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("daily", sourceId, targetId)} />
           ) : (
             <WeeklyHabitTracker year={year} month={month} monthName={monthNames[month]} today={today} isPastMonth={isPastMonth} monthWeeks={monthWeeks} currentMonthWeek={currentMonthWeek} categories={habitCategories} habits={activeWeekly.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "weekly" ? dragging.id : undefined} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-weekly", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-weekly", categoryId)} checksFor={weeklyChecksFor} onChangeCount={changeWeeklyCount} onManageHabit={(habit) => setActionHabit({ type: "weekly", habit: habit as WeeklyHabit })} onDragStart={(id) => setDragging({ type: "weekly", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("weekly", sourceId, targetId)} />
           )}
