@@ -37,6 +37,7 @@ import { AuthGate, Brand, ResetPassword } from "./components/auth";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { SyncStatus, type SyncStatusValue } from "./components/sync-status";
 import { trackerStatesEqual as statesEqual, type BookEntry, type BookFormat, type Category, type Goal, type GoalStep, type Habit, type HabitCategory, type TrackerState, type WeeklyHabit } from "../lib/domain/tracker-state";
+import { fetchRemoteTrackerState, saveRemoteTrackerState, subscribeToTrackerRevisions, TrackerSyncError } from "../lib/supabase/tracker-sync";
 
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "week" | "habits" | "goals";
@@ -403,15 +404,7 @@ export default function Home() {
 
     async function loadState() {
       try {
-        const response = await fetch(`/api/state?ts=${Date.now()}`, {
-          cache: "no-store",
-          headers: {
-            authorization: `Bearer ${accessToken}`,
-            "cache-control": "no-cache",
-          },
-        });
-        if (!response.ok) throw new Error("No se pudo cargar la base de datos");
-        const payload = await response.json() as { state: TrackerState | null; revision: number };
+        const payload = await fetchRemoteTrackerState(accessToken);
         const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
         const remoteChangedSinceLocalBaseline = !Number.isSafeInteger(storedRevision) || payload.revision > storedRevision;
         const hasStartupConflict = Boolean(payload.state && localState && hasPendingLocalChanges && remoteChangedSinceLocalBaseline);
@@ -485,33 +478,19 @@ export default function Home() {
         if (sessionError || !data.session) throw sessionError ?? new Error("La sesión ha caducado");
         if (!belongsToActiveUser(savingUserId, data.session.user.id) || !belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         const snapshot = stateRef.current;
-        const response = await fetch("/api/state", {
-          method: "PUT",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${data.session.access_token}`,
-          },
-          body: JSON.stringify({ base: baselineRef.current, state: snapshot, expectedRevision: revisionRef.current }),
-        });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null) as { error?: string; code?: string } | null;
-          if (response.status === 409 && payload?.code === "STATE_CONFLICT") {
-            conflictRef.current = true;
-            setSyncStatus("conflict");
-            return;
-          }
-          throw new Error(payload?.error ?? "No se pudo guardar");
-        }
-        const payload = await response.json() as { revision: number };
+        const payload = await saveRemoteTrackerState(data.session.access_token, baselineRef.current, snapshot, revisionRef.current);
         if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
         baselineRef.current = snapshot;
         revisionRef.current = payload.revision;
         writeStoredValue(localStorage, baselineKey, JSON.stringify(snapshot));
         writeStoredValue(localStorage, revisionKey, String(payload.revision));
         setSyncStatus("synced");
-      } catch {
+      } catch (error) {
         if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) {
-          setSyncStatus(navigator.onLine ? "error" : "offline");
+          if (error instanceof TrackerSyncError && error.conflict) {
+            conflictRef.current = true;
+            setSyncStatus("conflict");
+          } else setSyncStatus(navigator.onLine ? "error" : "offline");
         }
       } finally {
         if (syncGeneration !== syncGenerationRef.current) return;
@@ -575,15 +554,8 @@ export default function Home() {
         const supabase = getSupabaseBrowserClient();
         const { data } = await supabase.auth.getSession();
         if (!data.session) return;
-        const response = await fetch(`/api/state?ts=${Date.now()}`, {
-          cache: "no-store",
-          headers: {
-            authorization: `Bearer ${data.session.access_token}`,
-            "cache-control": "no-cache",
-          },
-        });
-        if (!response.ok) return;
-        const payload = await response.json() as { state: TrackerState | null; revision: number };
+        const payload = await fetchRemoteTrackerState(data.session.access_token).catch(() => null);
+        if (!payload) return;
         if (cancelled || !payload.state) return;
         const serverState = normalizeState(payload.state);
         const localState = stateRef.current;
@@ -622,17 +594,10 @@ export default function Home() {
 
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
     const onPageShow = () => void pullLatest();
-    const supabase = getSupabaseBrowserClient();
-    const realtime = supabase
-      .channel(`brujula-sync:${session.user.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tracker_state_versions", filter: `user_id=eq.${session.user.id}` }, (event) => {
-        const notifiedRevision = Number((event.new as { revision?: unknown }).revision);
-        if (Number.isSafeInteger(notifiedRevision)) {
-          pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
-        }
+    const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, (notifiedRevision) => {
+        if (notifiedRevision !== null) pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
         if (!syncInFlight.current) void pullLatest();
-      })
-      .subscribe((status) => {
+      }, (status) => {
         if (cancelled) return;
         if (status === "SUBSCRIBED") {
           setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "synced");
@@ -653,7 +618,7 @@ export default function Home() {
       window.removeEventListener("online", onPageShow);
       document.removeEventListener("visibilitychange", onFocus);
       pullLatestRef.current = null;
-      void supabase.removeChannel(realtime);
+      unsubscribeRealtime();
     };
   }, [hydrated, session]);
 
