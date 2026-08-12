@@ -153,6 +153,7 @@ h1 em { font-style: normal; color: var(--teal); }
 .today-goal-status > .missed { border-color: #ef4444; background: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,.16); }
 .today-empty { margin: 0; padding: 18px; border: 1px dashed rgba(160,177,212,.18); border-radius: 10px; color: var(--muted); font-size: 10px; text-align: center; }
 .closure-notice { position: fixed; z-index: 90; right: 22px; bottom: 22px; width: min(410px, calc(100vw - 28px)); padding: 20px; border: 1px solid rgba(57,198,164,.42); border-radius: 16px; background: rgba(8,17,32,.97); box-shadow: 0 24px 70px rgba(0,0,0,.48); backdrop-filter: blur(18px); }
+main:has(.modal-backdrop) > .closure-notice { visibility: hidden; pointer-events: none; }
 .closure-notice-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .closure-notice-head h2 { margin-top: 5px; font-size: 18px; }
 .closure-notice-head > button { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.04); color: var(--muted); cursor: pointer; font-size: 18px; }
@@ -414,7 +415,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .weekly-result strong { display: block; font-size: 12px; }
 .weekly-result span { color: var(--muted); font-size: 9px; }
 
-.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(2,7,15,.76); backdrop-filter: blur(8px); }
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(2,7,15,.76); backdrop-filter: blur(8px); }
 .action-backdrop { place-items: center; }
 .action-sheet { width: min(390px, calc(100vw - 28px)); border: 1px solid rgba(255,255,255,.14); border-radius: 18px; background: #14203a; padding: 10px; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
 .action-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 16px 15px 12px; }
