@@ -34,6 +34,7 @@ import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekB
 import { generateActionableInsights } from "../lib/domain/insights";
 import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
 import { AuthGate, Brand, ResetPassword } from "./components/auth";
+import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 
 type Habit = {
   id: number;
@@ -702,9 +703,6 @@ export default function Home() {
           setSyncStatus((current) => current === "conflict" || current === "saving" ? current : navigator.onLine ? "error" : "offline");
         }
       });
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") void pullLatest();
-    }, 5_000);
     window.addEventListener("focus", onFocus);
     window.addEventListener("pageshow", onPageShow);
     window.addEventListener("online", onPageShow);
@@ -712,7 +710,6 @@ export default function Home() {
     void pullLatest();
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("online", onPageShow);
@@ -869,6 +866,7 @@ export default function Home() {
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
   const monthWeeks = monthCalendarWeeks(year, month);
+  const currentMonthWeek = isCurrentMonth ? monthWeeks.findIndex((week) => week.includes(today.getDate())) + 1 : 0;
   const weeklyProgress = monthWeeks.map((weekDays) => {
     const start = weekDays[0];
     const end = weekDays.at(-1)!;
@@ -2036,32 +2034,7 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="weekly-list">
-              {habitCategories.map((category) => {
-                const categoryHabits = activeWeekly.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id);
-                if (!categoryHabits.length) return null;
-                const collapsed = isHabitBlockCollapsed("habits-weekly", category.id);
-                return <div className="weekly-category" key={category.id}>
-                  <button type="button" className="category-band" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => toggleHabitBlock("habits-weekly", category.id)} aria-expanded={!collapsed}>
-                    <span className="category-band-label"><span>{category.icon}</span><strong>{category.label}</strong></span>
-                    <small>{categoryHabits.length}</small>
-                    <i aria-hidden="true">⌄</i>
-                  </button>
-                  {!collapsed && categoryHabits.map((habit) => {
-                const currentChecks = weeklyChecksFor(habit);
-                const availableWeeks = monthWeeks.map((_, index) => index + 1);
-                const monthlyTarget = availableWeeks.reduce((sum, week) => sum + Math.min(habit.goal, daysForMonthWeek(year, month, week).length), 0);
-                const validChecks = currentChecks.filter((day) => !isCalendarDayInFuture(year, month, day, today));
-                const progress = Math.min(100, Math.round(validChecks.length / Math.max(1, monthlyTarget) * 100));
-                return <div className={`weekly-row ${dragging?.id === habit.id ? "is-dragging" : ""}`} key={habit.id} onDragOver={(e) => e.preventDefault()} onDrop={() => dragging?.type === "weekly" && reorderHabit("weekly", dragging.id, habit.id)}>
-                  <div className="habit-name"><span className="drag-handle" draggable onDragStart={() => setDragging({ type: "weekly", id: habit.id })} onDragEnd={() => setDragging(null)} title="Arrastrar para reordenar" aria-label={`Arrastrar ${habit.name}`}>⠿</span><i style={{ background: habit.color }} /><span>{habit.name}</span><div className="habit-menu"><button className="menu-trigger" aria-label={`Gestionar ${habit.name}`} onClick={() => setActionHabit({ type: "weekly", habit })}>⋯</button></div></div>
-                  <div className="week-checks">{availableWeeks.map((week) => { const weekDays = daysForMonthWeek(year, month, week); const weekTarget = Math.min(habit.goal, weekDays.length); const eligibleDays = availableDaysForMonthWeek(year, month, week, today); const count = currentChecks.filter((day) => weekDays.includes(day)).length; const eligibleCount = currentChecks.filter((day) => eligibleDays.includes(day)).length; const canAdd = eligibleDays.some((day) => !currentChecks.includes(day)); return <div className={`week-counter ${eligibleCount >= weekTarget ? "checked" : ""} ${eligibleDays.length === 0 ? "future-week" : ""}`} key={week}><span>S{week}</span><button onClick={() => changeWeeklyCount(habit.id, week, -1)} disabled={count === 0} aria-label={`Restar una realización de ${habit.name} en la semana ${week}`}>−</button><strong>{eligibleCount}/{weekTarget}</strong><button onClick={() => changeWeeklyCount(habit.id, week, 1)} disabled={!canAdd} aria-label={`Sumar una realización de ${habit.name} en la semana ${week}`}>+</button></div>; })}</div>
-                  <div className="weekly-result"><strong>{progress}%</strong><span>{validChecks.length}/{monthlyTarget}</span></div>
-                </div>;
-                  })}
-                </div>;
-              })}
-            </div>
+            <WeeklyHabitTracker year={year} month={month} monthName={monthNames[month]} today={today} isPastMonth={isPastMonth} monthWeeks={monthWeeks} currentMonthWeek={currentMonthWeek} categories={habitCategories} habits={activeWeekly.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "weekly" ? dragging.id : undefined} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-weekly", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-weekly", categoryId)} checksFor={weeklyChecksFor} onChangeCount={changeWeeklyCount} onManageHabit={(habit) => setActionHabit({ type: "weekly", habit: habit as WeeklyHabit })} onDragStart={(id) => setDragging({ type: "weekly", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("weekly", sourceId, targetId)} />
           )}
           <p className={`save-note ${syncStatus}`}>
             <span>●</span>

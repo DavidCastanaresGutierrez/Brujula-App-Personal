@@ -387,18 +387,29 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 }
 
 .weekly-list { padding: 8px 20px; }
+.weekly-period-guide { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid rgba(57,198,164,.2); border-radius: 10px; background: linear-gradient(100deg, rgba(57,198,164,.1), rgba(24,36,60,.55)); }
+.weekly-period-guide > div { display: grid; gap: 3px; }
+.weekly-period-guide > div span { color: var(--teal); font-size: 8px; font-weight: 850; letter-spacing: .13em; }
+.weekly-period-guide > div strong { color: var(--ink); font-size: 15px; text-transform: capitalize; }
+.weekly-period-guide p { margin: 0; color: #cbd5e7; font-size: 11px; }
+.weekly-period-guide p b { color: #72efd4; }
+.weekly-period-guide > small { max-width: 270px; color: var(--muted); font-size: 9px; line-height: 1.4; text-align: right; }
 .weekly-category + .weekly-category { margin-top: 10px; }
 .weekly-category .category-band { margin: 0 -4px; border-radius: 8px; }
 .weekly-row { display: grid; grid-template-columns: 220px 1fr 80px; align-items: center; min-height: 62px; border-bottom: 1px solid var(--line); }
 .weekly-row .habit-name { position: static; padding: 0; background: transparent; }
-.week-checks { display: grid; grid-template-columns: repeat(5, minmax(58px, 1fr)); gap: 8px; }
-.week-counter { border: 1px solid #34415c; background: #18243c; border-radius: 7px; min-height: 38px; display: grid; grid-template-columns: auto 24px auto 24px; align-items: center; justify-content: center; gap: 5px; padding: 4px 6px; }
-.week-counter > span { font-size: 8px; color: var(--muted); }
+.week-checks { display: grid; grid-template-columns: repeat(var(--week-columns, 5), minmax(82px, 1fr)); gap: 8px; }
+.week-counter { border: 1px solid #34415c; background: #18243c; border-radius: 8px; min-height: 48px; display: grid; grid-template-columns: minmax(42px, auto) 24px auto 24px; align-items: center; justify-content: center; gap: 5px; padding: 5px 6px; }
+.week-counter > span { display: grid; gap: 2px; font-size: 8px; color: var(--muted); }
+.week-counter > span b { color: #aab6ca; font-size: 8px; letter-spacing: .05em; }
+.week-counter > span small { color: #6f7c95; font-size: 7px; white-space: nowrap; }
 .week-counter > strong { min-width: 26px; text-align: center; font-size: 11px; }
 .week-counter > button { width: 24px; height: 24px; border: 0; border-radius: 6px; background: #263650; color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; }
 .week-counter > button:disabled { opacity: .3; cursor: default; }
 .week-counter.checked { background: rgba(60,201,171,.16); border-color: var(--teal); }
 .week-counter.checked > span { color: var(--teal); }
+.week-counter.current-week { border-color: #59e5c6; background: rgba(57,198,164,.09); box-shadow: inset 0 0 0 1px rgba(89,229,198,.12), 0 0 18px rgba(57,198,164,.07); }
+.week-counter.current-week > span b { color: #68efd1; }
 .weekly-result { text-align: right; }
 .weekly-result strong { display: block; font-size: 12px; }
 .weekly-result span { color: var(--muted); font-size: 9px; }
@@ -736,10 +747,12 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
   .save-note { padding: 12px 14px; line-height: 1.45; }
 
   .weekly-list { padding: 6px 12px; }
+  .weekly-period-guide { grid-template-columns: 1fr; gap: 7px; padding: 13px 14px; }
+  .weekly-period-guide > small { max-width: none; text-align: left; }
   .weekly-row { position: relative; grid-template-columns: 1fr; gap: 12px; padding: 14px 0; }
   .weekly-row .habit-name { padding-right: 62px; box-shadow: none; }
-  .week-checks { order: 3; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
-  .week-counter { min-width: 0; min-height: 58px; padding: 4px 2px; gap: 2px; grid-template-columns: 22px 22px; grid-template-areas: "label count" "minus plus"; }
+  .week-checks { order: 3; grid-template-columns: repeat(var(--week-columns, 5), minmax(76px, 1fr)); gap: 5px; overflow-x: auto; padding-bottom: 5px; }
+  .week-counter { min-width: 76px; min-height: 68px; padding: 5px 4px; gap: 3px; grid-template-columns: 30px 30px; grid-template-areas: "label label" "count count" "minus plus"; }
   .week-counter > span { grid-area: label; }
   .week-counter > strong { grid-area: count; min-width: 0; }
   .week-counter > button:first-of-type { grid-area: minus; }
