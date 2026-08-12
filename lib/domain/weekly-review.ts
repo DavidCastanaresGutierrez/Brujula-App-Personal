@@ -24,6 +24,12 @@ export function previousWeekBounds(value: Date) {
   return weekBounds(date);
 }
 
+export function shiftWeekBounds(weekStart: string, amount: number) {
+  const date = new Date(`${weekStart}T12:00:00`);
+  date.setDate(date.getDate() + amount * 7);
+  return weekBounds(date);
+}
+
 export function summarizeWeek(
   start: Date,
   daily: TrackedHabit[],
