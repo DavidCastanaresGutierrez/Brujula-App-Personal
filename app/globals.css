@@ -914,9 +914,9 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 @keyframes auth-rise { from { opacity: 0; transform: translateY(12px) scale(.995); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 980px) {
-  .auth-page { height: 100svh; align-items: center; padding: clamp(12px, 3vw, 24px); background: #f4f8f6; overflow: hidden; }
-  .auth-shell { height: calc(100svh - clamp(24px, 6vw, 48px)); min-height: 0; grid-template-columns: 1fr; border-radius: clamp(24px, 5vw, 42px); box-shadow: 0 28px 80px rgba(23, 60, 52, .11); }
-  .auth-card { padding: clamp(24px, 4vh, 42px) clamp(30px, 8vw, 84px); overflow: hidden; }
+  .auth-page { height: auto; min-height: 100dvh; align-items: start; padding: clamp(12px, 3vw, 24px); background: #f4f8f6; overflow-x: hidden; overflow-y: auto; }
+  .auth-shell { height: auto; min-height: calc(100dvh - clamp(24px, 6vw, 48px)); grid-template-columns: 1fr; border-radius: clamp(24px, 5vw, 42px); box-shadow: 0 28px 80px rgba(23, 60, 52, .11); }
+  .auth-card { padding: clamp(24px, 4vh, 42px) clamp(30px, 8vw, 84px); overflow: visible; }
   .auth-content { max-width: 620px; }
   .auth-brand { margin-bottom: clamp(18px, 3vh, 30px); }
   .auth-logo { width: clamp(64px, 9vw, 82px); height: clamp(64px, 9vw, 82px); }
@@ -936,7 +936,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 
 @media (max-width: 560px) {
   .auth-page { padding: 8px; }
-  .auth-shell { height: calc(100svh - 16px); border-radius: 24px; }
+  .auth-shell { min-height: calc(100dvh - 16px); border-radius: 24px; }
   .auth-card { place-items: center; padding: 18px 18px 16px; }
   .auth-brand { margin-bottom: 14px; }
   .auth-logo { width: 52px; height: 52px; }

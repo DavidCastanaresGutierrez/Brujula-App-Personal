@@ -66,6 +66,10 @@ export function isoDate(year: number, monthIndex: number, day: number) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
 }
 
+export function localDateKey(value: Date = new Date()) {
+  return isoDate(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
 export function calendarWeekForDate(value: Date): CalendarWeek {
   const year = value.getFullYear();
   const month = value.getMonth();

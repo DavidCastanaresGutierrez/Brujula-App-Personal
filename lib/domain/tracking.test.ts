@@ -11,6 +11,7 @@ import {
   habitAppliesOnDate,
   habitScheduledOnDate,
   isHabitVisibleInArchive,
+  localDateKey,
   linkedGoalProgress,
   isCalendarDayInFuture,
   monthCalendarWeeks,
@@ -21,6 +22,11 @@ import {
 } from "./tracking";
 
 describe("calendar rules", () => {
+  it("formats the device-local calendar day without converting it to UTC", () => {
+    expect(localDateKey(new Date(2026, 7, 12, 0, 30))).toBe("2026-08-12");
+    expect(localDateKey(new Date(2027, 0, 1, 0, 5))).toBe("2027-01-01");
+  });
+
   it("uses one Monday-to-Sunday week across a month boundary", () => {
     expect(calendarWeekForDate(new Date(2026, 7, 1, 12))).toEqual({
       start: "2026-07-27",

@@ -21,6 +21,7 @@ import {
   habitScheduledOnDate,
   isHabitVisibleInArchive,
   linkedGoalProgress,
+  localDateKey,
   monthCalendarWeeks,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
@@ -338,7 +339,7 @@ export default function Home() {
   const [deletingCategoryId, setDeletingCategoryId] = useState<HabitCategory | null>(null);
   const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
   const [hydrated, setHydrated] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline" | "conflict">("loading");
+  const [syncStatus, setSyncStatus] = useState<"loading" | "saving" | "synced" | "offline" | "error" | "conflict">("loading");
   const [remoteConflict, setRemoteConflict] = useState<{ state: TrackerState; revision: number } | null>(null);
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -511,7 +512,7 @@ export default function Home() {
           const savedMotivations = localState.motivations?.filter((item) => item.trim()) ?? [];
           setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
         }
-        if (!cancelled) setSyncStatus("offline");
+        if (!cancelled) setSyncStatus(navigator.onLine ? "error" : "offline");
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -570,7 +571,9 @@ export default function Home() {
         writeStoredValue(localStorage, revisionKey, String(payload.revision));
         setSyncStatus("synced");
       } catch {
-        if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) setSyncStatus("offline");
+        if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) {
+          setSyncStatus(navigator.onLine ? "error" : "offline");
+        }
       } finally {
         if (syncGeneration !== syncGenerationRef.current) return;
         syncInFlight.current = false;
@@ -696,7 +699,7 @@ export default function Home() {
           setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "synced");
           void pullLatest();
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "offline");
+          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : navigator.onLine ? "error" : "offline");
         }
       });
     const interval = window.setInterval(() => {
@@ -1439,7 +1442,7 @@ export default function Home() {
     const parse = (value: string) => value.trim() ? Number(value.replace(",", ".")) : undefined;
     const values = Object.fromEntries(Object.entries(fitnessDraft).map(([key, value]) => [key, parse(value)])) as Record<FitnessMetric, number | undefined>;
     if (Object.values(values).some((value) => value === undefined || Number.isNaN(value) || value < 0)) return;
-    const entry: FitnessEntry = { id: Date.now(), recordedAt: new Date().toISOString().slice(0, 10), ...(values as Record<FitnessMetric, number>) };
+    const entry: FitnessEntry = { id: Date.now(), recordedAt: localDateKey(), ...(values as Record<FitnessMetric, number>) };
     setGoals((items) => items.map((goal) => goal.id === fitnessGoal.id ? { ...goal, fitnessEntries: [...(goal.fitnessEntries ?? []), entry] } : goal));
     setFitnessGoal(null); setFitnessDraft({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" }); setFitnessImportMessage("");
   }
@@ -2066,6 +2069,7 @@ export default function Home() {
             {syncStatus === "saving" && " Guardando cambios…"}
             {syncStatus === "synced" && " Sincronizado en todos tus dispositivos."}
             {syncStatus === "offline" && " Sin conexión: los cambios quedan guardados temporalmente en este dispositivo."}
+            {syncStatus === "error" && " Error de sincronización: tus cambios siguen guardados en este dispositivo y se reintentará automáticamente."}
             {syncStatus === "conflict" && <>
               {" Hay cambios en este dispositivo y en otro. Elige qué versión conservar."}
               <button type="button" onClick={resolveConflictWithRemote}>Usar cambios del otro dispositivo</button>
