@@ -35,6 +35,8 @@ import { generateActionableInsights } from "../lib/domain/insights";
 import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
 import { AuthGate, Brand, ResetPassword } from "./components/auth";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
+import { WeeklyPlanningView } from "./components/weekly-planning-view";
+import { TodayView } from "./components/today-view";
 import { SyncStatus, type SyncStatusValue } from "./components/sync-status";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
 import { trackerStatesEqual as statesEqual, type BookEntry, type BookFormat, type Category, type Goal, type GoalStep, type Habit, type HabitCategory, type TrackerState, type WeeklyHabit } from "../lib/domain/tracker-state";
@@ -1637,92 +1639,9 @@ export default function Home() {
 
         </>}
 
-        {mainView === "week" && <>
-        <section className="view-intro"><p className="eyebrow">PLANIFICAR · EJECUTAR · REAJUSTAR</p><h1>Tu semana</h1><p>Decide qué importa y convierte los datos de la semana anterior en una mejora concreta.</p></section>
-        <section className="weekly-review-grid">
-          <article className="panel weekly-plan-card">
-            <div className="panel-head"><div><p className="eyebrow">SEMANA ACTUAL</p><h2>Del {currentWeek.start.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} al {currentWeek.end.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</h2></div><span className="weekly-step">01</span></div>
-            <p className="weekly-guidance">Elige como máximo tres resultados que justifiquen tu atención. Si todo es prioridad, nada lo es.</p>
-            <div className="weekly-priorities">
-              {weeklyPlanDraft.priorities.map((priority, index) => <label key={index}><span>Prioridad {index + 1}</span><input maxLength={160} value={priority} placeholder={index === 0 ? "Lo más importante de esta semana" : "Opcional"} onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, priorities: draft.priorities.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} /></label>)}
-            </div>
-            <label className="weekly-text-field"><span>Ajuste del sistema</span><textarea maxLength={500} value={weeklyPlanDraft.adjustment} placeholder="¿Qué vas a cambiar para que esta semana funcione mejor?" onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, adjustment: event.target.value }))} /></label>
-            <label className="weekly-text-field"><span>Reflexión en curso</span><textarea maxLength={1500} value={weeklyPlanDraft.reflection} placeholder="Anota contexto, decisiones o aprendizajes mientras avanza la semana." onChange={(event) => setWeeklyPlanDraft((draft) => ({ ...draft, reflection: event.target.value }))} /></label>
-            <button className="add-button weekly-save" onClick={saveWeeklyPlan}>{weeklyPlanSaved ? "Guardado ✓" : "Guardar planificación"}</button>
-          </article>
+        {mainView === "week" && <WeeklyPlanningView currentWeek={currentWeek} previousWeek={previousWeek} reviewWeek={reviewWeek} reviewWeekKey={reviewWeekKey} reviewSummary={reviewSummary} selectedWeeklyReview={selectedWeeklyReview} reviewCompletedGoals={reviewCompletedGoals} reviewGoalCount={reviewGoals.length} weakestWeeklyCategory={weakestWeeklyCategory} categories={habitCategories} weeklyPlanDraft={weeklyPlanDraft} setWeeklyPlanDraft={setWeeklyPlanDraft} weeklyPlanSaved={weeklyPlanSaved} onSaveWeeklyPlan={saveWeeklyPlan} onReviewWeekChange={setReviewWeekKey} />}
 
-          <article className="panel weekly-review-card">
-            <div className="panel-head weekly-review-head"><div><p className="eyebrow">HISTORIAL SEMANAL</p><h2>Del {reviewWeek.start.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} al {reviewWeek.end.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</h2></div><span className="weekly-step">02</span></div>
-            <div className="week-history-nav" aria-label="Navegar por revisiones semanales"><button onClick={() => setReviewWeekKey(shiftWeekBounds(reviewWeekKey, -1).key)} aria-label="Semana anterior">← Anterior</button><span>{selectedWeeklyReview ? "Reflexión guardada" : "Sin reflexión guardada"}</span><button onClick={() => setReviewWeekKey(shiftWeekBounds(reviewWeekKey, 1).key)} disabled={reviewWeek.key >= previousWeek.key} aria-label="Semana siguiente">Siguiente →</button></div>
-            <div className="weekly-score-row"><div><span>Nota semanal</span><strong>{scoreLabel(reviewSummary.score)}<small> / 10</small></strong></div><div><span>Hábitos</span><strong>{reviewSummary.completed}<small> / {reviewSummary.scheduled}</small></strong></div><div><span>Objetivos</span><strong>{reviewCompletedGoals}<small> / {reviewGoals.length}</small></strong></div></div>
-            <div className="weekly-blocks"><h3>Balance por bloques</h3>{reviewSummary.categories.map((summary) => { const category = habitCategories.find((item) => item.id === summary.categoryId); return <div className="weekly-block-row" key={summary.categoryId}><span><i style={{ background: category?.color }} />{category?.label ?? "Sin bloque"}</span><div><i style={{ width: `${summary.percent}%`, background: category?.color }} /></div><strong>{Math.round(summary.percent)}%</strong></div>; })}{!reviewSummary.categories.length && <p className="today-empty">No hay datos programados para esta semana.</p>}</div>
-            <div className="weekly-signal"><span>SEÑAL A REVISAR</span><strong>{weakestWeeklyCategory ? `${habitCategories.find((item) => item.id === weakestWeeklyCategory.categoryId)?.label ?? "Un bloque"} quedó en ${Math.round(weakestWeeklyCategory.percent)}%.` : "Aún no hay datos suficientes."}</strong><p>{weakestWeeklyCategory && weakestWeeklyCategory.percent < 60 ? "No añadas más carga: reduce fricción o reajusta la programación." : "Mantén el sistema estable antes de aumentar la exigencia."}</p></div>
-            <div className="weekly-reflection"><span>Reflexión registrada</span><p>{selectedWeeklyReview?.reflection || "No dejaste una reflexión para esta semana."}</p>{selectedWeeklyReview?.adjustment && <small>Ajuste decidido: {selectedWeeklyReview.adjustment}</small>}{selectedWeeklyReview?.priorities.length ? <small>Prioridades: {selectedWeeklyReview.priorities.join(" · ")}</small> : null}</div>
-          </article>
-        </section>
-        </>}
-
-        {mainView === "today" && <>
-        <section className="view-intro"><p className="eyebrow">ACCIÓN DIARIA</p><h1>Tu día</h1><p>Lo que requiere tu atención hoy, sin ruido.</p></section>
-        <section className="panel today-panel" id="today">
-          <div className="today-head">
-            <div><p className="eyebrow">{isViewingToday ? "HOY" : "DÍA CONSULTADO"} · {dayViewDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}</p><h2>Tu día, en una sola vista</h2><p>Marca lo que completas y mantén a la vista los resultados que estás persiguiendo.</p></div>
-            <div className="today-head-summary"><strong>{dayViewCompleted}/{dayViewHabits.length} hábitos</strong><strong>Nota {scoreLabel(dayViewScore.finalScore)} / 10</strong></div>
-          </div>
-          <div className="day-navigation"><button onClick={() => shiftDayView(-1)} aria-label="Ver el día anterior">← Día anterior</button><button onClick={() => shiftDayView(1)} disabled={isViewingToday} aria-label="Ver el día siguiente">Día siguiente →</button>{!isViewingToday && <button onClick={() => setDayViewDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}>Volver a hoy</button>}</div>
-          <div className="today-grid">
-            <article className="today-column-card">
-              <div className="today-section-title"><h3>Hábitos del día</h3><span>{dayViewHabits.length}</span></div>
-              <div className="today-list grouped">
-                {dayViewHabitGroups.map(({ category, habits }) => { const collapsed = isHabitBlockCollapsed("today-daily", category.id); return <div className={`today-block ${collapsed ? "is-collapsed" : ""}`} key={category.id}><button type="button" className="today-block-title" style={{ color: category.color }} onClick={() => toggleHabitBlock("today-daily", category.id)} aria-expanded={!collapsed}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{Math.round(dayViewCategoryScores.get(category.id)?.percent ?? 0)}%</small><i aria-hidden="true">⌄</i></button>{!collapsed && habits.map((habit) => {
-                  const checked = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                  const missed = !checked && (habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                  const skipped = !checked && (habit.skips?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                  return <button key={habit.id} className={`today-item ${checked ? "done" : missed ? "missed" : skipped ? "skipped" : ""}`} {...longPressProps(() => toggleDayViewHabit(habit.id), () => cycleException("daily", habit.id, dayViewDate))} aria-pressed={checked} title="Pulsación larga: no completado → omitido → pendiente">
-                    <i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{checked ? "Completado" : missed ? "No completado" : skipped ? "Omitido · no afecta a la puntuación" : "Pendiente"}</small></span><b>{checked ? "✓" : missed ? "✕" : skipped ? "—" : ""}</b>
-                  </button>;
-                })}</div>; })}
-                {!dayViewHabits.length && <p className="today-empty">No tienes hábitos previstos para este día.</p>}
-              </div>
-              {!!dayViewWeekly.length && <><div className="today-section-title secondary"><h3>Esta semana</h3><span>{dayViewWeekly.length}</span></div><div className="today-list compact grouped">{weeklyHabitGroups.map(({ category, habits }) => { const collapsed = isHabitBlockCollapsed("today-weekly", category.id); return <div className={`today-block ${collapsed ? "is-collapsed" : ""}`} key={category.id}><button type="button" className="today-block-title" style={{ color: category.color }} onClick={() => toggleHabitBlock("today-weekly", category.id)} aria-expanded={!collapsed}><span>{category.icon}</span><strong>{category.label}{category.priority ? " ★" : ""}</strong><small>{habits.length}</small><i aria-hidden="true">⌄</i></button>{!collapsed && habits.map((habit) => {
-                const weekDays = daysForMonthWeek(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewWeekIndex);
-                const count = (habit.history?.[dayViewMonthKey] ?? []).filter((day) => weekDays.includes(day)).length;
-                const doneOnDay = (habit.history?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                const missed = !doneOnDay && (habit.misses?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                const skipped = !doneOnDay && (habit.skips?.[dayViewMonthKey] ?? []).includes(dayViewDate.getDate());
-                return <button key={habit.id} className={`today-item ${doneOnDay ? "done" : missed ? "missed" : skipped ? "skipped" : ""}`} {...longPressProps(() => toggleDayViewWeeklyHabit(habit.id), () => cycleException("weekly", habit.id, dayViewDate))} aria-pressed={doneOnDay} title="Pulsación larga: no completado → omitido → pendiente"><i style={{ background: habit.color }} /><span><strong>{habit.name}</strong><small>{count}/{Math.min(habit.goal, weekDays.length)} esta semana{doneOnDay ? " · hecho este día" : missed ? " · no completado" : skipped ? " · omitido" : ""}</small></span><b>{doneOnDay ? "✓" : missed ? "✕" : skipped ? "—" : "+"}</b></button>;
-              })}</div>; })}</div></>}
-            </article>
-            <article className="today-column-card">
-              <div className="today-section-title"><h3>Objetivos en foco</h3><span>{dayViewGoals.length}</span></div>
-              <div className="today-goals">
-                {dayViewGoals.map((goal) => {
-                  const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
-                  const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
-                  const completed = goal.status === "completed" || goal.currentValue >= goal.targetValue;
-                  const missed = goal.status === "discarded";
-                  return <div className="today-goal" key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
-                    <div><span>{category?.icon} {goal.period === "daily" ? "Hoy" : goal.period === "weekly" ? "Semana" : goal.period === "monthly" ? "Mes" : "Año"}</span><strong>{goal.title}</strong><small>{progress}% · vence {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></div>
-                    <span className="today-goal-status">
-                      {goal.measurement !== "complete" && <b>{goal.currentValue}/{goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</b>}
-                      <button
-                        className={completed ? "done" : missed ? "missed" : "pending"}
-                        {...longPressProps(
-                          () => updateGoalProgress(goal, completed || missed ? 0 : goal.targetValue),
-                          () => markGoalNotCompleted(goal),
-                        )}
-                        aria-label={completed || missed ? `Dejar ${goal.title} pendiente` : `Marcar ${goal.title} como completado`}
-                        title="Pulsa para completar · mantén pulsado para marcar como no completado"
-                      >{completed ? "✓" : missed ? "✕" : ""}</button>
-                    </span>
-                  </div>;
-                })}
-                {!dayViewGoals.length && <p className="today-empty">No hay objetivos que requieran atención este día.</p>}
-              </div>
-            </article>
-          </div>
-        </section>
-        </>}
+        {mainView === "today" && <TodayView today={today} date={dayViewDate} monthKey={dayViewMonthKey} weekIndex={dayViewWeekIndex} isViewingToday={isViewingToday} habits={dayViewHabits} habitGroups={dayViewHabitGroups} weeklyHabits={dayViewWeekly} weeklyHabitGroups={weeklyHabitGroups} goals={dayViewGoals} categories={habitCategories} completedHabits={dayViewCompleted} finalScore={dayViewScore.finalScore} categoryScores={dayViewCategoryScores} isCollapsed={isHabitBlockCollapsed} onToggleCategory={toggleHabitBlock} toggleProps={longPressProps} onShiftDay={shiftDayView} onReturnToToday={() => setDayViewDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))} onToggleHabit={toggleDayViewHabit} onToggleWeeklyHabit={toggleDayViewWeeklyHabit} onCycleException={cycleException} onUpdateGoal={updateGoalProgress} onMarkGoalNotCompleted={markGoalNotCompleted} />}
 
         {mainView === "summary" && <>
         <section className="metrics">
