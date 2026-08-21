@@ -766,7 +766,12 @@ export default function Home() {
     ? `Media de ${pastMonthDailyValues.length} días con hábitos en ${monthNames[month].toLowerCase()}`
     : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
   const monthScore = scoreFromPercent(globalProgress);
-  const habitCompletion = (habit: Habit) => checksFor(habit).length / Math.max(1, goalFor(habit) - skipsFor(habit).length);
+  const habitCompletion = (habit: Habit) => {
+    const eligible = eligibleGoalThrough(habit, evaluatedThrough);
+    if (!eligible) return 0;
+    const completed = checksFor(habit).filter((day) => day <= evaluatedThrough).length;
+    return Math.min(1, completed / eligible);
+  };
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
   const monthWeeks = monthCalendarWeeks(year, month);
@@ -1686,7 +1691,7 @@ export default function Home() {
             </div>
             <div className="rank-list">
               {rankingItems.slice(0, 5).map((habit, index) => {
-                const progress = Math.min(100, Math.round(checksFor(habit).length / goalFor(habit) * 100));
+                const progress = Math.round(habitCompletion(habit) * 100);
                 return <div className="rank-row" key={habit.id}>
                   <b>{String(index + 1).padStart(2, "0")}</b>
                   <div><span>{habit.name}</span><div className="mini-track"><i style={{ width: `${progress}%`, background: habit.color }} /></div></div>

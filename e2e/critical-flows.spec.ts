@@ -12,8 +12,14 @@ function previousWeekStart() {
   return date.toISOString().slice(0, 10);
 }
 
+function completedCurrentMonthThroughToday() {
+  const date = new Date();
+  const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return { [monthKey]: Array.from({ length: date.getDate() }, (_, index) => index + 1) };
+}
+
 const initialState = {
-  daily: [{ id: 1, name: "Caminar", goal: 12, color: "#39c6a4", checks: [], category: "health", history: {} }],
+  daily: [{ id: 1, name: "Caminar", goal: 31, color: "#39c6a4", checks: [], category: "health", everyDay: true, history: completedCurrentMonthThroughToday() }],
   weekly: [],
   categories: [{ id: "health", label: "Salud", icon: "♡", color: "#39c6a4", priority: false }],
   motivations: ["Avanza en la dirección correcta."],
@@ -76,6 +82,12 @@ test("crear un hábito recorre interfaz, caché y guardado remoto", async ({ pag
   await expect(page.getByText("Meditar", { exact: true })).toBeVisible();
   await expect.poll(() => saved).toBeTruthy();
   expect(JSON.stringify(saved)).toContain("Meditar");
+});
+
+test("la clasificación mensual no penaliza los días futuros", async ({ page }) => {
+  await openAuthenticatedApp(page);
+  const rankedHabit = page.locator(".rank-row").filter({ hasText: "Caminar" });
+  await expect(rankedHabit.getByText("100%", { exact: true })).toBeVisible();
 });
 
 test("el historial semanal recupera la reflexión guardada", async ({ page }) => {
