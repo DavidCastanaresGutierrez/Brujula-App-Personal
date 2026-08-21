@@ -16,8 +16,10 @@ y Vercel. Cada usuario solo puede leer y modificar sus propios datos.
 ## Configuración local
 
 1. Crea un proyecto gratuito en Supabase.
-2. Ejecuta `supabase/migrations/202607310001_initial_schema.sql` desde el SQL
-   Editor de Supabase.
+2. Aplica **todas** las migraciones de `supabase/migrations` en orden
+   cronológico. No basta con ejecutar la migración inicial: las migraciones
+   posteriores incorporan objetivos, sincronización transaccional, revisiones
+   semanales, nuevos calendarios y las políticas RLS actuales.
 3. Copia `.env.example` como `.env.local` y rellena:
 
 ```bash
@@ -48,5 +50,17 @@ En Supabase Auth configura:
 ## Datos
 
 El esquema usa tablas relacionales para bloques, hábitos y registros. El
-guardado se ejecuta mediante `replace_tracker_state`, una función transaccional
-protegida por la sesión de Supabase.
+guardado se ejecuta mediante `apply_tracker_state_changes`, una función
+transaccional protegida por la sesión de Supabase y control de revisiones para
+detectar conflictos entre dispositivos.
+
+## Comprobaciones antes de publicar
+
+```bash
+npm run validate
+npm run test:e2e
+```
+
+`validate` ejecuta lint, comprobación de tipos, pruebas unitarias y compilación
+de producción. Las pruebas E2E verifican los recorridos críticos en escritorio
+y en un viewport móvil.

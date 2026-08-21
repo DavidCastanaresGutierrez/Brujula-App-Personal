@@ -4,13 +4,21 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
 const accessToken = `${encode({ alg: "none", typ: "JWT" })}.${encode({ sub: userId, email: "e2e@example.test", role: "authenticated", exp: 4_102_444_800 })}.signature`;
 
+function previousWeekStart() {
+  const date = new Date();
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() - mondayOffset - 7);
+  return date.toISOString().slice(0, 10);
+}
+
 const initialState = {
   daily: [{ id: 1, name: "Caminar", goal: 12, color: "#39c6a4", checks: [], category: "health", history: {} }],
   weekly: [],
   categories: [{ id: "health", label: "Salud", icon: "♡", color: "#39c6a4", priority: false }],
   motivations: ["Avanza en la dirección correcta."],
   goals: [],
-  weeklyReviews: [{ weekStart: "2026-08-03", priorities: ["Descansar"], adjustment: "Dormir antes", reflection: "La constancia mejoró." }],
+  weeklyReviews: [{ weekStart: previousWeekStart(), priorities: ["Descansar"], adjustment: "Dormir antes", reflection: "La constancia mejoró." }],
 };
 
 async function mockLogin(page: Page) {
