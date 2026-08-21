@@ -129,7 +129,6 @@ const dailyMotivations = [
   "Decide el rumbo y deja que los días hagan el trabajo.",
   "Hoy es una oportunidad concreta, no una promesa abstracta.",
 ];
-const PHRASES_OWNER_EMAIL = "david.castanares.gutierrez@gmail.com";
 function motivationForToday(motivations = dailyMotivations) {
   const available = motivations.length ? motivations : dailyMotivations;
   const now = new Date();
@@ -301,7 +300,6 @@ export default function Home() {
   const syncGenerationRef = useRef(0);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
-  const canManagePhrases = session?.user.email?.trim().toLocaleLowerCase("es") === PHRASES_OWNER_EMAIL;
 
   useEffect(() => {
     if (!session) { queueMicrotask(() => setDismissedInsights(new Set())); return; }
@@ -1803,7 +1801,7 @@ export default function Home() {
               <h2>Tu constancia, día a día</h2>
             </div>
             <div className="tracker-actions">
-              {canManagePhrases && <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>}
+              <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>
               <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
               <button className="reset-button blocks-button" onClick={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }}>Copia de datos</button>
               <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
@@ -1891,7 +1889,7 @@ export default function Home() {
           <button className="add-button full" disabled={scheduleMode === "selectedWeekdays" && !selectedWeekdays.length} onClick={addHabit}>Crear hábito</button>
         </div>
       </div>}
-      {canManagePhrases && motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
+      {motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
         <div className="modal motivations-modal" role="dialog" aria-modal="true" aria-labelledby="motivations-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="close" onClick={() => setMotivationManagerOpen(false)} aria-label="Cerrar">×</button>
           <p className="eyebrow">TU VOZ INTERIOR</p>

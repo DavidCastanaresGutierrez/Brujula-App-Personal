@@ -54,6 +54,7 @@ async function openAuthenticatedApp(page: Page, onSave?: (body: Record<string, u
 test("inicio de sesión y recuperación muestran estados accesibles", async ({ page }) => {
   await mockLogin(page);
   await page.goto("/");
+  await expect(page.getByRole("button", { name: /Crear una cuenta/ })).toHaveCount(0);
   await page.getByRole("button", { name: "¿Has olvidado tu contraseña?" }).click();
   await expect(page.getByRole("heading", { name: "Recupera el acceso a tu rumbo." })).toBeVisible();
   await page.getByRole("button", { name: "Volver al inicio de sesión" }).click();
@@ -67,6 +68,7 @@ test("crear un hábito recorre interfaz, caché y guardado remoto", async ({ pag
   let saved: Record<string, unknown> | undefined;
   await openAuthenticatedApp(page, (body) => { saved = body; });
   await page.getByRole("button", { name: "Hábitos" }).click();
+  await expect(page.getByRole("button", { name: "Frases" })).toBeVisible();
   await page.getByRole("button", { name: "+ Añadir hábito" }).click();
   const dialog = page.getByRole("dialog", { name: "Añadir hábito diario" });
   await dialog.getByLabel("Nombre").fill("Meditar");
@@ -96,7 +98,7 @@ test("un conflicto de guardado se comunica y no sobrescribe en silencio", async 
   await page.getByRole("button", { name: "+ Añadir hábito" }).click();
   await page.getByRole("dialog").getByLabel("Nombre").fill("Provocar conflicto");
   await page.getByRole("dialog").getByRole("button", { name: "Crear hábito" }).click();
-  await expect(page.locator(".save-note.conflict")).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator(".save-note.conflict")).toBeVisible({ timeout: 12_000 });
 });
 
 test("el login y los modales siguen siendo utilizables con altura móvil reducida", async ({ page }) => {

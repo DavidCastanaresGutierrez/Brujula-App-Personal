@@ -46,6 +46,9 @@ En Supabase Auth configura:
 
 - **Site URL**: la URL de producción de Vercel.
 - **Redirect URLs**: la URL de producción y `http://localhost:3000/**`.
+- En **Authentication → Sign In / Providers**, desactiva **Allow new users to
+  sign up** después de crear las cuentas autorizadas. La interfaz no ofrece
+  registro público y esta opción impide también altas directas mediante la API.
 
 ## Datos
 
