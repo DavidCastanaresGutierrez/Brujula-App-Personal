@@ -22,6 +22,7 @@ import {
   isHabitVisibleInArchive,
   linkedGoalProgress,
   localDateKey,
+  longestHabitStreak,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
   toggleCompletionForDay,
@@ -253,7 +254,7 @@ export default function Home() {
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
   const [chartPeriod, setChartPeriod] = useState<"weekly" | "monthly" | "yearly">("monthly");
   const [chartScope, setChartScope] = useState<"general" | "category" | "habit">("general");
-  const [rankingView, setRankingView] = useState<"best" | "watch">("best");
+  const [rankingView, setRankingView] = useState<"best" | "watch" | "streak">("best");
   const [selectedChartCategory, setSelectedChartCategory] = useState<HabitCategory>("health");
   const [selectedHabitId, setSelectedHabitId] = useState<number>(initialDaily[0].id);
   const [newName, setNewName] = useState("");
@@ -767,7 +768,9 @@ export default function Home() {
     return progress.percent / 100;
   };
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
-  const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();
+  const streakRanked = [...daily].filter((habit) => !habit.archived).sort((a, b) => longestHabitStreak(b) - longestHabitStreak(a));
+  const rankingItems = rankingView === "best" ? ranked : rankingView === "watch" ? [...ranked].reverse() : streakRanked;
+  const longestVisibleStreak = Math.max(1, ...streakRanked.slice(0, 5).map(longestHabitStreak));
   const monthWeeks = monthCalendarWeeks(year, month);
   const currentMonthWeek = isCurrentMonth ? monthWeeks.findIndex((week) => week.includes(today.getDate())) + 1 : 0;
   const weeklyProgress = monthWeeks.map((weekDays) => {
@@ -1678,18 +1681,20 @@ export default function Home() {
           </article>
 
           <article className="panel ranking">
-            <div className="panel-head ranking-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>{rankingView === "best" ? "Hábitos destacados" : "Hábitos a vigilar"}</h2></div><span className="trophy">{rankingView === "best" ? "✦" : "!"}</span></div>
+            <div className="panel-head ranking-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>{rankingView === "best" ? "Hábitos destacados" : rankingView === "watch" ? "Hábitos a vigilar" : "Mejores rachas"}</h2></div><span className="trophy">{rankingView === "best" ? "✦" : rankingView === "watch" ? "!" : "🔥"}</span></div>
             <div className="tabs ranking-tabs" role="tablist" aria-label="Tipo de clasificación">
               <button role="tab" aria-selected={rankingView === "best"} className={rankingView === "best" ? "active" : ""} onClick={() => setRankingView("best")}>Destacados</button>
               <button role="tab" aria-selected={rankingView === "watch"} className={rankingView === "watch" ? "active" : ""} onClick={() => setRankingView("watch")}>A vigilar</button>
+              <button role="tab" aria-selected={rankingView === "streak"} className={rankingView === "streak" ? "active" : ""} onClick={() => setRankingView("streak")}>Mejor racha</button>
             </div>
             <div className="rank-list">
               {rankingItems.slice(0, 5).map((habit, index) => {
-                const progress = Math.round(habitCompletion(habit) * 100);
+                const streak = longestHabitStreak(habit);
+                const progress = rankingView === "streak" ? Math.round(streak / longestVisibleStreak * 100) : Math.round(habitCompletion(habit) * 100);
                 return <div className="rank-row" key={habit.id}>
                   <b>{String(index + 1).padStart(2, "0")}</b>
                   <div><span>{habit.name}</span><div className="mini-track"><i style={{ width: `${progress}%`, background: habit.color }} /></div></div>
-                  <strong>{progress}%</strong>
+                  <strong>{rankingView === "streak" ? `${streak} ${streak === 1 ? "día" : "días"}` : `${progress}%`}</strong>
                 </div>;
               })}
             </div>

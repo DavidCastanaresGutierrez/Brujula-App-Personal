@@ -147,6 +147,37 @@ export function monthlyHabitProgressThrough(habit: TrackedHabit, year: number, m
   };
 }
 
+export function longestHabitStreak(habit: TrackedHabit) {
+  const completed = new Set<string>();
+  const skipped = new Set<string>();
+  Object.entries(habit.history ?? {}).forEach(([monthKey, days]) => {
+    days.forEach((day) => completed.add(`${monthKey}-${String(day).padStart(2, "0")}`));
+  });
+  Object.entries(habit.skips ?? {}).forEach(([monthKey, days]) => {
+    days.forEach((day) => skipped.add(`${monthKey}-${String(day).padStart(2, "0")}`));
+  });
+  const completedDates = [...completed].sort();
+  if (!completedDates.length) return 0;
+
+  const cursor = new Date(`${completedDates[0]}T00:00:00Z`);
+  const end = new Date(`${completedDates.at(-1)}T00:00:00Z`);
+  let current = 0;
+  let longest = 0;
+  while (cursor <= end) {
+    const dateKey = cursor.toISOString().slice(0, 10);
+    if (habitScheduledOnDate(habit, dateKey)) {
+      if (completed.has(dateKey)) {
+        current += 1;
+        longest = Math.max(longest, current);
+      } else if (!skipped.has(dateKey)) {
+        current = 0;
+      }
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return longest;
+}
+
 export function weekdaysInMonth(year: number, monthIndex: number, throughDay?: number) {
   const monthDays = new Date(year, monthIndex + 1, 0).getDate();
   const limit = Math.min(throughDay ?? monthDays, monthDays);

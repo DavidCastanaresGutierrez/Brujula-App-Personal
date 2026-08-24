@@ -16,6 +16,7 @@ import {
   isCalendarDayInFuture,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
+  longestHabitStreak,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -145,6 +146,23 @@ describe("completion rules", () => {
     const second = toggleCompletionForDay(first, 4);
     expect(second).toEqual([3, 4]);
     expect(second).toHaveLength(2);
+  });
+
+  it("finds the longest historical daily streak", () => {
+    expect(longestHabitStreak({
+      goal: 31,
+      everyDay: true,
+      history: { "2026-08": [1, 2, 4, 5, 6, 7] },
+    })).toBe(4);
+  });
+
+  it("does not break scheduled streaks on weekends or skipped days", () => {
+    expect(longestHabitStreak({
+      goal: 23,
+      weekdaysOnly: true,
+      history: { "2026-08": [3, 4, 6, 7, 10] },
+      skips: { "2026-08": [5] },
+    })).toBe(5);
   });
 });
 

@@ -267,7 +267,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .ranking-tabs { width: 100%; margin-top: 16px; }
 .ranking-tabs button { flex: 1; }
 .rank-list { margin-top: 16px; }
-.rank-row { display: grid; grid-template-columns: 28px 1fr 40px; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rank-row { display: grid; grid-template-columns: 28px 1fr 56px; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rank-row > b { color: #66738f; font-size: 10px; }
 .rank-row span { font-size: 11px; }
 .rank-row > strong { font-size: 10px; text-align: right; }
