@@ -1546,17 +1546,6 @@ export default function Home() {
     if (goal) { setMainView("goals"); setGoalFilter(goal.period === "daily" ? "weekly" : goal.period); startGoalEdit(goal); }
   }
 
-  function pauseInsightHabit(entityId?: number) {
-    if (!entityId) return;
-    const start = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
-    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6, 12);
-    const end = isoDate(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-    setDaily((items) => items.map((habit) => habit.id === entityId
-      ? { ...habit, schedule: { ...(habit.schedule ?? {}), pausedFrom: start, pausedUntil: end } }
-      : habit));
-    dismissInsight(`habit-${entityId}`);
-  }
-
   function openView(view: MainView) {
     if (view === "goals") setGoalFilter("yearly");
     if (view === "week") {
@@ -1702,9 +1691,23 @@ export default function Home() {
         </section>
 
         <section className="panel actionable-insights" aria-labelledby="actionable-insights-title">
-          <div className="panel-head"><div><p className="eyebrow">SEÑALES ACCIONABLES</p><h2 id="actionable-insights-title">Qué conviene ajustar ahora</h2></div><span className="insight-method">Diagnósticos explicables · no modifican nada por sí solos</span></div>
-          <div className="insight-grid">{actionableInsights.map((insight) => <article className={`insight-card ${insight.severity}`} key={insight.id}><span>{insight.kind === "goal" ? "OBJETIVO" : insight.kind === "habit" ? "HÁBITO" : insight.kind === "weekday" ? "PATRÓN SEMANAL" : "TENDENCIA"}</span><strong>{insight.title}</strong><p>{insight.detail}</p><div className="insight-evidence"><b>Por qué aparece</b><p>{insight.evidence}</p><b>Regla aplicada</b><p>{insight.rule}</p><em>{insight.period}</em></div><small>{insight.action}</small><div className="insight-actions">{insight.kind === "habit" && <><button onClick={() => editInsightEntity("habit", insight.entityId)}>Editar hábito</button><button onClick={() => pauseInsightHabit(insight.entityId)}>Pausar 7 días</button></>}{insight.kind === "goal" && <button onClick={() => editInsightEntity("goal", insight.entityId)}>Ajustar objetivo</button>}<button className="quiet" onClick={() => dismissInsight(insight.id)}>Ocultar 7 días</button></div></article>)}</div>
-          {!actionableInsights.length && <div className="insights-empty"><strong>No hay señales visibles</strong><p>Las señales ocultadas volverán a mostrarse automáticamente en siete días si siguen siendo relevantes.</p></div>}
+          <div className="panel-head"><div><p className="eyebrow">REVISIÓN AUTOMÁTICA</p><h2 id="actionable-insights-title">Qué conviene revisar ahora</h2></div><span className="insight-method">Son avisos orientativos · tú decides qué cambiar</span></div>
+          <div className="insight-grid">{actionableInsights.map((insight) => <article className={`insight-card ${insight.severity}`} key={insight.id}>
+            <span>{insight.kind === "goal" ? "OBJETIVO" : insight.kind === "habit" ? "HÁBITO" : insight.kind === "weekday" ? "PATRÓN SEMANAL" : "TENDENCIA"}</span>
+            <strong>{insight.title}</strong>
+            <p className="insight-status">{insight.detail}</p>
+            <div className="insight-recommendation"><b>Qué puedes hacer</b><p>{insight.action}</p></div>
+            <details className="insight-evidence">
+              <summary>Cómo se ha detectado</summary>
+              <div><b>Datos utilizados</b><p>{insight.evidence}</p><b>Criterio</b><p>{insight.rule}</p><em>{insight.period}</em></div>
+            </details>
+            {insight.severity !== "positive" && <div className="insight-actions">
+              {insight.kind === "habit" && <button onClick={() => editInsightEntity("habit", insight.entityId)}>Revisar hábito</button>}
+              {insight.kind === "goal" && <button onClick={() => editInsightEntity("goal", insight.entityId)}>Revisar objetivo</button>}
+              <button className="quiet" onClick={() => dismissInsight(insight.id)}>Recordármelo en 7 días</button>
+            </div>}
+          </article>)}</div>
+          {!actionableInsights.length && <div className="insights-empty"><strong>No hay avisos pendientes</strong><p>Los avisos pospuestos volverán a aparecer en siete días si siguen siendo relevantes.</p></div>}
         </section>
 
         <section className="panel analytics-panel" id="analytics">

@@ -87,8 +87,13 @@ h1 em { font-style: normal; color: var(--teal); }
 .insight-card.positive > span { color: var(--teal); }
 .insight-card > strong { font-size: 12px; }
 .insight-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.insight-card small { padding-top: 7px; border-top: 1px solid var(--line); color: #d7deec; font-size: 9px; line-height: 1.45; }
-.insight-evidence { display: grid; gap: 4px; padding: 10px; border-radius: 9px; background: rgba(8,16,31,.4); }
+.insight-status { color: #c3cede !important; }
+.insight-recommendation { display: grid; gap: 4px; margin-top: 3px; padding: 10px 11px; border-left: 2px solid var(--teal); border-radius: 0 8px 8px 0; background: rgba(60,201,171,.055); }
+.insight-recommendation b { color: var(--teal); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.insight-evidence { margin-top: 2px; border-top: 1px solid var(--line); }
+.insight-evidence summary { padding: 9px 0 2px; color: #8e9ab2; font-size: 9px; cursor: pointer; list-style-position: inside; }
+.insight-evidence[open] summary { color: #c7d1e3; }
+.insight-evidence > div { display: grid; gap: 4px; margin-top: 7px; padding: 10px; border-radius: 9px; background: rgba(8,16,31,.4); }
 .insight-evidence b { color: #dce5f4; font-size: 9px; }
 .insight-evidence p { margin-bottom: 4px; }
 .insight-evidence em { color: #7f8da9; font-size: 8px; font-style: normal; }
