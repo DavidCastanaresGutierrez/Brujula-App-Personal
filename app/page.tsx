@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
@@ -19,7 +18,6 @@ import {
   habitScheduledOnDate,
   isHabitVisibleInArchive,
   linkedGoalProgress,
-  localDateKey,
   longestHabitStreak,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
@@ -32,31 +30,22 @@ import { removeHabitFromGoals, replaceCategory } from "../lib/domain/relationshi
 import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
-import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
-import { AuthGate, Brand, ResetPassword } from "./components/auth";
+import { Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessMetric } from "./components/charts";
+import { AuthGate, ResetPassword } from "./components/auth";
+import { AppHeader, ClosureNoticeCard, type ClosureNotice, type MainView } from "./components/app-shell";
+import { GoalCard } from "./components/goal-card";
+import { GoalsView } from "./components/goals-view";
+import { HabitsView } from "./components/habits-view";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
-import { SyncStatus } from "./components/sync-status";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
-import type { BookEntry, BookFormat, Category, Goal, GoalStep, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
+import type { BookFormat, Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
 import { useTrackerSync } from "./hooks/use-tracker-sync";
 import { useGoalManager } from "./hooks/use-goal-manager";
+import { useGoalTemplates } from "./hooks/use-goal-templates";
 
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
-type MainView = "summary" | "today" | "week" | "habits" | "goals";
-
-type ClosureNotice = {
-  key: string;
-  kind: "daily" | "weekly" | "monthly" | "yearly";
-  eyebrow: string;
-  title: string;
-  detail: string;
-  baseScore: number;
-  bonus: number;
-  finalScore: number;
-};
-
 const palette = [
   "#ff0000", "#f97316", "#f59e0b", "#fbbf24",
   "#84cc16", "#39c6a4", "#14b8a6", "#22d3ee", "#50b8e7", "#3b82f6",
@@ -216,26 +205,19 @@ export default function Home() {
     addGoalStep, toggleGoalStep, removeGoalStep, deleteGoal, archiveGoal, restoreGoal,
     moveWeeklyGoalToCurrentWeek, startGoalPointerDrag, moveGoalPointerDrag, finishGoalPointerDrag, cancelGoalPointerDrag,
   } = useGoalManager({ setGoals, today });
+  const {
+    templateModal, setTemplateModal, templateHabitIds, setTemplateHabitIds, readingTarget, setReadingTarget,
+    bookGoal, bookTitle, setBookTitle, bookAuthor, setBookAuthor, bookFormat, setBookFormat,
+    bookStatus, setBookStatus, editingBookId, fitnessGoal, setFitnessGoal, fitnessDraft, setFitnessDraft,
+    fitnessMetric, setFitnessMetric, fitnessPeriod, setFitnessPeriod, fitnessImporting, fitnessImportMessage,
+    createTemplateGoal, isBookCompleted, openBookEditor, closeBookEditor, saveBook, completeBook, removeBook,
+    saveFitnessEntry, importSamsungHealth, yearlyHabitPercent, closeFitnessEditor,
+  } = useGoalTemplates({ goals, setGoals, daily, today, setGoalFilter });
   const [weeklyPlanDraft, setWeeklyPlanDraft] = useState({ priorities: ["", "", ""], adjustment: "", reflection: "" });
   const [weeklyPlanSaved, setWeeklyPlanSaved] = useState(false);
   const [reviewWeekKey, setReviewWeekKey] = useState(() => previousWeekBounds(new Date()).key);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(() => new Set());
   const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
-  const [templateModal, setTemplateModal] = useState<null | "fitness" | "reading">(null);
-  const [templateHabitIds, setTemplateHabitIds] = useState<number[]>([]);
-  const [readingTarget, setReadingTarget] = useState(12);
-  const [bookGoal, setBookGoal] = useState<Goal | null>(null);
-  const [bookTitle, setBookTitle] = useState("");
-  const [bookAuthor, setBookAuthor] = useState("");
-  const [bookFormat, setBookFormat] = useState<BookFormat>("paper");
-  const [bookStatus, setBookStatus] = useState<"reading" | "completed">("reading");
-  const [editingBookId, setEditingBookId] = useState<number | null>(null);
-  const [fitnessGoal, setFitnessGoal] = useState<Goal | null>(null);
-  const [fitnessDraft, setFitnessDraft] = useState({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" });
-  const [fitnessMetric, setFitnessMetric] = useState<FitnessMetric>("weight");
-  const [fitnessPeriod, setFitnessPeriod] = useState<30 | 90 | 365>(90);
-  const [fitnessImporting, setFitnessImporting] = useState(false);
-  const [fitnessImportMessage, setFitnessImportMessage] = useState("");
   const [motivationManagerOpen, setMotivationManagerOpen] = useState(false);
   const [motivationDraft, setMotivationDraft] = useState("");
   const [editingMotivationIndex, setEditingMotivationIndex] = useState<number | null>(null);
@@ -835,122 +817,10 @@ export default function Home() {
     }
   }
 
-  function createTemplateGoal() {
-    if (!templateModal) return;
-    const period = goalPeriodDetails("yearly");
-    const id = Math.max(0, ...goals.map((goal) => goal.id)) + 1;
-    const isReading = templateModal === "reading";
-    const goal: Goal = {
-      id,
-      title: isReading ? "Lectura anual" : "Forma física",
-      category: isReading ? "growth" : "health",
-      period: "yearly", periodKey: period.key, dueDate: period.due,
-      measurement: "quantity", targetValue: isReading ? Math.max(1, readingTarget) : 100,
-      currentValue: 0, unit: isReading ? "libros" : "%", status: "active",
-      linkedHabitId: isReading ? templateHabitIds[0] : undefined,
-      linkedHabitIds: templateHabitIds,
-      trackingStart: isoDate(today.getFullYear(), today.getMonth(), today.getDate()),
-      template: templateModal,
-      books: isReading ? [] : undefined,
-      fitnessEntries: isReading ? undefined : [],
-    };
-    setGoals((items) => [...items, goal]);
-    setTemplateModal(null); setTemplateHabitIds([]); setGoalFilter("yearly");
-  }
-
-  const isBookCompleted = (book: BookEntry) => book.status === "completed" || (book.status === undefined && Boolean(book.completedAt));
-
-  function withReadingProgress(goal: Goal, books: BookEntry[]) {
-    const completed = books.filter(isBookCompleted).length;
-    return { ...goal, books, currentValue: Math.min(goal.targetValue, completed), status: completed >= goal.targetValue ? "completed" as const : "active" as const };
-  }
-
-  function openBookEditor(goal: Goal, book?: BookEntry, status: "reading" | "completed" = "reading") {
-    setBookGoal(goal); setEditingBookId(book?.id ?? null); setBookTitle(book?.title ?? ""); setBookAuthor(book?.author ?? "");
-    setBookFormat(book?.format ?? "paper"); setBookStatus(book ? (isBookCompleted(book) ? "completed" : "reading") : status);
-  }
-
-  function closeBookEditor() {
-    setBookGoal(null); setEditingBookId(null); setBookTitle(""); setBookAuthor(""); setBookFormat("paper"); setBookStatus("reading");
-  }
-
-  function saveBook() {
-    if (!bookGoal || !bookTitle.trim()) return;
-    const now = new Date();
-    const todayKey = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
-    const previous = bookGoal.books?.find((book) => book.id === editingBookId);
-    const entry: BookEntry = { id: editingBookId ?? Date.now(), title: bookTitle.trim(), author: bookAuthor.trim() || undefined, format: bookFormat, status: bookStatus, startedAt: previous?.startedAt ?? todayKey, completedAt: bookStatus === "completed" ? previous?.completedAt ?? todayKey : undefined };
-    setGoals((items) => items.map((goal) => goal.id === bookGoal.id
-      ? withReadingProgress(goal, editingBookId === null ? [...(goal.books ?? []), entry] : (goal.books ?? []).map((book) => book.id === editingBookId ? entry : book))
-      : goal));
-    closeBookEditor();
-  }
-
-  function completeBook(goalId: number, bookId: number) {
-    const now = new Date();
-    const todayKey = isoDate(now.getFullYear(), now.getMonth(), now.getDate());
-    setGoals((items) => items.map((goal) => goal.id === goalId ? withReadingProgress(goal, (goal.books ?? []).map((book) => book.id === bookId ? { ...book, status: "completed", completedAt: todayKey } : book)) : goal));
-  }
-
-  function removeBook(goalId: number, bookId: number) {
-    setGoals((items) => items.map((goal) => goal.id === goalId ? withReadingProgress(goal, (goal.books ?? []).filter((book) => book.id !== bookId)) : goal));
-  }
-
-  function saveFitnessEntry() {
-    if (!fitnessGoal) return;
-    const parse = (value: string) => value.trim() ? Number(value.replace(",", ".")) : undefined;
-    const values = Object.fromEntries(Object.entries(fitnessDraft).map(([key, value]) => [key, parse(value)])) as Record<FitnessMetric, number | undefined>;
-    if (Object.values(values).some((value) => value === undefined || Number.isNaN(value) || value < 0)) return;
-    const entry: FitnessEntry = { id: Date.now(), recordedAt: localDateKey(), ...(values as Record<FitnessMetric, number>) };
-    setGoals((items) => items.map((goal) => goal.id === fitnessGoal.id ? { ...goal, fitnessEntries: [...(goal.fitnessEntries ?? []), entry] } : goal));
-    setFitnessGoal(null); setFitnessDraft({ weight: "", muscle: "", fatMass: "", bodyWater: "", bodyFat: "", bmi: "", basalMetabolicRate: "" }); setFitnessImportMessage("");
-  }
-
-  async function importSamsungHealth(file?: File) {
-    if (!file) return;
-    setFitnessImporting(true); setFitnessImportMessage("Leyendo la captura…");
-    try {
-      const { recognize } = await import("tesseract.js");
-      const result = await recognize(file, "spa+eng");
-      const text = result.data.text.replace(/,/g, ".");
-      const numberAfter = (labels: string[]) => {
-        for (const label of labels) {
-          const match = text.match(new RegExp(`${label}[^0-9]{0,30}([0-9]{1,4}(?:\\.[0-9]{1,2})?)`, "i"));
-          if (match) return match[1];
-        }
-        return "";
-      };
-      const weight = numberAfter(["peso", "weight"]);
-      const bodyFat = numberAfter(["grasa corporal", "body fat"]);
-      const muscle = numberAfter(["músculo esquelético", "musculo esqueletico", "skeletal muscle", "masa muscular"]);
-      const fatMass = numberAfter(["masa grasa", "fat mass"]); const bodyWater = numberAfter(["agua corporal", "body water"]); const bmi = numberAfter(["imc", "bmi"]);
-      const basalMetabolicRate = numberAfter(["tasa metabólica basal", "tasa metabolica basal", "basal metabolic rate", "bmr"]);
-      setFitnessDraft({ weight, muscle, fatMass, bodyWater, bodyFat, bmi, basalMetabolicRate });
-      const detected = [weight, muscle, fatMass, bodyWater, bodyFat, bmi, basalMetabolicRate].filter(Boolean).length;
-      setFitnessImportMessage(detected ? `${detected} de 7 valores detectados. Revísalos y completa los restantes.` : "No he podido identificar los valores. Puedes introducirlos manualmente.");
-    } catch {
-      setFitnessImportMessage("No se pudo leer la captura. Introduce los valores manualmente.");
-    } finally { setFitnessImporting(false); }
-  }
-
-  const yearlyHabitPercent = (habitId?: number) => {
-    const habit = daily.find((item) => item.id === habitId);
-    if (!habit) return 0;
-    let completed = 0; let expected = 0;
-    for (let index = 0; index <= today.getMonth(); index += 1) {
-      const key = `${today.getFullYear()}-${String(index + 1).padStart(2, "0")}`;
-      const monthDays = new Date(today.getFullYear(), index + 1, 0).getDate();
-      const through = index === today.getMonth() ? today.getDate() : monthDays;
-      completed += (habit.history?.[key] ?? []).filter((day) => day <= through).length;
-      expected += habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, today.getFullYear(), index, through) : Math.min(habit.goal, through);
-    }
-    return Math.min(100, Math.round(completed / Math.max(1, expected) * 100));
-  };
-
   const progressResolvedGoals = goals.map((goal) => {
     if (goal.status === "discarded") return goal;
     if (goal.template === "reading") {
-      const currentValue = goal.books?.length ?? 0;
+      const currentValue = (goal.books ?? []).filter(isBookCompleted).length;
       return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
     }
     if (goal.template === "fitness") {
@@ -1011,7 +881,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!hydrated || !session || closureNotice) return;
+    if (!hydrated || !session || closureNotice || mainView !== "summary") return;
     const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
     const delivered = parseStoredStringSet(readStoredValue(localStorage, deliveredKey));
     const now = new Date();
@@ -1069,7 +939,7 @@ export default function Home() {
       nextNotice = { key: yesterdayKey, kind: "daily", eyebrow: "CIERRE DEL DÍA", title: result.bonus > 0 ? "Tu constancia sumó un bonus" : "Así terminó tu día", detail: `${result.completed} de ${result.scheduled} hábitos diarios · ${result.eligibleWeeklyDoneToday} aportaciones semanales con bonus.`, baseScore: result.baseScore, bonus: result.bonus, finalScore: result.finalScore };
     }
     if (nextNotice) queueMicrotask(() => setClosureNotice(nextNotice));
-  }, [closureNotice, daily, habitCategories, hydrated, resolvedGoals, session, weekly]);
+  }, [closureNotice, daily, habitCategories, hydrated, mainView, resolvedGoals, session, weekly]);
 
   function dismissClosureNotice() {
     if (!closureNotice || !session) return;
@@ -1102,6 +972,7 @@ export default function Home() {
   }
 
   function openView(view: MainView) {
+    if (view !== "summary" && closureNotice) setClosureNotice(null);
     if (view === "goals") setGoalFilter("yearly");
     if (view === "week") {
       const review = weeklyReviews.find((item) => item.weekStart === weekBounds(today).key);
@@ -1142,26 +1013,8 @@ export default function Home() {
 
   return (
     <main>
-      {closureNotice && <aside className="closure-notice" role="status" aria-live="polite">
-        <div className="closure-notice-head"><div><p className="eyebrow">{closureNotice.eyebrow}</p><h2>{closureNotice.title}</h2></div><button onClick={dismissClosureNotice} aria-label="Cerrar resumen">×</button></div>
-        <p>{closureNotice.detail}</p>
-        <div className="closure-score"><span><small>Nota base</small><strong>{scoreLabel(closureNotice.baseScore)}</strong></span><b>+</b><span className="bonus"><small>Bonus</small><strong>{closureNotice.bonus > 0 ? `+${scoreLabel(closureNotice.bonus)}` : "—"}</strong></span><b>=</b><span className="final"><small>Nota final</small><strong>{scoreLabel(closureNotice.finalScore)}</strong></span></div>
-        <button className="closure-confirm" onClick={dismissClosureNotice}>Entendido</button>
-      </aside>}
-      <header className="topbar">
-        <Brand />
-        <nav aria-label="Navegación principal">
-          <button className={mainView === "summary" ? "nav-active" : ""} onClick={() => openView("summary")}>Resumen</button>
-          <button className={mainView === "today" ? "nav-active" : ""} onClick={() => openView("today")}>Tu día</button>
-          <button className={mainView === "week" ? "nav-active" : ""} onClick={() => openView("week")}>Semana</button>
-          <button className={mainView === "habits" ? "nav-active" : ""} onClick={() => openView("habits")}>Hábitos</button>
-          <button className={mainView === "goals" ? "nav-active" : ""} onClick={() => openView("goals")}>Objetivos</button>
-        </nav>
-        <div className="session-actions">
-          <span className="avatar" aria-hidden="true">{(session.user.email?.slice(0, 2) ?? "BR").toUpperCase()}</span>
-          <button className="logout-button" onClick={() => getSupabaseBrowserClient().auth.signOut()}>Cerrar sesión</button>
-        </div>
-      </header>
+      {closureNotice && <ClosureNoticeCard notice={closureNotice} formatScore={scoreLabel} onDismiss={dismissClosureNotice} />}
+      <AppHeader activeView={mainView} userEmail={session.user.email} onNavigate={openView} onSignOut={() => getSupabaseBrowserClient().auth.signOut()} />
 
       <div className="page-shell">
         {mainView === "summary" && <>
@@ -1295,96 +1148,20 @@ export default function Home() {
         </section>
         </>}
 
-        {mainView === "goals" && <>
-        <section className="view-intro"><p className="eyebrow">RESULTADOS</p><h1>Objetivos</h1><p>Define resultados concretos y comprueba si tus hábitos te acercan a ellos.</p></section>
-        <section className="panel goals-panel" id="goals">
-          <div className="goals-head">
-            <div><p className="eyebrow">RESULTADOS CON RUMBO</p><h2>Tus objetivos</h2><p>Define el resultado; tus hábitos sostienen el camino.</p></div>
-            <div className="goal-head-actions">
-              <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
-                Archivados{archivedCount > 0 && <span>{archivedCount}</span>}
-              </button>
-              <button className="template-button" onClick={() => setTemplateModal("fitness")}><span aria-hidden="true">♥</span>Forma física</button>
-              <button className="template-button" onClick={() => setTemplateModal("reading")}><span aria-hidden="true">▥</span>Lectura anual</button>
-              <button className="add-button" onClick={openNewGoal}>+ Añadir objetivo</button>
-            </div>
-          </div>
-          <div className="goal-toolbar">
-          <div className="tabs goal-tabs">
-            {(["weekly", "monthly", "yearly"] as const).map((filter) => (
-              <button key={filter} className={goalFilter === filter ? "active" : ""} onClick={() => setGoalFilter(filter)}>
-                {{ weekly: "Semana", monthly: "Mes", yearly: "Año" }[filter]}
-              </button>
-            ))}
-          </div>
-          <label className="goal-block-filter"><span>Bloque</span><select value={goalCategoryFilter} onChange={(event) => setGoalCategoryFilter(event.target.value)}><option value="all">Todos los bloques</option>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
-          </div>
-          {goalCategoryFilter !== "all" && <p className="goal-filter-note">Quita el filtro de bloque para reordenar las tarjetas.</p>}
-          {visibleGoals.length ? <div className="goal-grid">{visibleGoals.map((goal) => {
+        {mainView === "goals" && <GoalsView archivedCount={archivedCount} goalFilter={goalFilter} categoryFilter={goalCategoryFilter} categories={habitCategories} hasVisibleGoals={visibleGoals.length > 0} hasActiveGoals={activeGoals.length > 0} onOpenArchived={() => setArchivedManagerOpen(true)} onOpenTemplate={setTemplateModal} onAddGoal={openNewGoal} onFilterChange={setGoalFilter} onCategoryFilterChange={setGoalCategoryFilter}>
+          {visibleGoals.map((goal) => {
             const category = habitCategories.find((item) => item.id === goal.category) ?? habitCategories[0];
-            const progress = Math.min(100, Math.round(goal.currentValue / Math.max(1, goal.targetValue) * 100));
-            const parentAnnualGoal = goal.parentAnnualGoalId ? resolvedGoals.find((item) => item.id === goal.parentAnnualGoalId) : undefined;
-            const linkedMilestones = goal.period === "yearly" ? resolvedGoals.filter((item) => (item.period === "weekly" || item.period === "monthly") && item.parentAnnualGoalId === goal.id && item.status !== "discarded") : [];
-            const visibleMilestones = linkedMilestones.filter((item) => !item.archived);
-            const archivedMilestones = linkedMilestones.length - visibleMilestones.length;
-            const isOverdueWeekly = goal.period === "weekly" && goal.status === "active" && goal.dueDate < realTodayKey;
-            return <article data-goal-id={goal.id} className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
-              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button type="button" className="goal-drag-handle" disabled={goalCategoryFilter !== "all"} onPointerDown={(event) => startGoalPointerDrag(event, goal.id)} onPointerMove={moveGoalPointerDrag} onPointerUp={(event) => finishGoalPointerDrag(event, goal.id)} onPointerCancel={cancelGoalPointerDrag} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button>{goal.status === "completed" && <button className="goal-archive" onClick={() => archiveGoal(goal.id)} aria-label={`Archivar ${goal.title}`} title="Archivar objetivo completado">▣</button>}<button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
-              <h3>{goal.title}</h3>
-              {isOverdueWeekly && <small className="goal-overdue-label">Pendiente de la semana anterior</small>}
-              {parentAnnualGoal && <small className="goal-parent-link">Hito de: {parentAnnualGoal.title}</small>}
-              <div className="goal-progress"><i style={{ width: `${progress}%` }} /></div>
-              <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
-              {linkedMilestones.length > 0 && <div className="goal-milestones"><strong>{linkedMilestones.filter((item) => item.status === "completed").length} de {linkedMilestones.length} objetivos vinculados</strong>{visibleMilestones.map((item) => <span key={item.id} className={item.status === "completed" ? "done" : ""}>{item.status === "completed" ? "✓" : "○"} {item.title}</span>)}{archivedMilestones > 0 && <small>{archivedMilestones} {archivedMilestones === 1 ? "hito archivado incluido" : "hitos archivados incluidos"}</small>}</div>}
-              {(goal.steps ?? []).length > 0 && <div className="goal-plan"><div className="goal-plan-summary"><strong>Plan</strong><span>{(goal.steps ?? []).filter((step) => step.completed).length}/{(goal.steps ?? []).length}</span></div>{(goal.steps ?? []).slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map((step) => <div className={`goal-step ${step.completed ? "done" : ""}`} key={step.id}><button className="goal-step-toggle" onClick={() => toggleGoalStep(goal.id, step.id)} aria-label={`${step.completed ? "Reabrir" : "Completar"} ${step.title}`}>{step.completed ? "✓" : "○"}</button><span><strong>{step.title}</strong><small>{step.kind === "milestone" ? "Hito" : "Acción"} · {new Date(`${step.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></span><button className="goal-step-delete" onClick={() => removeGoalStep(goal.id, step.id)} aria-label={`Eliminar ${step.title}`}>×</button></div>)}</div>}
-              {planningGoalId === goal.id ? <form className="goal-step-form" onSubmit={(event) => { event.preventDefault(); addGoalStep(goal); }}><select value={goalStepDraft.kind} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, kind: event.target.value as GoalStep["kind"] }))}><option value="action">Acción</option><option value="milestone">Hito</option></select><input maxLength={160} value={goalStepDraft.title} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, title: event.target.value }))} placeholder="Qué hay que conseguir" aria-label="Título del paso" /><input type="date" value={goalStepDraft.dueDate} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, dueDate: event.target.value }))} aria-label="Fecha del paso" /><div><button type="button" onClick={cancelGoalPlanning}>Cancelar</button><button type="submit" disabled={!goalStepDraft.title.trim() || !goalStepDraft.dueDate}>Añadir</button></div></form> : <button className="goal-add-step" onClick={() => beginGoalPlanning(goal)}>+ Añadir hito o acción</button>}
-              {goal.template === "reading" ? <><div className="book-add-actions"><button className="goal-complete" onClick={() => openBookEditor(goal)}>+ Libro en proceso</button><button className="goal-complete" onClick={() => openBookEditor(goal, undefined, "completed")}>+ Libro terminado</button></div><div className="goal-entry-list">{(goal.books ?? []).slice().reverse().map((book) => <div className="book-entry" key={book.id}><span><strong>{book.title}</strong><small>{book.author || "Autor no indicado"} · {{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small></span><span className="book-entry-actions">{!isBookCompleted(book) && <button onClick={() => completeBook(goal.id, book.id)}>Terminar</button>}<button onClick={() => openBookEditor(goal, book)} aria-label={`Editar ${book.title}`}>Editar</button><button className="danger" onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></span></div>)}</div><small className="goal-consistency">{(goal.books ?? []).filter((book) => !isBookCompleted(book)).length} en proceso · {(goal.books ?? []).filter(isBookCompleted).length} terminados · Constancia: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
-                : goal.template === "fitness" ? <><small className="goal-consistency">{(goal.linkedHabitIds ?? []).length ? `${(goal.linkedHabitIds ?? []).length} hábitos · cada uno pondera ${(100 / (goal.linkedHabitIds ?? []).length).toFixed(2)}% al día` : "Sin hábitos vinculados"}</small><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
-                : isOverdueWeekly ? <div className="goal-weekly-actions"><button onClick={() => moveWeeklyGoalToCurrentWeek(goal.id)}>Mover a esta semana</button><button className="danger" onClick={() => setDeletingGoal(goal)}>Eliminar</button></div>
-                : goal.measurement === "complete" ? <button className="goal-complete" onClick={() => updateGoalProgress(goal, goal.currentValue >= 1 ? 0 : 1)}>{goal.currentValue >= 1 ? "Reabrir" : "Marcar completado"}</button>
-                : <form className="goal-value" onSubmit={(event) => { event.preventDefault(); addGoalProgress(goal); }}>
-                    <label htmlFor={`goal-progress-${goal.id}`}>Añadir progreso</label>
-                    <div className="goal-value-entry">
-                      <input id={`goal-progress-${goal.id}`} type="number" min="0" max={Math.max(0, goal.targetValue - goal.currentValue)} step="any" inputMode="decimal" value={goalProgressDrafts[goal.id] ?? ""} onChange={(event) => setGoalProgressDrafts((drafts) => ({ ...drafts, [goal.id]: event.target.value }))} placeholder={goal.unit ? `Cantidad en ${goal.unit}` : "Cantidad"} aria-label={`Cantidad que añadir a ${goal.title}`} />
-                      <button type="submit" disabled={!Number.isFinite(Number(goalProgressDrafts[goal.id])) || Number(goalProgressDrafts[goal.id]) <= 0 || goal.currentValue >= goal.targetValue}>Sumar</button>
-                    </div>
-                  </form>}
-            </article>;
-          })}</div> : <div className="goals-empty"><strong>No hay objetivos en este periodo{goalCategoryFilter !== "all" ? " y bloque" : ""}</strong><p>{activeGoals.length ? "Cambia el periodo o el filtro para ver tus otros objetivos." : "Crea un resultado concreto y medible para orientar tus hábitos."}</p></div>}
-        </section>
-        </>}
+            return <GoalCard key={goal.id} goal={goal} category={category} allGoals={resolvedGoals} todayKey={realTodayKey} canReorder={goalCategoryFilter === "all"} dragging={draggingGoalId === goal.id} planning={planningGoalId === goal.id} stepDraft={goalStepDraft} setStepDraft={setGoalStepDraft} progressDraft={goalProgressDrafts[goal.id] ?? ""} setProgressDraft={(value) => setGoalProgressDrafts((drafts) => ({ ...drafts, [goal.id]: value }))} fitnessMetric={fitnessMetric} setFitnessMetric={setFitnessMetric} fitnessPeriod={fitnessPeriod} setFitnessPeriod={setFitnessPeriod} isBookCompleted={isBookCompleted} yearlyHabitPercent={yearlyHabitPercent} onDragStart={startGoalPointerDrag} onDragMove={moveGoalPointerDrag} onDragEnd={finishGoalPointerDrag} onDragCancel={cancelGoalPointerDrag} onArchive={archiveGoal} onEdit={startGoalEdit} onDelete={setDeletingGoal} onToggleStep={toggleGoalStep} onRemoveStep={removeGoalStep} onAddStep={addGoalStep} onBeginPlanning={beginGoalPlanning} onCancelPlanning={cancelGoalPlanning} onOpenBook={openBookEditor} onCompleteBook={completeBook} onRemoveBook={removeBook} onOpenFitness={setFitnessGoal} onMoveWeekly={moveWeeklyGoalToCurrentWeek} onUpdateProgress={updateGoalProgress} onAddProgress={addGoalProgress} />;
+          })}
+        </GoalsView>}
 
-        {mainView === "habits" && <>
-        <section className="view-intro"><p className="eyebrow">SISTEMAS</p><h1>Hábitos</h1><p>Configura tus rutinas, registra el seguimiento y protege tu constancia.</p></section>
-        <section className="tracker panel" id="tracker">
-          <div className="tracker-head">
-            <div>
-              <p className="eyebrow">REGISTRO INTERACTIVO</p>
-              <h2>Tu constancia, día a día</h2>
-            </div>
-            <div className="tracker-actions">
-              <button className="reset-button" onClick={() => setMotivationManagerOpen(true)}>Frases</button>
-              <button className="reset-button blocks-button" onClick={() => { setCategoryManagerOpen(true); startCategoryEdit(); }}>Gestionar bloques</button>
-              <button className="reset-button blocks-button" onClick={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }}>Copia de datos</button>
-              <button className="reset-button archived-button" onClick={() => setArchivedManagerOpen(true)}>
-                Archivados{archivedCount > 0 && <span>{archivedCount}</span>}
-              </button>
-              <div className="tabs">
-                <button className={activeTab === "daily" ? "active" : ""} onClick={() => setActiveTab("daily")}>Diarios</button>
-                <button className={activeTab === "weekly" ? "active" : ""} onClick={() => setActiveTab("weekly")}>Semanales</button>
-              </div>
-              <button className="add-button" onClick={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); setEveryDay(false); setWeekdaysOnly(false); resetScheduleDraft(); setSelectedCategory("health"); }}>+ Añadir hábito</button>
-            </div>
-          </div>
-
+        {mainView === "habits" && <HabitsView activeTab={activeTab} archivedCount={archivedCount} syncStatus={syncStatus} onTabChange={setActiveTab} onOpenMotivations={() => setMotivationManagerOpen(true)} onOpenCategories={() => { setCategoryManagerOpen(true); startCategoryEdit(); }} onOpenBackup={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }} onOpenArchived={() => setArchivedManagerOpen(true)} onAddHabit={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); setEveryDay(false); setWeekdaysOnly(false); resetScheduleDraft(); setSelectedCategory("health"); }} onUseRemote={resolveConflictWithRemote} onKeepLocal={resolveConflictWithLocal}>
           {activeTab === "daily" ? (
             <DailyHabitTracker year={year} month={month} days={days} today={today} todayNumber={todayNumber} evaluatedThrough={evaluatedThrough} calendar={calendar} categories={habitCategories} habits={activeDaily.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "daily" ? dragging.id : undefined} scrollRef={tableScrollRef} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-daily", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-daily", categoryId)} goalFor={goalFor} checksFor={checksFor} missesFor={missesFor} skipsFor={skipsFor} toggleProps={longPressProps} onToggleDay={toggleDaily} onCycleException={(habitId, targetDate) => cycleException("daily", habitId, targetDate)} onManageHabit={(habit) => setActionHabit({ type: "daily", habit })} onDragStart={(id) => setDragging({ type: "daily", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("daily", sourceId, targetId)} />
           ) : (
             <WeeklyHabitTracker year={year} month={month} monthName={monthNames[month]} today={today} isPastMonth={isPastMonth} monthWeeks={monthWeeks} currentMonthWeek={currentMonthWeek} categories={habitCategories} habits={activeWeekly.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "weekly" ? dragging.id : undefined} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-weekly", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-weekly", categoryId)} checksFor={weeklyChecksFor} onChangeCount={changeWeeklyCount} onManageHabit={(habit) => setActionHabit({ type: "weekly", habit: habit as WeeklyHabit })} onDragStart={(id) => setDragging({ type: "weekly", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("weekly", sourceId, targetId)} />
           )}
-          <SyncStatus status={syncStatus} onUseRemote={resolveConflictWithRemote} onKeepLocal={resolveConflictWithLocal} />
-        </section>
-        </>}
+        </HabitsView>}
       </div>
 
       {templateModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setTemplateModal(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -1405,8 +1182,8 @@ export default function Home() {
         <button className="add-button full" disabled={!bookTitle.trim()} onClick={saveBook}>{editingBookId === null ? "Añadir libro" : "Guardar cambios"}</button>
       </div></div>}
 
-      {fitnessGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setFitnessGoal(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={() => setFitnessGoal(null)} aria-label="Cerrar">×</button><p className="eyebrow">SAMSUNG HEALTH</p><h2>Actualizar composición corporal</h2>
+      {fitnessGoal && <div className="modal-backdrop" role="presentation" onMouseDown={closeFitnessEditor}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="close" onClick={closeFitnessEditor} aria-label="Cerrar">×</button><p className="eyebrow">SAMSUNG HEALTH</p><h2>Actualizar composición corporal</h2>
         <label className="health-upload">Subir captura de Samsung Health<input type="file" accept="image/*" onChange={(event) => void importSamsungHealth(event.target.files?.[0])} /><span>{fitnessImporting ? "Analizando…" : "Seleccionar captura"}</span></label>
         {fitnessImportMessage && <p className="import-message">{fitnessImportMessage}</p>}
         <div className="goal-form-row fitness-fields">{(Object.entries(fitnessMetricMeta) as [FitnessMetric, { label: string; unit: string }][]).map(([key, meta]) => <label key={key}>{meta.label}{meta.unit ? ` (${meta.unit})` : ""}<input required inputMode="decimal" value={fitnessDraft[key]} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, [key]: event.target.value }))} /></label>)}</div>

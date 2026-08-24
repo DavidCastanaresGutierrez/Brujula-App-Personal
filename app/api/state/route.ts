@@ -1,5 +1,12 @@
 import { getSupabaseServerClient } from "../../../lib/supabase/server";
 import { isValidStateRevision, validateTrackerState, type ValidTrackerState } from "../../../lib/domain/state-validation";
+import {
+  isMissingCompletionHistoryRpc,
+  mapAggregatedCompletionRows,
+  mapCompletionRows,
+  type AggregatedCompletionRow,
+  type CompletionRow,
+} from "../../../lib/supabase/completion-history";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -35,12 +42,6 @@ type HabitRow = {
   weekdays_only: boolean;
   schedule: Record<string, unknown> | null;
   celebrated_streak_30: string | null;
-};
-
-type CompletionRow = {
-  habit_id: number;
-  period_key: string;
-  value: number;
 };
 
 type MotivationRow = { text: string; position: number };
@@ -116,15 +117,9 @@ export async function GET(request: Request) {
       color: category.color,
       priority: category.priority || undefined,
     }));
-    const completions = completionsResult.data as CompletionRow[];
-    const historyByHabit = new Map<number, Record<string, number[]>>();
-
-    completions.forEach((completion) => {
-      const history = historyByHabit.get(completion.habit_id) ?? {};
-      history[completion.period_key] = [...(history[completion.period_key] ?? []), completion.value]
-        .sort((a, b) => a - b);
-      historyByHabit.set(completion.habit_id, history);
-    });
+    const historyByHabit = completionsResult.aggregated
+      ? mapAggregatedCompletionRows(completionsResult.data as AggregatedCompletionRow[])
+      : mapCompletionRows(completionsResult.data as CompletionRow[]);
 
     const mapHabit = (habit: HabitRow) => ({
       id: Number(habit.id),
@@ -187,7 +182,7 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
   const [categoriesResult, habitsResult, completionsResult, motivationsResult, goalsResult, weeklyReviewsResult] = await Promise.all([
     supabase.from("categories").select("id,label,icon,color,position,priority").order("position"),
     supabase.from("habits").select("id,category_id,kind,name,goal,color,position,archived,archived_at,misses,skips,every_day,weekdays_only,schedule,celebrated_streak_30").order("position"),
-    supabase.from("habit_completions").select("habit_id,period_key,value"),
+    readCompletionHistory(supabase),
     supabase.from("motivational_quotes").select("text,position").order("position"),
     supabase.from("goals").select("id,title,category_id,period,period_key,measurement,target_value,current_value,unit,status,due_date,position,linked_habit_id,metadata,created_at").order("position"),
     supabase.from("weekly_reviews").select("week_start,priorities,adjustment,reflection,updated_at").order("week_start", { ascending: false }),
@@ -207,6 +202,17 @@ async function readStateSnapshot(supabase: ReturnType<typeof getSupabaseServerCl
     revisionBefore: Number(versionBeforeResult.data?.revision ?? 0),
     revisionAfter: Number(versionResult.data?.revision ?? 0),
   };
+}
+
+async function readCompletionHistory(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const aggregatedResult = await supabase.rpc("get_habit_completion_history");
+  if (!aggregatedResult.error) return { ...aggregatedResult, aggregated: true as const };
+  if (!isMissingCompletionHistoryRpc(aggregatedResult.error)) {
+    return { ...aggregatedResult, aggregated: true as const };
+  }
+
+  const legacyResult = await supabase.from("habit_completions").select("habit_id,period_key,value");
+  return { ...legacyResult, aggregated: false as const };
 }
 
 export async function PUT(request: Request) {

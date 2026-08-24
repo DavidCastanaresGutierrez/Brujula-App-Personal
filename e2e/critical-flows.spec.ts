@@ -99,11 +99,32 @@ test("crear un objetivo cuantitativo y sumar progreso conserva el flujo completo
   await expect(goalCard).toBeVisible();
   const progressInput = goalCard.getByLabel("Cantidad que añadir a Ahorrar para vacaciones");
   await progressInput.fill("2");
-  const closureConfirmation = page.getByRole("button", { name: "Entendido" });
-  if (await closureConfirmation.isVisible()) await closureConfirmation.click();
-  await progressInput.press("Enter");
+  await goalCard.getByRole("button", { name: "Sumar" }).click();
   await expect(goalCard.getByText("2 / 5 mil €", { exact: true })).toBeVisible();
   await expect.poll(() => JSON.stringify(saved)).toContain("Ahorrar para vacaciones");
+});
+
+test("crear una lectura anual y registrar un libro terminado", async ({ page }) => {
+  await openAuthenticatedApp(page);
+  await page.getByRole("button", { name: "Objetivos" }).click();
+  await page.getByRole("button", { name: "Lectura anual" }).click();
+  const templateDialog = page.getByRole("dialog").filter({ hasText: "Lectura anual" });
+  await templateDialog.getByLabel("Libros que quieres leer este año").fill("3");
+  await templateDialog.getByRole("button", { name: "Crear objetivo" }).click();
+  const goalCard = page.locator(".goal-card").filter({ hasText: "Lectura anual" });
+  await expect(goalCard).toBeVisible();
+  await goalCard.getByRole("button", { name: "+ Libro en proceso" }).click();
+  let bookDialog = page.getByRole("dialog").filter({ hasText: "Registrar libro" });
+  await bookDialog.getByLabel("Título").fill("El infinito en un junco");
+  await bookDialog.getByRole("button", { name: "Añadir libro" }).click();
+  await expect(goalCard.getByText("0 / 3 libros", { exact: true })).toBeVisible();
+  await goalCard.getByRole("button", { name: "+ Libro terminado" }).click();
+  bookDialog = page.getByRole("dialog").filter({ hasText: "Registrar libro" });
+  await bookDialog.getByLabel("Título").fill("Hábitos atómicos");
+  await bookDialog.getByLabel("Autor").fill("James Clear");
+  await bookDialog.getByRole("button", { name: "Añadir libro" }).click();
+  await expect(goalCard.getByText("Hábitos atómicos")).toBeVisible();
+  await expect(goalCard.getByText("1 / 3 libros", { exact: true })).toBeVisible();
 });
 
 test("la clasificación mensual no penaliza los días futuros", async ({ page }) => {
