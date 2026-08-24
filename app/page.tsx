@@ -23,6 +23,7 @@ import {
   linkedGoalProgress,
   localDateKey,
   monthCalendarWeeks,
+  monthlyHabitProgressThrough,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   scheduledDaysInMonth,
@@ -709,14 +710,9 @@ export default function Home() {
     ? scheduledDaysInMonth(habit, year, month)
     : habit.goal;
   const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
-  const totalChecks = activeDaily.reduce((sum, habit) => sum + checksFor(habit).filter((d) => d <= evaluatedThrough).length, 0);
-  const effectiveGoalThrough = (habit: Habit, through: number) => habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
-    ? scheduledDaysInMonth(habit, year, month, through)
-    : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, days)));
-  const eligibleGoalThrough = (habit: Habit, through: number, key = monthKey) => Math.max(0,
-    effectiveGoalThrough(habit, through) - skipsFor(habit, key).filter((day) => day <= through).length,
-  );
-  const totalGoal = activeDaily.reduce((sum, habit) => sum + eligibleGoalThrough(habit, evaluatedThrough), 0);
+  const evaluatedHabitProgress = activeDaily.map((habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough));
+  const totalChecks = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.completed, 0);
+  const totalGoal = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.eligible, 0);
   const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -767,10 +763,8 @@ export default function Home() {
     : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
   const monthScore = scoreFromPercent(globalProgress);
   const habitCompletion = (habit: Habit) => {
-    const eligible = eligibleGoalThrough(habit, evaluatedThrough);
-    if (!eligible) return 0;
-    const completed = checksFor(habit).filter((day) => day <= evaluatedThrough).length;
-    return Math.min(1, completed / eligible);
+    const progress = monthlyHabitProgressThrough(habit, year, month, evaluatedThrough);
+    return progress.percent / 100;
   };
   const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
   const rankingItems = rankingView === "best" ? ranked : [...ranked].reverse();

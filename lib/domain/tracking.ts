@@ -6,6 +6,7 @@ export type TrackedHabit = {
   archived?: boolean;
   archivedAt?: string;
   category?: string;
+  everyDay?: boolean;
   weekdaysOnly?: boolean;
   schedule?: HabitSchedule;
   history?: Record<string, number[]>;
@@ -122,6 +123,28 @@ export function scheduledDaysInMonth(habit: TrackedHabit, year: number, monthInd
     if (habitScheduledOnDate(habit, isoDate(year, monthIndex, day))) count += 1;
   }
   return count;
+}
+
+export function monthlyHabitProgressThrough(habit: TrackedHabit, year: number, monthIndex: number, throughDay: number) {
+  const monthDays = new Date(year, monthIndex + 1, 0).getDate();
+  const through = Math.max(0, Math.min(throughDay, monthDays));
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
+    ? scheduledDaysInMonth(habit, year, monthIndex, through)
+    : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, monthDays)));
+  const skippedDays = (habit.skips?.[monthKey] ?? []).filter((day) => day <= through);
+  const skipped = skippedDays.length;
+  const eligible = Math.max(0, scheduled - skipped);
+  const completed = (habit.history?.[monthKey] ?? []).filter((day) => (
+    day <= through
+    && !skippedDays.includes(day)
+    && habitScheduledOnDate(habit, isoDate(year, monthIndex, day))
+  )).length;
+  return {
+    completed,
+    eligible,
+    percent: eligible ? Math.min(100, completed / eligible * 100) : 0,
+  };
 }
 
 export function weekdaysInMonth(year: number, monthIndex: number, throughDay?: number) {

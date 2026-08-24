@@ -15,6 +15,7 @@ import {
   linkedGoalProgress,
   isCalendarDayInFuture,
   monthCalendarWeeks,
+  monthlyHabitProgressThrough,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   weekdaysInMonth,
@@ -108,6 +109,32 @@ describe("weeklyGoalIncludesDate", () => {
 });
 
 describe("completion rules", () => {
+  it("shows a perfect current-month habit as 100% without counting future days", () => {
+    const completedDays = Array.from({ length: 21 }, (_, index) => index + 1);
+    expect(monthlyHabitProgressThrough({
+      goal: 31,
+      everyDay: true,
+      history: { "2026-08": completedDays },
+    }, 2026, 7, 21)).toEqual({ completed: 21, eligible: 21, percent: 100 });
+  });
+
+  it("removes skipped days from current-month progress", () => {
+    expect(monthlyHabitProgressThrough({
+      goal: 31,
+      everyDay: true,
+      history: { "2026-08": [1, 2, 3] },
+      skips: { "2026-08": [4] },
+    }, 2026, 7, 4)).toEqual({ completed: 3, eligible: 3, percent: 100 });
+  });
+
+  it("ignores future and unscheduled completion records", () => {
+    expect(monthlyHabitProgressThrough({
+      goal: 13,
+      schedule: { mode: "selectedWeekdays", weekdays: [1, 3, 5] },
+      history: { "2026-08": [3, 4, 5, 24] },
+    }, 2026, 7, 5)).toEqual({ completed: 2, eligible: 2, percent: 100 });
+  });
+
   it("allows at most one completion for the same day", () => {
     expect(toggleCompletionForDay([], 4)).toEqual([4]);
     expect(toggleCompletionForDay([4], 4)).toEqual([]);
