@@ -84,6 +84,28 @@ test("crear un hábito recorre interfaz, caché y guardado remoto", async ({ pag
   expect(JSON.stringify(saved)).toContain("Meditar");
 });
 
+test("crear un objetivo cuantitativo y sumar progreso conserva el flujo completo", async ({ page }) => {
+  let saved: Record<string, unknown> | undefined;
+  await openAuthenticatedApp(page, (body) => { saved = body; });
+  await page.getByRole("button", { name: "Objetivos" }).click();
+  await page.getByRole("button", { name: "+ Añadir objetivo" }).click();
+  const dialog = page.getByRole("dialog", { name: "Añadir objetivo" });
+  await dialog.getByLabel("Objetivo", { exact: true }).fill("Ahorrar para vacaciones");
+  await dialog.getByLabel("Cómo se mide").selectOption("quantity");
+  await dialog.getByLabel("Meta").fill("5");
+  await dialog.getByLabel("Unidad").fill("mil €");
+  await dialog.getByRole("button", { name: "Crear objetivo" }).click();
+  const goalCard = page.locator(".goal-card").filter({ hasText: "Ahorrar para vacaciones" });
+  await expect(goalCard).toBeVisible();
+  const progressInput = goalCard.getByLabel("Cantidad que añadir a Ahorrar para vacaciones");
+  await progressInput.fill("2");
+  const closureConfirmation = page.getByRole("button", { name: "Entendido" });
+  if (await closureConfirmation.isVisible()) await closureConfirmation.click();
+  await progressInput.press("Enter");
+  await expect(goalCard.getByText("2 / 5 mil €", { exact: true })).toBeVisible();
+  await expect.poll(() => JSON.stringify(saved)).toContain("Ahorrar para vacaciones");
+});
+
 test("la clasificación mensual no penaliza los días futuros", async ({ page }) => {
   await openAuthenticatedApp(page);
   const rankedHabit = page.locator(".rank-row").filter({ hasText: "Caminar" });

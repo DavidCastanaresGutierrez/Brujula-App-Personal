@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { Session } from "@supabase/supabase-js";
-import { getSupabaseBrowserClient } from "../lib/supabase/client";
-import { belongsToActiveUser, decideRemoteRevision, shouldRetryPendingSave } from "../lib/domain/sync";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
+import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
   calculateProportionalGoalBonus,
   calculateWeightedHabitDays,
@@ -30,8 +28,8 @@ import {
   scheduledDaysInMonth,
 } from "../lib/domain/tracking";
 import type { HabitSchedule } from "../lib/domain/tracking";
-import { removeGoalAndChildReferences, removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
-import { parseStoredStringSet, parseStoredTrackerState, readStoredValue, writeStoredValue } from "../lib/domain/storage";
+import { removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
+import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
 import { FitnessChart, Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessEntry, type FitnessMetric } from "./components/charts";
@@ -39,10 +37,11 @@ import { AuthGate, Brand, ResetPassword } from "./components/auth";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
-import { SyncStatus, type SyncStatusValue } from "./components/sync-status";
+import { SyncStatus } from "./components/sync-status";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
-import { trackerStatesEqual as statesEqual, type BookEntry, type BookFormat, type Category, type Goal, type GoalStep, type Habit, type HabitCategory, type TrackerState, type WeeklyHabit } from "../lib/domain/tracker-state";
-import { fetchRemoteTrackerState, saveRemoteTrackerState, subscribeToTrackerRevisions, TrackerSyncError } from "../lib/supabase/tracker-sync";
+import type { BookEntry, BookFormat, Category, Goal, GoalStep, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
+import { useTrackerSync } from "./hooks/use-tracker-sync";
+import { useGoalManager } from "./hooks/use-goal-manager";
 
 type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
 type MainView = "summary" | "today" | "week" | "habits" | "goals";
@@ -196,34 +195,32 @@ function streakContaining(history: Record<string, number[]> | undefined, target:
 export default function Home() {
   const [mainView, setMainView] = useState<MainView>("summary");
   const [dayViewDate, setDayViewDate] = useState(() => new Date());
-  const [daily, setDaily] = useState(initialDaily);
-  const [weekly, setWeekly] = useState(initialWeekly);
-  const [habitCategories, setHabitCategories] = useState<Category[]>(defaultCategories);
-  const [motivations, setMotivations] = useState<string[]>(dailyMotivations);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [weeklyReviews, setWeeklyReviews] = useState<WeeklyReview[]>([]);
+  const today = new Date();
+  const {
+    daily, setDaily, weekly, setWeekly, habitCategories, setHabitCategories, motivations, setMotivations,
+    goals, setGoals, weeklyReviews, setWeeklyReviews, hydrated, syncStatus, session, authReady,
+    passwordRecovery, completePasswordRecovery, resolveConflictWithRemote, resolveConflictWithLocal,
+  } = useTrackerSync({
+    initialState: { daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [], weeklyReviews: [] },
+    fallbackMotivations: dailyMotivations,
+    normalizeState,
+  });
+  const {
+    goalModalOpen, goalTitle, setGoalTitle, goalPeriod, setGoalPeriod, goalMeasurement, setGoalMeasurement,
+    goalTarget, setGoalTarget, goalUnit, setGoalUnit, goalCategory, setGoalCategory,
+    goalLinkedHabitIds, setGoalLinkedHabitIds, goalParentAnnualId, setGoalParentAnnualId,
+    goalFilter, setGoalFilter, goalCategoryFilter, setGoalCategoryFilter, draggingGoalId,
+    goalProgressDrafts, setGoalProgressDrafts, planningGoalId, goalStepDraft, setGoalStepDraft,
+    editingGoalId, deletingGoal, setDeletingGoal, openNewGoal, closeGoalModal, createGoal, startGoalEdit,
+    updateGoalProgress, markGoalNotCompleted, addGoalProgress, beginGoalPlanning, cancelGoalPlanning,
+    addGoalStep, toggleGoalStep, removeGoalStep, deleteGoal, archiveGoal, restoreGoal,
+    moveWeeklyGoalToCurrentWeek, startGoalPointerDrag, moveGoalPointerDrag, finishGoalPointerDrag, cancelGoalPointerDrag,
+  } = useGoalManager({ setGoals, today });
   const [weeklyPlanDraft, setWeeklyPlanDraft] = useState({ priorities: ["", "", ""], adjustment: "", reflection: "" });
   const [weeklyPlanSaved, setWeeklyPlanSaved] = useState(false);
   const [reviewWeekKey, setReviewWeekKey] = useState(() => previousWeekBounds(new Date()).key);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(() => new Set());
   const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
-  const [goalModalOpen, setGoalModalOpen] = useState(false);
-  const [goalTitle, setGoalTitle] = useState("");
-  const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>("monthly");
-  const [goalMeasurement, setGoalMeasurement] = useState<"complete" | "quantity">("complete");
-  const [goalTarget, setGoalTarget] = useState(1);
-  const [goalUnit, setGoalUnit] = useState("");
-  const [goalCategory, setGoalCategory] = useState<HabitCategory>("health");
-  const [goalLinkedHabitIds, setGoalLinkedHabitIds] = useState<number[]>([]);
-  const [goalParentAnnualId, setGoalParentAnnualId] = useState<number | "">("");
-  const [goalFilter, setGoalFilter] = useState<"weekly" | "monthly" | "yearly">("yearly");
-  const [goalCategoryFilter, setGoalCategoryFilter] = useState<HabitCategory | "all">("all");
-  const [draggingGoalId, setDraggingGoalId] = useState<number | null>(null);
-  const [goalProgressDrafts, setGoalProgressDrafts] = useState<Record<number, string>>({});
-  const [planningGoalId, setPlanningGoalId] = useState<number | null>(null);
-  const [goalStepDraft, setGoalStepDraft] = useState<{ kind: GoalStep["kind"]; title: string; dueDate: string }>({ kind: "action", title: "", dueDate: "" });
-  const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
-  const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null);
   const [templateModal, setTemplateModal] = useState<null | "fitness" | "reading">(null);
   const [templateHabitIds, setTemplateHabitIds] = useState<number[]>([]);
   const [readingTarget, setReadingTarget] = useState(12);
@@ -282,24 +279,7 @@ export default function Home() {
   const [categoryIcon, setCategoryIcon] = useState("●");
   const [deletingCategoryId, setDeletingCategoryId] = useState<HabitCategory | null>(null);
   const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
-  const [hydrated, setHydrated] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatusValue>("loading");
-  const [remoteConflict, setRemoteConflict] = useState<{ state: TrackerState; revision: number } | null>(null);
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [passwordRecovery, setPasswordRecovery] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const baselineRef = useRef<TrackerState | null>(null);
-  const revisionRef = useRef(0);
-  const conflictRef = useRef(false);
-  const pendingRemoteRevisionRef = useRef<number | null>(null);
-  const pullLatestRef = useRef<(() => Promise<void>) | null>(null);
-  const stateRef = useRef<TrackerState>({ daily: initialDaily, weekly: initialWeekly, categories: defaultCategories, motivations: dailyMotivations, goals: [], weeklyReviews: [] });
-  const syncInFlight = useRef(false);
-  const pendingLocalSaveRef = useRef(false);
-  const activeUserIdRef = useRef<string | null>(null);
-  const syncGenerationRef = useRef(0);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -364,309 +344,10 @@ export default function Home() {
     setBackupMessage("Copia restaurada. Los datos se sincronizarán automáticamente.");
   }
 
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data }) => {
-      activeUserIdRef.current = data.session?.user.id ?? null;
-      setSession(data.session);
-      setAuthReady(true);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      activeUserIdRef.current = nextSession?.user.id ?? null;
-      syncGenerationRef.current += 1;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      syncInFlight.current = false;
-      pendingLocalSaveRef.current = false;
-      setHydrated(false);
-      setSyncStatus("loading");
-      revisionRef.current = 0;
-      conflictRef.current = false;
-      pendingRemoteRevisionRef.current = null;
-      setRemoteConflict(null);
-      setSession(nextSession);
-      setAuthReady(true);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    stateRef.current = { daily, weekly, categories: habitCategories, motivations, goals, weeklyReviews };
-  }, [daily, weekly, habitCategories, motivations, goals, weeklyReviews]);
-
-  useEffect(() => {
-    if (!authReady || !session) return;
-    const accessToken = session.access_token;
-    const storageKey = `brujula-state-v1:${session.user.id}`;
-    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const revisionKey = `brujula-revision-v1:${session.user.id}`;
-    let cancelled = false;
-    const localState = parseStoredTrackerState(readStoredValue(localStorage, storageKey)) as TrackerState | null;
-    const localBaseline = parseStoredTrackerState(readStoredValue(localStorage, baselineKey)) as TrackerState | null;
-    const storedRevision = Number(readStoredValue(localStorage, revisionKey));
-
-    async function loadState() {
-      try {
-        const payload = await fetchRemoteTrackerState(accessToken);
-        const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
-        const remoteChangedSinceLocalBaseline = !Number.isSafeInteger(storedRevision) || payload.revision > storedRevision;
-        const hasStartupConflict = Boolean(payload.state && localState && hasPendingLocalChanges && remoteChangedSinceLocalBaseline);
-        const state = hasPendingLocalChanges && localState ? localState : (payload.state ?? localState);
-        if (cancelled) return;
-        if (state) {
-          const normalized = normalizeState(state);
-          setDaily(normalized.daily);
-          setWeekly(normalized.weekly);
-          setHabitCategories(normalized.categories);
-          setGoals(normalized.goals);
-          setWeeklyReviews(normalized.weeklyReviews);
-          const savedMotivations = (state.motivations?.length ? state.motivations : localState?.motivations)?.filter((item) => item.trim()) ?? [];
-          setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
-        }
-        baselineRef.current = payload.state ? normalizeState(payload.state) : null;
-        revisionRef.current = payload.revision;
-        writeStoredValue(localStorage, baselineKey, JSON.stringify(baselineRef.current));
-        writeStoredValue(localStorage, revisionKey, String(payload.revision));
-        if (hasStartupConflict && payload.state) {
-          conflictRef.current = true;
-          setRemoteConflict({ state: normalizeState(payload.state), revision: payload.revision });
-          setSyncStatus("conflict");
-        } else {
-          conflictRef.current = false;
-          setRemoteConflict(null);
-          setSyncStatus("synced");
-        }
-      } catch {
-        if (!cancelled && localState) {
-          const normalized = normalizeState(localState);
-          setDaily(normalized.daily);
-          setWeekly(normalized.weekly);
-          setHabitCategories(normalized.categories);
-          setGoals(normalized.goals);
-          setWeeklyReviews(normalized.weeklyReviews);
-          const savedMotivations = localState.motivations?.filter((item) => item.trim()) ?? [];
-          setMotivations(savedMotivations.length ? savedMotivations : dailyMotivations);
-        }
-        if (!cancelled) setSyncStatus(navigator.onLine ? "error" : "offline");
-      } finally {
-        if (!cancelled) setHydrated(true);
-      }
-    }
-    loadState();
-    return () => { cancelled = true; };
-  }, [authReady, session]);
-
-  useEffect(() => {
-    if (!hydrated || !session) return;
-    const savingUserId = session.user.id;
-    const storageKey = `brujula-state-v1:${session.user.id}`;
-    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const revisionKey = `brujula-revision-v1:${session.user.id}`;
-    const state = { daily, weekly, categories: habitCategories, motivations, goals, weeklyReviews };
-    writeStoredValue(localStorage, storageKey, JSON.stringify(state));
-    if (statesEqual(state, baselineRef.current)) return;
-    if (conflictRef.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      if (syncInFlight.current) {
-        pendingLocalSaveRef.current = true;
-        return;
-      }
-      syncInFlight.current = true;
-      const syncGeneration = syncGenerationRef.current;
-      setSyncStatus("saving");
-      try {
-        const supabase = getSupabaseBrowserClient();
-        const { data, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError || !data.session) throw sessionError ?? new Error("La sesión ha caducado");
-        if (!belongsToActiveUser(savingUserId, data.session.user.id) || !belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
-        const snapshot = stateRef.current;
-        const payload = await saveRemoteTrackerState(data.session.access_token, baselineRef.current, snapshot, revisionRef.current);
-        if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
-        baselineRef.current = snapshot;
-        revisionRef.current = payload.revision;
-        writeStoredValue(localStorage, baselineKey, JSON.stringify(snapshot));
-        writeStoredValue(localStorage, revisionKey, String(payload.revision));
-        setSyncStatus("synced");
-      } catch (error) {
-        if (belongsToActiveUser(savingUserId, activeUserIdRef.current)) {
-          if (error instanceof TrackerSyncError && error.conflict) {
-            conflictRef.current = true;
-            setSyncStatus("conflict");
-          } else setSyncStatus(navigator.onLine ? "error" : "offline");
-        }
-      } finally {
-        if (syncGeneration !== syncGenerationRef.current) return;
-        syncInFlight.current = false;
-        if (!belongsToActiveUser(savingUserId, activeUserIdRef.current)) return;
-        const shouldRetry = shouldRetryPendingSave(
-          pendingLocalSaveRef.current,
-          !statesEqual(stateRef.current, baselineRef.current),
-          conflictRef.current,
-        );
-        pendingLocalSaveRef.current = false;
-        if (shouldRetry) {
-          // Re-enter the normal debounced save path with the latest state. This
-          // prevents edits made during a slow request from remaining only local.
-          setDaily((items) => [...items]);
-        }
-        if (pendingRemoteRevisionRef.current !== null) {
-          pendingRemoteRevisionRef.current = null;
-          void pullLatestRef.current?.();
-        }
-      }
-    }, 600);
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [daily, weekly, habitCategories, motivations, goals, weeklyReviews, hydrated, session]);
-
-  useEffect(() => {
-    if (!hydrated || !session) return;
-    const retry = () => {
-      if (document.visibilityState === "visible" || navigator.onLine) {
-        // Trigger the normal diff-based save without inventing a second sync path.
-        setDaily((items) => [...items]);
-      }
-    };
-    window.addEventListener("online", retry);
-    document.addEventListener("visibilitychange", retry);
-    return () => {
-      window.removeEventListener("online", retry);
-      document.removeEventListener("visibilitychange", retry);
-    };
-  }, [hydrated, session]);
-
-  useEffect(() => {
-    if (!hydrated || !session) return;
-    let cancelled = false;
-    let pulling = false;
-    const storageKey = `brujula-state-v1:${session.user.id}`;
-    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const revisionKey = `brujula-revision-v1:${session.user.id}`;
-
-    const pullLatest = async () => {
-      if (pulling || !navigator.onLine) return;
-      if (syncInFlight.current) {
-        pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, revisionRef.current + 1);
-        return;
-      }
-      pulling = true;
-      pendingRemoteRevisionRef.current = null;
-      try {
-        const supabase = getSupabaseBrowserClient();
-        const { data } = await supabase.auth.getSession();
-        if (!data.session) return;
-        const payload = await fetchRemoteTrackerState(data.session.access_token).catch(() => null);
-        if (!payload) return;
-        if (cancelled || !payload.state) return;
-        const serverState = normalizeState(payload.state);
-        const localState = stateRef.current;
-        const hasPendingLocalChanges = !statesEqual(localState, baselineRef.current);
-        const action = decideRemoteRevision(revisionRef.current, payload.revision, hasPendingLocalChanges);
-        if (action === "ignore") {
-          if (!hasPendingLocalChanges && !conflictRef.current) setSyncStatus("synced");
-          return;
-        }
-        if (action === "conflict") {
-          conflictRef.current = true;
-          setRemoteConflict({ state: serverState, revision: payload.revision });
-          setSyncStatus("conflict");
-          return;
-        }
-        const nextState = serverState;
-        baselineRef.current = serverState;
-        revisionRef.current = payload.revision;
-        writeStoredValue(localStorage, baselineKey, JSON.stringify(serverState));
-        writeStoredValue(localStorage, revisionKey, String(payload.revision));
-        writeStoredValue(localStorage, storageKey, JSON.stringify(nextState));
-        setDaily(nextState.daily);
-        setWeekly(nextState.weekly);
-        setHabitCategories(nextState.categories);
-        setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
-        setGoals(nextState.goals);
-        setWeeklyReviews(nextState.weeklyReviews);
-        conflictRef.current = false;
-        setRemoteConflict(null);
-        setSyncStatus("synced");
-      } finally {
-        pulling = false;
-      }
-    };
-    pullLatestRef.current = pullLatest;
-
-    const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
-    const onPageShow = () => void pullLatest();
-    const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, (notifiedRevision) => {
-        if (notifiedRevision !== null) pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
-        if (!syncInFlight.current) void pullLatest();
-      }, (status) => {
-        if (cancelled) return;
-        if (status === "SUBSCRIBED") {
-          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : "synced");
-          void pullLatest();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setSyncStatus((current) => current === "conflict" || current === "saving" ? current : navigator.onLine ? "error" : "offline");
-        }
-      });
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener("online", onPageShow);
-    document.addEventListener("visibilitychange", onFocus);
-    void pullLatest();
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("online", onPageShow);
-      document.removeEventListener("visibilitychange", onFocus);
-      pullLatestRef.current = null;
-      unsubscribeRealtime();
-    };
-  }, [hydrated, session]);
-
-  const resolveConflictWithRemote = () => {
-    if (!session || !remoteConflict) return;
-    const nextState = normalizeState(remoteConflict.state);
-    const storageKey = `brujula-state-v1:${session.user.id}`;
-    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const revisionKey = `brujula-revision-v1:${session.user.id}`;
-    baselineRef.current = nextState;
-    revisionRef.current = remoteConflict.revision;
-    conflictRef.current = false;
-    pendingRemoteRevisionRef.current = null;
-    writeStoredValue(localStorage, storageKey, JSON.stringify(nextState));
-    writeStoredValue(localStorage, baselineKey, JSON.stringify(nextState));
-    writeStoredValue(localStorage, revisionKey, String(remoteConflict.revision));
-    setDaily(nextState.daily);
-    setWeekly(nextState.weekly);
-    setHabitCategories(nextState.categories);
-    setMotivations(nextState.motivations.length ? nextState.motivations : dailyMotivations);
-    setGoals(nextState.goals);
-    setWeeklyReviews(nextState.weeklyReviews);
-    setRemoteConflict(null);
-    setSyncStatus("synced");
-  };
-
-  const resolveConflictWithLocal = () => {
-    if (!session || !remoteConflict) return;
-    const baselineKey = `brujula-baseline-v2:${session.user.id}`;
-    const revisionKey = `brujula-revision-v1:${session.user.id}`;
-    baselineRef.current = normalizeState(remoteConflict.state);
-    revisionRef.current = remoteConflict.revision;
-    conflictRef.current = false;
-    writeStoredValue(localStorage, baselineKey, JSON.stringify(baselineRef.current));
-    writeStoredValue(localStorage, revisionKey, String(remoteConflict.revision));
-    setRemoteConflict(null);
-    setSyncStatus("saving");
-    setDaily((items) => [...items]);
-  };
-
   const year = date.getFullYear();
   const month = date.getMonth();
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const days = new Date(year, month + 1, 0).getDate();
-  const today = new Date();
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
   const isPastMonth = year < today.getFullYear() || (year === today.getFullYear() && month < today.getMonth());
   const todayNumber = isCurrentMonth ? today.getDate() : null;
@@ -1154,132 +835,6 @@ export default function Home() {
     }
   }
 
-  function createGoal() {
-    const title = goalTitle.trim();
-    if (!title) return;
-    const period = goalPeriodDetails(goalPeriod);
-    const nextGoal: Goal = {
-      id: editingGoalId ?? Date.now(), title, category: goalCategory, period: goalPeriod, periodKey: period.key,
-      measurement: goalMeasurement, targetValue: goalMeasurement === "complete" ? 1 : Math.max(1, goalTarget),
-      currentValue: 0, unit: goalMeasurement === "quantity" ? goalUnit.trim() : "",
-      status: "active", dueDate: period.due,
-      linkedHabitId: undefined,
-      linkedHabitIds: goalMeasurement === "quantity" ? goalLinkedHabitIds : [],
-      parentAnnualGoalId: (goalPeriod === "weekly" || goalPeriod === "monthly") && goalParentAnnualId ? Number(goalParentAnnualId) : undefined,
-    };
-    setGoals((items) => editingGoalId
-      ? items.map((item) => item.id === editingGoalId ? { ...item, ...nextGoal, currentValue: item.currentValue, status: item.status, archived: item.archived, template: item.template, books: item.books, fitnessEntries: item.fitnessEntries, trackingStart: item.trackingStart } : item)
-      : [...items, nextGoal]);
-    setGoalTitle(""); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitIds([]); setGoalParentAnnualId("");
-    setEditingGoalId(null); setGoalModalOpen(false);
-    if (goalPeriod !== "daily") setGoalFilter(goalPeriod);
-  }
-
-  function startGoalEdit(goal: Goal) {
-    setEditingGoalId(goal.id); setGoalTitle(goal.title); setGoalPeriod(goal.period); setGoalMeasurement(goal.measurement);
-    setGoalTarget(goal.targetValue); setGoalUnit(goal.unit ?? ""); setGoalCategory(goal.category);
-    setGoalLinkedHabitIds([...new Set([...(goal.linkedHabitIds ?? []), ...(goal.linkedHabitId ? [goal.linkedHabitId] : [])])]);
-    setGoalParentAnnualId(goal.parentAnnualGoalId ?? "");
-    setGoalModalOpen(true);
-  }
-
-  function updateGoalProgress(goal: Goal, value: number) {
-    const currentValue = Math.max(0, Math.min(value, goal.targetValue));
-    setGoals((items) => items.map((item) => item.id === goal.id
-      ? { ...item, currentValue, status: currentValue >= item.targetValue ? "completed" : "active" }
-      : item));
-  }
-
-  function markGoalNotCompleted(goal: Goal) {
-    setGoals((items) => items.map((item) => item.id === goal.id
-      ? { ...item, status: "discarded" }
-      : item));
-  }
-
-  function addGoalProgress(goal: Goal) {
-    const amount = Number(goalProgressDrafts[goal.id] ?? "");
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    updateGoalProgress(goal, goal.currentValue + amount);
-    setGoalProgressDrafts((drafts) => ({ ...drafts, [goal.id]: "" }));
-  }
-
-  function addGoalStep(goal: Goal) {
-    const title = goalStepDraft.title.trim();
-    if (!title || !goalStepDraft.dueDate) return;
-    const step: GoalStep = { id: Date.now(), kind: goalStepDraft.kind, title, dueDate: goalStepDraft.dueDate, completed: false };
-    setGoals((items) => items.map((item) => item.id === goal.id ? { ...item, steps: [...(item.steps ?? []), step] } : item));
-    setGoalStepDraft({ kind: "action", title: "", dueDate: "" });
-    setPlanningGoalId(null);
-  }
-
-  function toggleGoalStep(goalId: number, stepId: number) {
-    setGoals((items) => items.map((goal) => goal.id === goalId
-      ? { ...goal, steps: (goal.steps ?? []).map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step) }
-      : goal));
-  }
-
-  function removeGoalStep(goalId: number, stepId: number) {
-    setGoals((items) => items.map((goal) => goal.id === goalId
-      ? { ...goal, steps: (goal.steps ?? []).filter((step) => step.id !== stepId) }
-      : goal));
-  }
-
-  function deleteGoal(id: number) {
-    setGoals((items) => removeGoalAndChildReferences(items, id));
-    setDeletingGoal(null);
-  }
-
-  function archiveGoal(id: number) {
-    setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, archived: true } : goal));
-  }
-
-  function restoreGoal(id: number) {
-    setGoals((items) => items.map((goal) => goal.id === id ? { ...goal, archived: false } : goal));
-  }
-
-  function moveWeeklyGoalToCurrentWeek(id: number) {
-    const period = goalPeriodDetails("weekly", today);
-    setGoals((items) => items.map((goal) => goal.id === id
-      ? { ...goal, periodKey: period.key, dueDate: period.due, currentValue: 0, status: "active" }
-      : goal));
-  }
-
-  function reorderGoal(sourceId: number, targetId: number) {
-    if (sourceId === targetId || goalCategoryFilter !== "all") return;
-    setGoals((items) => {
-      const sourceIndex = items.findIndex((goal) => goal.id === sourceId);
-      const targetIndex = items.findIndex((goal) => goal.id === targetId);
-      if (sourceIndex < 0 || targetIndex < 0) return items;
-      const next = [...items];
-      const [moved] = next.splice(sourceIndex, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
-    setDraggingGoalId(null);
-  }
-
-  function startGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>, goalId: number) {
-    if (goalCategoryFilter !== "all") return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.currentTarget.dataset.dropTargetId = String(goalId);
-    setDraggingGoalId(goalId);
-  }
-
-  function moveGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>) {
-    if (draggingGoalId === null) return;
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-goal-id]");
-    if (target?.dataset.goalId) event.currentTarget.dataset.dropTargetId = target.dataset.goalId;
-  }
-
-  function finishGoalPointerDrag(event: React.PointerEvent<HTMLButtonElement>, sourceId: number) {
-    const targetId = Number(event.currentTarget.dataset.dropTargetId);
-    delete event.currentTarget.dataset.dropTargetId;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (Number.isFinite(targetId)) reorderGoal(sourceId, targetId);
-    else setDraggingGoalId(null);
-  }
-
   function createTemplateGoal() {
     if (!templateModal) return;
     const period = goalPeriodDetails("yearly");
@@ -1582,7 +1137,7 @@ export default function Home() {
   if (!authReady) {
     return <main className="auth-page"><p className="eyebrow">CARGANDO BRÚJULA…</p></main>;
   }
-  if (passwordRecovery) return <ResetPassword onComplete={() => setPasswordRecovery(false)} />;
+  if (passwordRecovery) return <ResetPassword onComplete={completePasswordRecovery} />;
   if (!session) return <AuthGate />;
 
   return (
@@ -1751,7 +1306,7 @@ export default function Home() {
               </button>
               <button className="template-button" onClick={() => setTemplateModal("fitness")}><span aria-hidden="true">♥</span>Forma física</button>
               <button className="template-button" onClick={() => setTemplateModal("reading")}><span aria-hidden="true">▥</span>Lectura anual</button>
-              <button className="add-button" onClick={() => { setEditingGoalId(null); setGoalTitle(""); setGoalPeriod("monthly"); setGoalMeasurement("complete"); setGoalTarget(1); setGoalUnit(""); setGoalLinkedHabitIds([]); setGoalParentAnnualId(""); setGoalModalOpen(true); }}>+ Añadir objetivo</button>
+              <button className="add-button" onClick={openNewGoal}>+ Añadir objetivo</button>
             </div>
           </div>
           <div className="goal-toolbar">
@@ -1774,7 +1329,7 @@ export default function Home() {
             const archivedMilestones = linkedMilestones.length - visibleMilestones.length;
             const isOverdueWeekly = goal.period === "weekly" && goal.status === "active" && goal.dueDate < realTodayKey;
             return <article data-goal-id={goal.id} className={`goal-card ${draggingGoalId === goal.id ? "is-dragging" : ""}`} key={goal.id} style={{ "--goal-color": category?.color ?? "#39c6a4" } as CSSProperties}>
-              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button type="button" className="goal-drag-handle" disabled={goalCategoryFilter !== "all"} onPointerDown={(event) => startGoalPointerDrag(event, goal.id)} onPointerMove={moveGoalPointerDrag} onPointerUp={(event) => finishGoalPointerDrag(event, goal.id)} onPointerCancel={() => setDraggingGoalId(null)} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button>{goal.status === "completed" && <button className="goal-archive" onClick={() => archiveGoal(goal.id)} aria-label={`Archivar ${goal.title}`} title="Archivar objetivo completado">▣</button>}<button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
+              <div className="goal-card-head"><span>{category?.icon} {category?.label}</span><div className="goal-card-actions"><button type="button" className="goal-drag-handle" disabled={goalCategoryFilter !== "all"} onPointerDown={(event) => startGoalPointerDrag(event, goal.id)} onPointerMove={moveGoalPointerDrag} onPointerUp={(event) => finishGoalPointerDrag(event, goal.id)} onPointerCancel={cancelGoalPointerDrag} aria-label={`Arrastrar ${goal.title} para reordenar`} title={goalCategoryFilter === "all" ? "Arrastrar para reordenar" : "Quita el filtro para reordenar"}>⠿</button>{goal.status === "completed" && <button className="goal-archive" onClick={() => archiveGoal(goal.id)} aria-label={`Archivar ${goal.title}`} title="Archivar objetivo completado">▣</button>}<button onClick={() => startGoalEdit(goal)} aria-label={`Editar ${goal.title}`}>✎</button><button onClick={() => setDeletingGoal(goal)} aria-label={`Borrar ${goal.title}`}>×</button></div></div>
               <h3>{goal.title}</h3>
               {isOverdueWeekly && <small className="goal-overdue-label">Pendiente de la semana anterior</small>}
               {parentAnnualGoal && <small className="goal-parent-link">Hito de: {parentAnnualGoal.title}</small>}
@@ -1782,7 +1337,7 @@ export default function Home() {
               <div className="goal-card-foot"><strong>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ""}</strong><span>{progress}% · hasta {new Date(`${goal.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span></div>
               {linkedMilestones.length > 0 && <div className="goal-milestones"><strong>{linkedMilestones.filter((item) => item.status === "completed").length} de {linkedMilestones.length} objetivos vinculados</strong>{visibleMilestones.map((item) => <span key={item.id} className={item.status === "completed" ? "done" : ""}>{item.status === "completed" ? "✓" : "○"} {item.title}</span>)}{archivedMilestones > 0 && <small>{archivedMilestones} {archivedMilestones === 1 ? "hito archivado incluido" : "hitos archivados incluidos"}</small>}</div>}
               {(goal.steps ?? []).length > 0 && <div className="goal-plan"><div className="goal-plan-summary"><strong>Plan</strong><span>{(goal.steps ?? []).filter((step) => step.completed).length}/{(goal.steps ?? []).length}</span></div>{(goal.steps ?? []).slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map((step) => <div className={`goal-step ${step.completed ? "done" : ""}`} key={step.id}><button className="goal-step-toggle" onClick={() => toggleGoalStep(goal.id, step.id)} aria-label={`${step.completed ? "Reabrir" : "Completar"} ${step.title}`}>{step.completed ? "✓" : "○"}</button><span><strong>{step.title}</strong><small>{step.kind === "milestone" ? "Hito" : "Acción"} · {new Date(`${step.dueDate}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</small></span><button className="goal-step-delete" onClick={() => removeGoalStep(goal.id, step.id)} aria-label={`Eliminar ${step.title}`}>×</button></div>)}</div>}
-              {planningGoalId === goal.id ? <form className="goal-step-form" onSubmit={(event) => { event.preventDefault(); addGoalStep(goal); }}><select value={goalStepDraft.kind} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, kind: event.target.value as GoalStep["kind"] }))}><option value="action">Acción</option><option value="milestone">Hito</option></select><input maxLength={160} value={goalStepDraft.title} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, title: event.target.value }))} placeholder="Qué hay que conseguir" aria-label="Título del paso" /><input type="date" value={goalStepDraft.dueDate} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, dueDate: event.target.value }))} aria-label="Fecha del paso" /><div><button type="button" onClick={() => setPlanningGoalId(null)}>Cancelar</button><button type="submit" disabled={!goalStepDraft.title.trim() || !goalStepDraft.dueDate}>Añadir</button></div></form> : <button className="goal-add-step" onClick={() => { setPlanningGoalId(goal.id); setGoalStepDraft({ kind: "action", title: "", dueDate: goal.dueDate }); }}>+ Añadir hito o acción</button>}
+              {planningGoalId === goal.id ? <form className="goal-step-form" onSubmit={(event) => { event.preventDefault(); addGoalStep(goal); }}><select value={goalStepDraft.kind} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, kind: event.target.value as GoalStep["kind"] }))}><option value="action">Acción</option><option value="milestone">Hito</option></select><input maxLength={160} value={goalStepDraft.title} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, title: event.target.value }))} placeholder="Qué hay que conseguir" aria-label="Título del paso" /><input type="date" value={goalStepDraft.dueDate} onChange={(event) => setGoalStepDraft((draft) => ({ ...draft, dueDate: event.target.value }))} aria-label="Fecha del paso" /><div><button type="button" onClick={cancelGoalPlanning}>Cancelar</button><button type="submit" disabled={!goalStepDraft.title.trim() || !goalStepDraft.dueDate}>Añadir</button></div></form> : <button className="goal-add-step" onClick={() => beginGoalPlanning(goal)}>+ Añadir hito o acción</button>}
               {goal.template === "reading" ? <><div className="book-add-actions"><button className="goal-complete" onClick={() => openBookEditor(goal)}>+ Libro en proceso</button><button className="goal-complete" onClick={() => openBookEditor(goal, undefined, "completed")}>+ Libro terminado</button></div><div className="goal-entry-list">{(goal.books ?? []).slice().reverse().map((book) => <div className="book-entry" key={book.id}><span><strong>{book.title}</strong><small>{book.author || "Autor no indicado"} · {{ audio: "Audiolibro", digital: "Electrónico", paper: "Papel" }[book.format]}</small></span><span className="book-entry-actions">{!isBookCompleted(book) && <button onClick={() => completeBook(goal.id, book.id)}>Terminar</button>}<button onClick={() => openBookEditor(goal, book)} aria-label={`Editar ${book.title}`}>Editar</button><button className="danger" onClick={() => removeBook(goal.id, book.id)} aria-label={`Eliminar ${book.title}`}>×</button></span></div>)}</div><small className="goal-consistency">{(goal.books ?? []).filter((book) => !isBookCompleted(book)).length} en proceso · {(goal.books ?? []).filter(isBookCompleted).length} terminados · Constancia: {goal.linkedHabitId ? `${yearlyHabitPercent(goal.linkedHabitId)}%` : "sin hábito vinculado"}</small></>
                 : goal.template === "fitness" ? <><small className="goal-consistency">{(goal.linkedHabitIds ?? []).length ? `${(goal.linkedHabitIds ?? []).length} hábitos · cada uno pondera ${(100 / (goal.linkedHabitIds ?? []).length).toFixed(2)}% al día` : "Sin hábitos vinculados"}</small><button className="goal-complete" onClick={() => setFitnessGoal(goal)}>+ Actualizar métricas</button><div className="fitness-chart-controls"><select value={fitnessMetric} onChange={(event) => setFitnessMetric(event.target.value as FitnessMetric)}>{Object.entries(fitnessMetricMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select><div className="tabs">{([30, 90, 365] as const).map((period) => <button key={period} className={fitnessPeriod === period ? "active" : ""} onClick={() => setFitnessPeriod(period)}>{period === 30 ? "30 días" : period === 90 ? "3 meses" : "1 año"}</button>)}</div></div><FitnessChart entries={goal.fitnessEntries ?? []} metric={fitnessMetric} period={fitnessPeriod} /></>
                 : isOverdueWeekly ? <div className="goal-weekly-actions"><button onClick={() => moveWeeklyGoalToCurrentWeek(goal.id)}>Mover a esta semana</button><button className="danger" onClick={() => setDeletingGoal(goal)}>Eliminar</button></div>
@@ -1864,9 +1419,9 @@ export default function Home() {
         <button className="danger-button full" onClick={() => deleteGoal(deletingGoal.id)}>Borrar definitivamente</button>
       </div></div>}
 
-      {goalModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => { setGoalModalOpen(false); setEditingGoalId(null); }}>
+      {goalModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={closeGoalModal}>
         <div className="modal goal-editor-modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="close" onClick={() => { setGoalModalOpen(false); setEditingGoalId(null); }} aria-label="Cerrar">×</button>
+          <button className="close" onClick={closeGoalModal} aria-label="Cerrar">×</button>
           <p className="eyebrow">{editingGoalId ? "EDITAR RESULTADO" : "NUEVO RESULTADO"}</p><h2 id="goal-modal-title">{editingGoalId ? "Editar objetivo" : "Añadir objetivo"}</h2>
           <label>Objetivo<input autoFocus maxLength={160} value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Ej. Ahorrar 4.000 €" /></label>
           <label>Periodo<select value={goalPeriod === "daily" ? "weekly" : goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
