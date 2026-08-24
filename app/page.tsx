@@ -30,101 +30,24 @@ import { removeHabitFromGoals, replaceCategory } from "../lib/domain/relationshi
 import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
-import { Ring, TrendChart, fitnessMetricMeta, type ChartSeries, type FitnessMetric } from "./components/charts";
+import { Ring, TrendChart, type ChartSeries } from "./components/charts";
 import { AuthGate, ResetPassword } from "./components/auth";
 import { AppHeader, ClosureNoticeCard, type ClosureNotice, type MainView } from "./components/app-shell";
 import { GoalCard } from "./components/goal-card";
 import { GoalsView } from "./components/goals-view";
 import { HabitsView } from "./components/habits-view";
+import { BookEditorDialog, DeleteGoalDialog, FitnessEditorDialog, GoalEditorDialog, GoalTemplateDialog } from "./components/goal-dialogs";
+import { HabitEditorDialog } from "./components/habit-editor-dialog";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
-import type { BookFormat, Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
+import type { Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
 import { useTrackerSync } from "./hooks/use-tracker-sync";
 import { useGoalManager } from "./hooks/use-goal-manager";
 import { useGoalTemplates } from "./hooks/use-goal-templates";
+import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, motivationForToday, palette, weeklyBarPalette } from "./config/tracker-defaults";
 
-type GoalPeriod = import("../lib/domain/tracking").GoalPeriod;
-const palette = [
-  "#ff0000", "#f97316", "#f59e0b", "#fbbf24",
-  "#84cc16", "#39c6a4", "#14b8a6", "#22d3ee", "#50b8e7", "#3b82f6",
-  "#6366f1", "#8b5cf6", "#a78bfa", "#d946ef", "#ff3b88", "#f472b6", "#fb7185",
-  "#ef476f", "#94a3b8",
-];
-const blockIcons = [
-  "♥", "✦", "⌂", "€", "▣", "●", "★", "✓",
-  "☀", "☾", "⚡", "☘", "∞", "⚖", "⚙", "☕",
-  "♫", "✎", "◆", "◇", "▲", "◉", "⚑", "↑",
-  "♜", "☯", "✈", "☎", "@", "$", "%", "&",
-];
-const weeklyBarPalette = ["#3cc9ab", "#ffb51b", "#ff3b6b", "#50b8e7", "#a78bfa", "#f472b6"];
-const defaultCategories: Category[] = [
-  { id: "health", label: "Salud", icon: "♥", color: "#39c6a4" },
-  { id: "family", label: "Familia", icon: "⌂", color: "#f472b6" },
-  { id: "growth", label: "Crecimiento personal", icon: "✦", color: "#a78bfa" },
-  { id: "finance", label: "Finanzas", icon: "€", color: "#fbbf24" },
-  { id: "work", label: "Trabajo", icon: "▣", color: "#50b8e7" },
-];
-const initialDaily: Habit[] = [
-  { id: 1, name: "Correr", goal: 16, color: palette[0], checks: [], category: "health" },
-  { id: 2, name: "Meditar", goal: 25, color: palette[1], checks: [], category: "growth" },
-  { id: 3, name: "Ducha fría", goal: 5, color: palette[2], checks: [], category: "health" },
-  { id: 4, name: "Comer saludable", goal: 25, color: palette[3], checks: [], category: "health" },
-  { id: 5, name: "Beber 2 L de agua", goal: 25, color: palette[4], checks: [], category: "health" },
-  { id: 6, name: "Leer", goal: 10, color: palette[5], checks: [], category: "growth" },
-  { id: 7, name: "Estirar", goal: 28, color: "#67e8f9", checks: [], category: "health" },
-];
-
-const initialWeekly: WeeklyHabit[] = [
-  { id: 101, name: "Colada", goal: 1, color: palette[0], checks: [], category: "family" },
-  { id: 102, name: "Preparar comidas", goal: 1, color: palette[1], checks: [], category: "health" },
-  { id: 103, name: "Limpieza", goal: 1, color: palette[2], checks: [], category: "family" },
-  { id: 104, name: "Compra", goal: 1, color: palette[3], checks: [], category: "family" },
-  { id: 105, name: "Tiempo en familia", goal: 1, color: palette[4], checks: [], category: "family" },
-];
-
-const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-const dayNames = ["D", "L", "M", "X", "J", "V", "S"];
-const dailyMotivations = [
-  "No necesitas hacerlo perfecto; necesitas volver a hacerlo hoy.",
-  "La dirección importa más que la velocidad.",
-  "Un día constante pesa más que una semana de intenciones.",
-  "Tu rutina de hoy está construyendo tu margen de mañana.",
-  "Empieza pequeño, pero termina el día habiendo avanzado.",
-  "Lo que repites acaba definiendo lo que puedes conseguir.",
-  "La motivación inicia; la constancia transforma.",
-  "No negocies con el hábito que te acerca a quien quieres ser.",
-  "Cada marca es un voto a favor de tu futuro.",
-  "Avanzar despacio sigue siendo avanzar.",
-  "Haz primero lo importante; lo urgente siempre sabe llamar.",
-  "La disciplina también consiste en saber volver.",
-  "Tu mejor racha comienza con la decisión de hoy.",
-  "Menos promesas. Más días cumplidos.",
-  "Cuida el sistema y el resultado llegará después.",
-  "No midas solo cuánto falta; mira cuánto has sostenido.",
-  "Hoy no tiene que ser extraordinario, solo coherente.",
-  "La repetición convierte el esfuerzo en identidad.",
-  "Una buena dirección corrige incluso los días difíciles.",
-  "Hazlo fácil de empezar y difícil de abandonar.",
-  "El progreso real suele parecer aburrido mientras ocurre.",
-  "Cumple contigo antes de pedirte más.",
-  "La constancia es paciencia puesta en movimiento.",
-  "Lo pequeño cuenta cuando se repite.",
-  "No esperes el momento ideal: protege el momento disponible.",
-  "Tu energía es limitada; dirige bien la primera parte.",
-  "La racha no es presión: es evidencia de que puedes.",
-  "El objetivo orienta; el hábito te lleva.",
-  "Volver después de fallar también forma parte del progreso.",
-  "Decide el rumbo y deja que los días hagan el trabajo.",
-  "Hoy es una oportunidad concreta, no una promesa abstracta.",
-];
-function motivationForToday(motivations = dailyMotivations) {
-  const available = motivations.length ? motivations : dailyMotivations;
-  const now = new Date();
-  const dayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000);
-  return available[dayNumber % available.length];
-}
 
 function inferCategory(name: string): HabitCategory {
   const value = name.toLocaleLowerCase("es");
@@ -1164,70 +1087,14 @@ export default function Home() {
         </HabitsView>}
       </div>
 
-      {templateModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setTemplateModal(null)}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={() => setTemplateModal(null)} aria-label="Cerrar">×</button>
-        <p className="eyebrow">OBJETIVO PREDETERMINADO</p><h2>{templateModal === "fitness" ? "Forma física" : "Lectura anual"}</h2>
-        <p>{templateModal === "fitness" ? "Vincula tus hábitos de Salud y registra la evolución de tu composición corporal." : "Registra cada libro terminado y mide por separado tu constancia diaria de lectura."}</p>
-        {templateModal === "reading" && <label>Libros que quieres leer este año<input type="number" min="1" max="200" value={readingTarget} onChange={(event) => setReadingTarget(Number(event.target.value))} /></label>}
-        <fieldset className="habit-link-fieldset"><legend>{templateModal === "fitness" ? "Hábitos de Salud vinculados" : "Hábito diario de lectura"}</legend>{daily.filter((habit) => !habit.archived && (templateModal === "fitness" ? habit.category === "health" : /leer|lectura/i.test(habit.name))).map((habit) => <label className="habit-link-option" key={habit.id}><input type={templateModal === "fitness" ? "checkbox" : "radio"} name="template-habit" checked={templateHabitIds.includes(habit.id)} onChange={() => setTemplateHabitIds((ids) => templateModal === "fitness" ? ids.includes(habit.id) ? ids.filter((id) => id !== habit.id) : [...ids, habit.id] : [habit.id])} /><span>{habit.name}</span></label>)}</fieldset>
-        <button className="add-button full" onClick={createTemplateGoal}>Crear objetivo</button>
-      </div></div>}
+      {templateModal && <GoalTemplateDialog template={templateModal} habits={daily} selectedHabitIds={templateHabitIds} readingTarget={readingTarget} onReadingTargetChange={setReadingTarget} onToggleHabit={(habitId) => setTemplateHabitIds((ids) => templateModal === "fitness" ? ids.includes(habitId) ? ids.filter((id) => id !== habitId) : [...ids, habitId] : [habitId])} onClose={() => setTemplateModal(null)} onCreate={createTemplateGoal} />}
+      {bookGoal && <BookEditorDialog editing={editingBookId !== null} title={bookTitle} author={bookAuthor} status={bookStatus} format={bookFormat} onTitleChange={setBookTitle} onAuthorChange={setBookAuthor} onStatusChange={setBookStatus} onFormatChange={setBookFormat} onClose={closeBookEditor} onSave={saveBook} />}
+      {fitnessGoal && <FitnessEditorDialog draft={fitnessDraft} importing={fitnessImporting} importMessage={fitnessImportMessage} onDraftChange={(metric, value) => setFitnessDraft((draft) => ({ ...draft, [metric]: value }))} onImport={(file) => void importSamsungHealth(file)} onClose={closeFitnessEditor} onSave={saveFitnessEntry} />}
+      {deletingGoal && <DeleteGoalDialog goal={deletingGoal} onClose={() => setDeletingGoal(null)} onDelete={deleteGoal} />}
 
-      {bookGoal && <div className="modal-backdrop" role="presentation" onMouseDown={closeBookEditor}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={closeBookEditor} aria-label="Cerrar">×</button><p className="eyebrow">LECTURA ANUAL</p><h2>{editingBookId === null ? "Registrar libro" : "Editar libro"}</h2>
-        <label>Título<input autoFocus value={bookTitle} onChange={(event) => setBookTitle(event.target.value)} placeholder="Título del libro" /></label>
-        <label>Autor<input value={bookAuthor} onChange={(event) => setBookAuthor(event.target.value)} placeholder="Autor del libro" /></label>
-        <label>Estado<select value={bookStatus} onChange={(event) => setBookStatus(event.target.value as "reading" | "completed")}><option value="reading">En proceso</option><option value="completed">Terminado</option></select></label>
-        <label>Formato<select value={bookFormat} onChange={(event) => setBookFormat(event.target.value as BookFormat)}><option value="paper">Papel</option><option value="digital">Electrónico</option><option value="audio">Audiolibro</option></select></label>
-        <button className="add-button full" disabled={!bookTitle.trim()} onClick={saveBook}>{editingBookId === null ? "Añadir libro" : "Guardar cambios"}</button>
-      </div></div>}
+      {goalModalOpen && <GoalEditorDialog editingGoalId={editingGoalId} title={goalTitle} period={goalPeriod} parentAnnualId={goalParentAnnualId} category={goalCategory} measurement={goalMeasurement} linkedHabitIds={goalLinkedHabitIds} target={goalTarget} unit={goalUnit} goals={goals} habits={daily} categories={habitCategories} onTitleChange={setGoalTitle} onPeriodChange={setGoalPeriod} onParentAnnualChange={setGoalParentAnnualId} onCategoryChange={setGoalCategory} onMeasurementChange={setGoalMeasurement} onToggleHabit={(habitId) => setGoalLinkedHabitIds((ids) => ids.includes(habitId) ? ids.filter((id) => id !== habitId) : [...ids, habitId])} onTargetChange={setGoalTarget} onUnitChange={setGoalUnit} onClose={closeGoalModal} onSave={createGoal} />}
 
-      {fitnessGoal && <div className="modal-backdrop" role="presentation" onMouseDown={closeFitnessEditor}><div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={closeFitnessEditor} aria-label="Cerrar">×</button><p className="eyebrow">SAMSUNG HEALTH</p><h2>Actualizar composición corporal</h2>
-        <label className="health-upload">Subir captura de Samsung Health<input type="file" accept="image/*" onChange={(event) => void importSamsungHealth(event.target.files?.[0])} /><span>{fitnessImporting ? "Analizando…" : "Seleccionar captura"}</span></label>
-        {fitnessImportMessage && <p className="import-message">{fitnessImportMessage}</p>}
-        <div className="goal-form-row fitness-fields">{(Object.entries(fitnessMetricMeta) as [FitnessMetric, { label: string; unit: string }][]).map(([key, meta]) => <label key={key}>{meta.label}{meta.unit ? ` (${meta.unit})` : ""}<input required inputMode="decimal" value={fitnessDraft[key]} onChange={(event) => setFitnessDraft((draft) => ({ ...draft, [key]: event.target.value }))} /></label>)}</div>
-        <p className="form-note">Revisa los valores detectados antes de guardarlos; la lectura automática puede confundirse según la captura.</p>
-        <button className="add-button full" disabled={Object.values(fitnessDraft).some((value) => !value.trim())} onClick={saveFitnessEntry}>Guardar valores</button>
-      </div></div>}
-
-      {deletingGoal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingGoal(null)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <p className="eyebrow">BORRAR OBJETIVO</p><h2>¿Borrar “{deletingGoal.title}”?</h2><p>También se eliminará su historial específico. Los hábitos vinculados no se borrarán y, si es un objetivo anual, sus hitos quedarán desvinculados.</p>
-        <button className="danger-button full" onClick={() => deleteGoal(deletingGoal.id)}>Borrar definitivamente</button>
-      </div></div>}
-
-      {goalModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={closeGoalModal}>
-        <div className="modal goal-editor-modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="close" onClick={closeGoalModal} aria-label="Cerrar">×</button>
-          <p className="eyebrow">{editingGoalId ? "EDITAR RESULTADO" : "NUEVO RESULTADO"}</p><h2 id="goal-modal-title">{editingGoalId ? "Editar objetivo" : "Añadir objetivo"}</h2>
-          <label>Objetivo<input autoFocus maxLength={160} value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Ej. Ahorrar 4.000 €" /></label>
-          <label>Periodo<select value={goalPeriod === "daily" ? "weekly" : goalPeriod} onChange={(event) => setGoalPeriod(event.target.value as GoalPeriod)}><option value="weekly">Esta semana</option><option value="monthly">Este mes</option><option value="yearly">Este año</option></select></label>
-          {(goalPeriod === "weekly" || goalPeriod === "monthly") && <label>Objetivo anual vinculado (opcional)<select value={goalParentAnnualId} onChange={(event) => setGoalParentAnnualId(event.target.value ? Number(event.target.value) : "")}><option value="">Sin objetivo anual vinculado</option>{goals.filter((goal) => goal.period === "yearly" && goal.periodKey === String(new Date().getFullYear()) && goal.id !== editingGoalId && goal.status !== "discarded" && !goal.archived).map((goal) => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select><small className="field-help">Al completarlo, contará como un hito dentro del objetivo anual.</small></label>}
-          <label>Pilar<select value={goalCategory} onChange={(event) => setGoalCategory(event.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.label}</option>)}</select></label>
-          <label>Cómo se mide<select value={goalMeasurement} onChange={(event) => setGoalMeasurement(event.target.value as "complete" | "quantity")}><option value="complete">Completado / pendiente</option><option value="quantity">Mediante una cantidad</option></select></label>
-          {goalMeasurement === "quantity" && <fieldset className="goal-habit-picker"><legend>Vincular hábitos diarios (opcional)</legend><small>{goalLinkedHabitIds.length ? `${goalLinkedHabitIds.length} ${goalLinkedHabitIds.length === 1 ? "hábito vinculado" : "hábitos vinculados"}` : "Sin hábitos: el progreso se actualizará manualmente"}</small><div>{daily.filter((habit) => !habit.archived).map((habit) => <label key={habit.id}><input type="checkbox" checked={goalLinkedHabitIds.includes(habit.id)} onChange={() => setGoalLinkedHabitIds((ids) => ids.includes(habit.id) ? ids.filter((id) => id !== habit.id) : [...ids, habit.id])} /><span style={{ background: habit.color }} aria-hidden="true" />{habit.name}</label>)}</div></fieldset>}
-          {goalMeasurement === "quantity" && <div className="goal-form-row"><label>Meta<input type="number" min="1" value={goalTarget} onChange={(event) => setGoalTarget(Number(event.target.value))} /></label><label>Unidad<input maxLength={24} value={goalUnit} onChange={(event) => setGoalUnit(event.target.value)} placeholder="€, kg, páginas…" /></label></div>}
-          <button className="add-button full goal-modal-submit" onClick={createGoal}>{editingGoalId ? "Guardar cambios" : "Crear objetivo"}</button>
-        </div>
-      </div>}
-
-      {modal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(null)}>
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(e) => e.stopPropagation()}>
-          <button className="close" onClick={() => setModal(null)} aria-label="Cerrar">×</button>
-          <p className="eyebrow">NUEVO REGISTRO</p>
-          <h2 id="modal-title">Añadir hábito {modal === "daily" ? "diario" : "semanal"}</h2>
-          <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ej. Caminar 30 minutos" /></label>
-          <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-          {modal === "daily" && <div className="frequency-options">
-            {([['monthly', 'Días al mes', 'Define una meta mensual flexible.'], ['daily', 'Todos los días', `Objetivo automático de ${days} días.`], ['weekdays', 'Días laborables', 'De lunes a viernes.'], ['selectedWeekdays', 'Días concretos', 'Elige los días de la semana.'], ['interval', 'Cada X días', 'Repite desde una fecha de inicio.']] as const).map(([value, label, help]) => <label className="frequency-toggle" key={value}><input type="radio" name="new-frequency" checked={scheduleMode === value} onChange={() => { setScheduleMode(value); setEveryDay(value === 'daily'); setWeekdaysOnly(value === 'weekdays'); }} /><span><strong>{label}</strong><small>{help}</small></span></label>)}
-            {scheduleMode === "selectedWeekdays" && <fieldset className="weekday-picker"><legend>Días programados</legend>{[[1, "L"], [2, "M"], [3, "X"], [4, "J"], [5, "V"], [6, "S"], [0, "D"]].map(([value, label]) => <button type="button" key={value} className={selectedWeekdays.includes(Number(value)) ? "selected" : ""} onClick={() => setSelectedWeekdays((items) => items.includes(Number(value)) ? items.filter((day) => day !== Number(value)) : [...items, Number(value)])}>{label}</button>)}</fieldset>}
-            {scheduleMode === "interval" && <div className="schedule-fields"><label>Cada<input type="number" min="2" max="365" value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))} /><small>días</small></label><label>Desde<input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} /></label></div>}
-            <><div className="schedule-fields"><label>Activo desde (opcional)<input type="date" value={activeFrom} onChange={(e) => setActiveFrom(e.target.value)} /></label><label>Hasta<input type="date" value={activeUntil} min={activeFrom || undefined} onChange={(e) => setActiveUntil(e.target.value)} /></label></div><div className="schedule-fields"><label>Pausar desde (opcional)<input type="date" value={pausedFrom} onChange={(e) => setPausedFrom(e.target.value)} /></label><label>Hasta<input type="date" value={pausedUntil} min={pausedFrom || undefined} onChange={(e) => setPausedUntil(e.target.value)} /></label></div></>
-          </div>}
-          {(modal === "weekly" || scheduleMode === "monthly") && <label>{modal === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={modal === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{modal === "weekly" && <small className="field-help">Podrás registrar cada realización hasta alcanzar esta meta semanal.</small>}</label>}
-          <button className="add-button full" disabled={scheduleMode === "selectedWeekdays" && !selectedWeekdays.length} onClick={addHabit}>Crear hábito</button>
-        </div>
-      </div>}
+      {modal && <HabitEditorDialog variant="create" habitType={modal} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onClose={() => setModal(null)} onSave={addHabit} />}
       {motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
         <div className="modal motivations-modal" role="dialog" aria-modal="true" aria-labelledby="motivations-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="close" onClick={() => setMotivationManagerOpen(false)} aria-label="Cerrar">×</button>
@@ -1373,41 +1240,7 @@ export default function Home() {
           <div className="confirm-actions"><button className="reset-button" onClick={() => setDeletingCategoryId(null)}>Cancelar</button><button className="delete-button" onClick={deleteCategory}>Mover y eliminar</button></div>
         </div>
       </div>}
-      {editing && <div className="modal-backdrop" role="presentation" onMouseDown={() => setEditing(null)}>
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title" onMouseDown={(e) => e.stopPropagation()}>
-          <button className="close" onClick={() => setEditing(null)} aria-label="Cerrar">×</button>
-          <p className="eyebrow">EDITAR REGISTRO</p>
-          <h2 id="edit-title">Editar hábito</h2>
-          <label>Nombre<input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} /></label>
-          <label>Bloque<select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>{habitCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-          {editing.type === "daily" && <div className="frequency-options">
-            {([['monthly', 'Días al mes'], ['daily', 'Todos los días'], ['weekdays', 'Días laborables'], ['selectedWeekdays', 'Días concretos'], ['interval', 'Cada X días']] as const).map(([value, label]) => <label className="frequency-toggle" key={value}><input type="radio" name="edit-frequency" checked={scheduleMode === value} onChange={() => { setScheduleMode(value); setEveryDay(value === 'daily'); setWeekdaysOnly(value === 'weekdays'); }} /><span><strong>{label}</strong></span></label>)}
-            {scheduleMode === "selectedWeekdays" && <fieldset className="weekday-picker"><legend>Días programados</legend>{[[1, "L"], [2, "M"], [3, "X"], [4, "J"], [5, "V"], [6, "S"], [0, "D"]].map(([value, label]) => <button type="button" key={value} className={selectedWeekdays.includes(Number(value)) ? "selected" : ""} onClick={() => setSelectedWeekdays((items) => items.includes(Number(value)) ? items.filter((day) => day !== Number(value)) : [...items, Number(value)])}>{label}</button>)}</fieldset>}
-            {scheduleMode === "interval" && <div className="schedule-fields"><label>Cada<input type="number" min="2" max="365" value={intervalDays} onChange={(e) => setIntervalDays(Number(e.target.value))} /><small>días</small></label><label>Desde<input type="date" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} /></label></div>}
-            <><div className="schedule-fields"><label>Activo desde (opcional)<input type="date" value={activeFrom} onChange={(e) => setActiveFrom(e.target.value)} /></label><label>Hasta<input type="date" value={activeUntil} min={activeFrom || undefined} onChange={(e) => setActiveUntil(e.target.value)} /></label></div><div className="schedule-fields"><label>Pausar desde (opcional)<input type="date" value={pausedFrom} onChange={(e) => setPausedFrom(e.target.value)} /></label><label>Hasta<input type="date" value={pausedUntil} min={pausedFrom || undefined} onChange={(e) => setPausedUntil(e.target.value)} /></label></div></>
-          </div>}
-          {(editing.type === "weekly" || scheduleMode === "monthly") && <label>{editing.type === "weekly" ? "Veces por semana" : "Objetivo del mes"}<input type="number" min="1" max={editing.type === "daily" ? days : 7} value={newGoal} onChange={(e) => setNewGoal(Number(e.target.value))} />{editing.type === "weekly" && <small className="field-help">La meta se aplica de nuevo cada semana.</small>}</label>}
-          <fieldset className="color-picker">
-            <legend>Color del hábito</legend>
-            <div className="color-palette">
-              {palette.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={selectedColor === color ? "selected" : ""}
-                  style={{ background: color }}
-                  onClick={() => setSelectedColor(color)}
-                  aria-label={`Elegir color ${color}`}
-                  aria-pressed={selectedColor === color}
-                >
-                  {selectedColor === color && <span>✓</span>}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <button className="add-button full habit-editor-submit" disabled={scheduleMode === "selectedWeekdays" && !selectedWeekdays.length} onClick={saveEdit}>Guardar cambios</button>
-        </div>
-      </div>}
+      {editing && <HabitEditorDialog variant="edit" habitType={editing.type} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} color={selectedColor} palette={palette} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onColorChange={setSelectedColor} onClose={() => setEditing(null)} onSave={saveEdit} />}
       {deleting && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleting(null)}>
         <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onMouseDown={(e) => e.stopPropagation()}>
           <p className="eyebrow danger-text">ACCIÓN IRREVERSIBLE</p>
