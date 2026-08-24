@@ -38,6 +38,8 @@ import { GoalsView } from "./components/goals-view";
 import { HabitsView } from "./components/habits-view";
 import { BookEditorDialog, DeleteGoalDialog, FitnessEditorDialog, GoalEditorDialog, GoalTemplateDialog } from "./components/goal-dialogs";
 import { HabitEditorDialog } from "./components/habit-editor-dialog";
+import { ArchivedManagerDialog, BackupManagerDialog, CategoryManagerDialog, DeleteCategoryDialog } from "./components/management-dialogs";
+import { DeleteHabitDialog, HabitActionDialog, MotivationManagerDialog, StreakCelebrationDialog } from "./components/habit-management-dialogs";
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
@@ -1095,174 +1097,15 @@ export default function Home() {
       {goalModalOpen && <GoalEditorDialog editingGoalId={editingGoalId} title={goalTitle} period={goalPeriod} parentAnnualId={goalParentAnnualId} category={goalCategory} measurement={goalMeasurement} linkedHabitIds={goalLinkedHabitIds} target={goalTarget} unit={goalUnit} goals={goals} habits={daily} categories={habitCategories} onTitleChange={setGoalTitle} onPeriodChange={setGoalPeriod} onParentAnnualChange={setGoalParentAnnualId} onCategoryChange={setGoalCategory} onMeasurementChange={setGoalMeasurement} onToggleHabit={(habitId) => setGoalLinkedHabitIds((ids) => ids.includes(habitId) ? ids.filter((id) => id !== habitId) : [...ids, habitId])} onTargetChange={setGoalTarget} onUnitChange={setGoalUnit} onClose={closeGoalModal} onSave={createGoal} />}
 
       {modal && <HabitEditorDialog variant="create" habitType={modal} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onClose={() => setModal(null)} onSave={addHabit} />}
-      {motivationManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setMotivationManagerOpen(false)}>
-        <div className="modal motivations-modal" role="dialog" aria-modal="true" aria-labelledby="motivations-title" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="close" onClick={() => setMotivationManagerOpen(false)} aria-label="Cerrar">×</button>
-          <p className="eyebrow">TU VOZ INTERIOR</p>
-          <h2 id="motivations-title">Frases motivacionales</h2>
-          <p className="modal-help">Cada día aparecerá una frase distinta en el acceso. Las que añadas aquí tendrán prioridad sobre las predeterminadas.</p>
-          <div className="motivation-editor">
-            <label>Frase<textarea autoFocus value={motivationDraft} maxLength={220} onChange={(event) => setMotivationDraft(event.target.value)} placeholder="Ej. La dirección importa más que la velocidad." /></label>
-            <div className="motivation-editor-actions">
-              {editingMotivationIndex !== null && <button className="reset-button" onClick={() => { setEditingMotivationIndex(null); setMotivationDraft(""); }}>Cancelar</button>}
-              <button className="add-button" onClick={saveMotivation}>{editingMotivationIndex === null ? "+ Añadir frase" : "Guardar cambios"}</button>
-            </div>
-          </div>
-          <div className="motivation-list" aria-live="polite">
-            {motivations.map((motivation, index) => <div className="motivation-row" key={`${motivation}-${index}`}>
-              <span>{index + 1}</span>
-              <p>“{motivation}”</p>
-              <button className="menu-trigger" onClick={() => editMotivation(index)} aria-label={`Editar frase ${index + 1}`}>✎</button>
-              <button className="menu-trigger danger-text" onClick={() => deleteMotivation(index)} aria-label={`Eliminar frase ${index + 1}`}>×</button>
-            </div>)}
-            {!motivations.length && <p className="empty-motivations">No hay frases personales. Mientras tanto se mostrarán las frases predeterminadas.</p>}
-          </div>
-        </div>
-      </div>}
-      {actionHabit && <div className="modal-backdrop action-backdrop" role="presentation" onMouseDown={() => setActionHabit(null)}>
-        <div className="action-sheet" role="dialog" aria-modal="true" aria-labelledby="actions-title" onMouseDown={(e) => e.stopPropagation()}>
-          <div className="action-sheet-head"><div><p className="eyebrow">GESTIONAR HÁBITO</p><h2 id="actions-title">{actionHabit.habit.name}</h2></div><button className="close static-close" onClick={() => setActionHabit(null)} aria-label="Cerrar">×</button></div>
-          <button onClick={() => startEdit(actionHabit.type, actionHabit.habit)}><strong>Editar</strong><span>Cambiar el bloque, nombre, objetivo o color</span></button>
-          <button onClick={() => archiveHabit(actionHabit.type, actionHabit.habit.id)}><strong>Archivar</strong><span>Ocultarlo conservando su historial</span></button>
-          <button className="danger-action" onClick={() => { setDeleting({ type: actionHabit.type, id: actionHabit.habit.id, name: actionHabit.habit.name }); setActionHabit(null); }}><strong>Eliminar</strong><span>Borrar el hábito y todos sus registros</span></button>
-        </div>
-      </div>}
-      {categoryManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setCategoryManagerOpen(false)}>
-        <div className="modal blocks-modal" role="dialog" aria-modal="true" aria-labelledby="blocks-title" onMouseDown={(e) => e.stopPropagation()}>
-          <button className="close" onClick={() => setCategoryManagerOpen(false)} aria-label="Cerrar">×</button>
-          <p className="eyebrow">ORGANIZACIÓN PERSONAL</p>
-          <h2 id="blocks-title">Gestionar bloques</h2>
-          <div className="block-manager-list">
-            {habitCategories.map((category) => {
-              const habitCount = [...daily, ...weekly].filter((habit) => !habit.archived && habit.category === category.id).length;
-              const goalCount = goals.filter((goal) => goal.status !== "discarded" && goal.category === category.id).length;
-              return <div className="block-manager-row" key={category.id}>
-                <span className="block-manager-icon" style={{ background: `${category.color}26`, color: category.color }}>{category.icon}</span>
-                <div><strong>{category.label}</strong><small>{habitCount} {habitCount === 1 ? "hábito" : "hábitos"} · {goalCount} {goalCount === 1 ? "objetivo" : "objetivos"}</small></div>
-                <button className={`priority-toggle ${category.priority ? "active" : ""}`} onClick={() => toggleCategoryPriority(category.id)} aria-label={`${category.priority ? "Quitar prioridad a" : "Marcar como prioritario"} ${category.label}`} aria-pressed={Boolean(category.priority)} title={category.priority ? "Bloque prioritario (peso 2)" : "Bloque normal (peso 1)"}>★</button>
-                <button className="menu-trigger" onClick={() => startCategoryEdit(category)} aria-label={`Editar bloque ${category.label}`}>✎</button>
-                <button className="menu-trigger danger-text" disabled={habitCategories.length === 1} onClick={() => requestCategoryDelete(category.id)} aria-label={`Eliminar bloque ${category.label}`}>×</button>
-              </div>;
-            })}
-          </div>
-          <div className="block-editor">
-            <p className="eyebrow">{editingCategoryId ? "EDITAR BLOQUE" : "NUEVO BLOQUE"}</p>
-            <div className="block-fields">
-              <label>Nombre<input value={categoryName} onChange={(e) => setCategoryName(e.target.value)} placeholder="Ej. Ocio" /></label>
-              <label className="icon-field">Personalizado<input value={categoryIcon} maxLength={2} onChange={(e) => setCategoryIcon(e.target.value)} aria-label="Icono personalizado del bloque" /></label>
-            </div>
-            <fieldset className="block-icon-picker">
-              <legend>Icono</legend>
-              <div className="block-icon-grid">
-                {blockIcons.map((icon) => <button key={icon} type="button" className={categoryIcon === icon ? "selected" : ""} style={{ color: categoryIcon === icon ? categoryColor : undefined }} onClick={() => setCategoryIcon(icon)} aria-label={`Elegir icono ${icon}`} aria-pressed={categoryIcon === icon}>{icon}</button>)}
-              </div>
-              <small>Elige uno de la paleta o escribe tu propio símbolo arriba.</small>
-            </fieldset>
-            <fieldset className="color-picker compact-colors">
-              <legend>Color</legend>
-              <div className="color-palette">
-                {palette.map((color) => <button key={color} type="button" className={categoryColor === color ? "selected" : ""} style={{ background: color }} onClick={() => setCategoryColor(color)} aria-label={`Elegir color ${color}`} aria-pressed={categoryColor === color}>{categoryColor === color && <span>✓</span>}</button>)}
-              </div>
-            </fieldset>
-            <div className="block-editor-actions">
-              {editingCategoryId && <button className="reset-button" onClick={() => startCategoryEdit()}>Cancelar edición</button>}
-              <button className="add-button" onClick={saveCategory}>{editingCategoryId ? "Guardar bloque" : "+ Añadir bloque"}</button>
-            </div>
-          </div>
-        </div>
-      </div>}
-      {backupManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setBackupManagerOpen(false)}><div className="modal backup-modal" role="dialog" aria-modal="true" aria-labelledby="backup-title" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="close" onClick={() => setBackupManagerOpen(false)} aria-label="Cerrar">×</button>
-        <p className="eyebrow">PORTABILIDAD Y RECUPERACIÓN</p><h2 id="backup-title">Copia de tus datos</h2>
-        <p>Descarga una copia completa de hábitos, objetivos, bloques, historial y frases. Guárdala en un lugar seguro.</p>
-        <button className="add-button full" type="button" onClick={exportBackup}>Descargar copia JSON</button>
-        <div className="backup-divider"><span>Restaurar una copia</span></div>
-        <input ref={backupInputRef} className="backup-file-input" type="file" accept="application/json,.json" onChange={(event) => void inspectBackup(event.target.files?.[0])} />
-        <button className="reset-button full" type="button" onClick={() => backupInputRef.current?.click()}>Seleccionar archivo</button>
-        {backupMessage && <p className="import-message" role="alert">{backupMessage}</p>}
-        {backupPreview && <div className="backup-preview"><strong>Copia válida</strong><span>{backupPreview.daily} hábitos diarios · {backupPreview.weekly} semanales</span><span>{backupPreview.goals} objetivos · {backupPreview.categories} bloques · {backupPreview.motivations} frases</span><p>Restaurar sustituirá todos los datos actuales. No se fusionarán ambas versiones.</p><button className="danger-button full" type="button" onClick={restoreBackup}>Confirmar y sustituir mis datos</button></div>}
-      </div></div>}
-      {archivedManagerOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setArchivedManagerOpen(false)}>
-        <div className="modal archived-modal" role="dialog" aria-modal="true" aria-labelledby="archived-title" onMouseDown={(e) => e.stopPropagation()}>
-          <button className="close" onClick={() => setArchivedManagerOpen(false)} aria-label="Cerrar">×</button>
-          <p className="eyebrow">HISTORIAL CONSERVADO</p>
-          <h2 id="archived-title">Elementos archivados</h2>
-          {archivedCount === 0 ? (
-            <div className="archived-empty">
-              <strong>No tienes elementos archivados</strong>
-              <p>Cuando archives un hábito u objetivo, podrás encontrarlo y restaurarlo desde aquí sin perder su historial.</p>
-            </div>
-          ) : (
-            <div className="archived-sections">
-              <section className="archived-section">
-                <h3>Objetivos <span>{archivedGoals.length}</span></h3>
-                {archivedGoals.length ? <div className="archived-list">
-                  {archivedGoals.map((goal) => {
-                    const category = habitCategories.find((item) => item.id === goal.category);
-                    const periodLabel = { daily: "Diario", weekly: "Semanal", monthly: "Mensual", yearly: "Anual" }[goal.period];
-                    return <div className="archived-row" key={`goal-${goal.id}`}>
-                      <i style={{ background: category?.color ?? "#39c6a4" }} />
-                      <div>
-                        <strong>{goal.title}</strong>
-                        <small>{periodLabel}{category ? ` · ${category.label}` : ""} · {goal.status === "completed" ? "Completado" : "En curso"}</small>
-                      </div>
-                      <button className="restore-button" onClick={() => restoreGoal(goal.id)}>Restaurar</button>
-                    </div>;
-                  })}
-                </div> : <p className="archived-section-empty">No hay objetivos archivados.</p>}
-              </section>
-              <section className="archived-section">
-                <h3>Hábitos <span>{archivedHabits.length}</span></h3>
-                {archivedHabits.length ? <div className="archived-list">
-                  {archivedHabits.map(({ type, habit }) => {
-                    const category = habitCategories.find((item) => item.id === (habit.category ?? inferCategory(habit.name)));
-                    return <div className="archived-row" key={`${type}-${habit.id}`}>
-                      <i style={{ background: habit.color }} />
-                      <div>
-                        <strong>{habit.name}</strong>
-                        <small>{type === "daily" ? "Diario" : "Semanal"}{category ? ` · ${category.label}` : ""}</small>
-                      </div>
-                      <button className="restore-button" onClick={() => restoreHabit(type, habit.id)}>Restaurar</button>
-                    </div>;
-                  })}
-                </div> : <p className="archived-section-empty">No hay hábitos archivados.</p>}
-              </section>
-            </div>
-          )}
-        </div>
-      </div>}
-      {deletingCategoryId && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeletingCategoryId(null)}>
-        <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-block-title" onMouseDown={(e) => e.stopPropagation()}>
-          <p className="eyebrow danger-text">ELIMINAR BLOQUE</p>
-          <h2 id="delete-block-title">¿Dónde movemos sus elementos?</h2>
-          <p>El bloque desaparecerá, pero sus hábitos, objetivos y todo su historial se conservarán.</p>
-          <label>Bloque de destino<select value={replacementCategoryId} onChange={(e) => setReplacementCategoryId(e.target.value)}>{habitCategories.filter((category) => category.id !== deletingCategoryId).map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-          <div className="confirm-actions"><button className="reset-button" onClick={() => setDeletingCategoryId(null)}>Cancelar</button><button className="delete-button" onClick={deleteCategory}>Mover y eliminar</button></div>
-        </div>
-      </div>}
+      {motivationManagerOpen && <MotivationManagerDialog motivations={motivations} draft={motivationDraft} editingIndex={editingMotivationIndex} onDraftChange={setMotivationDraft} onEdit={editMotivation} onDelete={deleteMotivation} onCancelEdit={() => { setEditingMotivationIndex(null); setMotivationDraft(""); }} onSave={saveMotivation} onClose={() => setMotivationManagerOpen(false)} />}
+      {actionHabit && <HabitActionDialog type={actionHabit.type} habit={actionHabit.habit} onEdit={startEdit} onArchive={archiveHabit} onDelete={(target) => { setDeleting(target); setActionHabit(null); }} onClose={() => setActionHabit(null)} />}
+      {categoryManagerOpen && <CategoryManagerDialog categories={habitCategories} daily={daily} weekly={weekly} goals={goals} editingCategoryId={editingCategoryId} name={categoryName} icon={categoryIcon} color={categoryColor} icons={blockIcons} palette={palette} onNameChange={setCategoryName} onIconChange={setCategoryIcon} onColorChange={setCategoryColor} onTogglePriority={toggleCategoryPriority} onEdit={startCategoryEdit} onRequestDelete={requestCategoryDelete} onCancelEdit={() => startCategoryEdit()} onSave={saveCategory} onClose={() => setCategoryManagerOpen(false)} />}
+      {backupManagerOpen && <BackupManagerDialog inputRef={backupInputRef} message={backupMessage} preview={backupPreview} onInspect={(file) => void inspectBackup(file)} onExport={exportBackup} onRestore={restoreBackup} onClose={() => setBackupManagerOpen(false)} />}
+      {archivedManagerOpen && <ArchivedManagerDialog goals={archivedGoals} habits={archivedHabits} categories={habitCategories} resolveHabitCategory={(habit) => habit.category ?? inferCategory(habit.name)} onRestoreGoal={restoreGoal} onRestoreHabit={restoreHabit} onClose={() => setArchivedManagerOpen(false)} />}
+      {deletingCategoryId && <DeleteCategoryDialog categoryId={deletingCategoryId} replacementId={replacementCategoryId} categories={habitCategories} onReplacementChange={setReplacementCategoryId} onClose={() => setDeletingCategoryId(null)} onDelete={deleteCategory} />}
       {editing && <HabitEditorDialog variant="edit" habitType={editing.type} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} color={selectedColor} palette={palette} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onColorChange={setSelectedColor} onClose={() => setEditing(null)} onSave={saveEdit} />}
-      {deleting && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDeleting(null)}>
-        <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onMouseDown={(e) => e.stopPropagation()}>
-          <p className="eyebrow danger-text">ACCIÓN IRREVERSIBLE</p>
-          <h2 id="delete-title">¿Eliminar “{deleting.name}”?</h2>
-          <p>Se borrarán también todos sus registros y se desvinculará de los objetivos que lo utilicen. Si quieres conservar el historial y los vínculos, utiliza “Archivar”.</p>
-          <div className="confirm-actions"><button className="reset-button" onClick={() => setDeleting(null)}>Cancelar</button><button className="delete-button" onClick={deleteHabit}>Eliminar definitivamente</button></div>
-        </div>
-      </div>}
-      {streakCelebration && <div className="modal-backdrop celebration-backdrop" role="presentation" onMouseDown={() => setStreakCelebration(null)}>
-        <div className="celebration-modal" role="dialog" aria-modal="true" aria-labelledby="celebration-title" onMouseDown={(e) => e.stopPropagation()} style={{ "--habit-color": streakCelebration.color } as React.CSSProperties}>
-          <button className="close celebration-close" onClick={() => setStreakCelebration(null)} aria-label="Cerrar">×</button>
-          <div className="compass-celebration" aria-hidden="true">
-            <span className="compass-north">N</span>
-            <span className="compass-needle" />
-            <span className="compass-center" />
-          </div>
-          <p className="eyebrow">RUMBO CONSOLIDADO</p>
-          <h2 id="celebration-title">¡30 días consecutivos!</h2>
-          <p>Has mantenido <strong>{streakCelebration.name}</strong> durante 30 días seguidos. Ya no es solo un objetivo: estás construyendo una identidad.</p>
-          <button className="add-button full" onClick={() => setStreakCelebration(null)}>Seguir avanzando</button>
-        </div>
-      </div>}
+      {deleting && <DeleteHabitDialog name={deleting.name} onClose={() => setDeleting(null)} onDelete={deleteHabit} />}
+      {streakCelebration && <StreakCelebrationDialog name={streakCelebration.name} color={streakCelebration.color} onClose={() => setStreakCelebration(null)} />}
     </main>
   );
 }
