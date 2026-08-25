@@ -11,6 +11,7 @@ import {
   calculateDailyScore,
   calculateWeeklyGoalBonus,
   daysForMonthWeek,
+  ensureArchiveDate,
   goalPeriodDetails,
   isoDate,
   isCalendarDayInFuture,
@@ -19,14 +20,13 @@ import {
   isHabitVisibleInArchive,
   linkedGoalProgress,
   longestHabitStreak,
+  localDateKey,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   scheduledDaysInMonth,
 } from "../lib/domain/tracking";
-import type { HabitSchedule } from "../lib/domain/tracking";
-import { removeHabitFromGoals, replaceCategory } from "../lib/domain/relationships";
 import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
@@ -48,6 +48,8 @@ import type { Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } 
 import { useTrackerSync } from "./hooks/use-tracker-sync";
 import { useGoalManager } from "./hooks/use-goal-manager";
 import { useGoalTemplates } from "./hooks/use-goal-templates";
+import { useHabitManager } from "./hooks/use-habit-manager";
+import { useTrackerSettings } from "./hooks/use-tracker-settings";
 import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, motivationForToday, palette, weeklyBarPalette } from "./config/tracker-defaults";
 
 
@@ -61,6 +63,7 @@ function inferCategory(name: string): HabitCategory {
 }
 
 function normalizeState(state: TrackerState): Required<TrackerState> {
+  const archiveMigrationDate = localDateKey();
   const categories = state.categories?.length
     ? state.categories.map((category, index) => {
         const fallback = defaultCategories.find((item) => item.id === category.id);
@@ -75,8 +78,8 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
     : defaultCategories;
 
   return {
-    daily: (state.daily ?? []).map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) })),
-    weekly: (state.weekly ?? []).map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) })),
+    daily: (state.daily ?? []).map((habit) => ensureArchiveDate({ ...habit, category: habit.category ?? inferCategory(habit.name) }, archiveMigrationDate)),
+    weekly: (state.weekly ?? []).map((habit) => ensureArchiveDate({ ...habit, category: habit.category ?? inferCategory(habit.name) }, archiveMigrationDate)),
     categories,
     motivations: state.motivations?.filter((item) => item.trim()) ?? [],
     goals: state.goals ?? [],
@@ -143,16 +146,9 @@ export default function Home() {
   const [reviewWeekKey, setReviewWeekKey] = useState(() => previousWeekBounds(new Date()).key);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(() => new Set());
   const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
-  const [motivationManagerOpen, setMotivationManagerOpen] = useState(false);
-  const [motivationDraft, setMotivationDraft] = useState("");
-  const [editingMotivationIndex, setEditingMotivationIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"daily" | "weekly">("daily");
   const [collapsedHabitBlocks, setCollapsedHabitBlocks] = useState<Set<string>>(() => new Set());
   const [date, setDate] = useState(() => new Date());
-  const [modal, setModal] = useState<null | "daily" | "weekly">(null);
-  const [editing, setEditing] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
-  const [deleting, setDeleting] = useState<{ type: "daily" | "weekly"; id: number; name: string } | null>(null);
-  const [actionHabit, setActionHabit] = useState<{ type: "daily" | "weekly"; habit: Habit } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
   const [dragging, setDragging] = useState<{ type: "daily" | "weekly"; id: number } | null>(null);
@@ -161,31 +157,10 @@ export default function Home() {
   const [rankingView, setRankingView] = useState<"best" | "watch" | "streak">("best");
   const [selectedChartCategory, setSelectedChartCategory] = useState<HabitCategory>("health");
   const [selectedHabitId, setSelectedHabitId] = useState<number>(initialDaily[0].id);
-  const [newName, setNewName] = useState("");
-  const [newGoal, setNewGoal] = useState(12);
-  const [, setEveryDay] = useState(false);
-  const [, setWeekdaysOnly] = useState(false);
-  const [scheduleMode, setScheduleMode] = useState<"monthly" | "daily" | "weekdays" | "selectedWeekdays" | "interval">("monthly");
-  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1, 3, 5]);
-  const [intervalDays, setIntervalDays] = useState(2);
-  const [scheduleStart, setScheduleStart] = useState(() => isoDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
-  const [activeFrom, setActiveFrom] = useState("");
-  const [activeUntil, setActiveUntil] = useState("");
-  const [pausedFrom, setPausedFrom] = useState("");
-  const [pausedUntil, setPausedUntil] = useState("");
-  const [selectedColor, setSelectedColor] = useState(palette[0]);
-  const [selectedCategory, setSelectedCategory] = useState<HabitCategory>("health");
-  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [archivedManagerOpen, setArchivedManagerOpen] = useState(false);
   const [backupManagerOpen, setBackupManagerOpen] = useState(false);
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
   const [backupMessage, setBackupMessage] = useState("");
-  const [editingCategoryId, setEditingCategoryId] = useState<HabitCategory | null>(null);
-  const [categoryName, setCategoryName] = useState("");
-  const [categoryColor, setCategoryColor] = useState(defaultCategories[0].color);
-  const [categoryIcon, setCategoryIcon] = useState("●");
-  const [deletingCategoryId, setDeletingCategoryId] = useState<HabitCategory | null>(null);
-  const [replacementCategoryId, setReplacementCategoryId] = useState<HabitCategory>("health");
   const [streakCelebration, setStreakCelebration] = useState<{ name: string; color: string } | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
@@ -253,6 +228,29 @@ export default function Home() {
 
   const year = date.getFullYear();
   const month = date.getMonth();
+  const {
+    modal, setModal, editing, setEditing, deleting, setDeleting, actionHabit, setActionHabit,
+    newName, setNewName, newGoal, setNewGoal, scheduleMode, setScheduleMode,
+    selectedWeekdays, setSelectedWeekdays, intervalDays, setIntervalDays, scheduleStart, setScheduleStart,
+    activeFrom, setActiveFrom, activeUntil, setActiveUntil, pausedFrom, setPausedFrom, pausedUntil, setPausedUntil,
+    selectedColor, setSelectedColor, selectedCategory, setSelectedCategory,
+    resetScheduleDraft, addHabit, startEdit, saveEdit, archiveHabit, restoreHabit, deleteHabit,
+  } = useHabitManager({
+    daily, weekly, setDaily, setWeekly, setGoals, today, year, month, palette,
+    resolveCategory: (habit) => habit.category ?? inferCategory(habit.name),
+  });
+  const {
+    motivationManagerOpen, setMotivationManagerOpen, motivationDraft, setMotivationDraft,
+    editingMotivationIndex, cancelMotivationEdit, saveMotivation, editMotivation, deleteMotivation,
+    categoryManagerOpen, setCategoryManagerOpen, editingCategoryId, categoryName, setCategoryName,
+    categoryColor, setCategoryColor, categoryIcon, setCategoryIcon, deletingCategoryId, setDeletingCategoryId,
+    replacementCategoryId, setReplacementCategoryId, startCategoryEdit, saveCategory,
+    toggleCategoryPriority, requestCategoryDelete, deleteCategory,
+  } = useTrackerSettings({
+    categories: habitCategories, setCategories: setHabitCategories, setDaily, setWeekly,
+    setGoals, motivations, setMotivations, selectedCategory, setSelectedCategory,
+    selectedChartCategory, setSelectedChartCategory, palette, defaultColor: defaultCategories[0].color,
+  });
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const days = new Date(year, month + 1, 0).getDate();
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
@@ -554,109 +552,6 @@ export default function Home() {
     }));
   }
 
-  function buildSchedule(): HabitSchedule | undefined {
-    const customMode = scheduleMode === "selectedWeekdays" || scheduleMode === "interval";
-    if (!customMode && !activeFrom && !activeUntil && !(pausedFrom && pausedUntil)) return undefined;
-    return {
-      ...(customMode ? { mode: scheduleMode } : {}),
-      ...(scheduleMode === "selectedWeekdays" ? { weekdays: [...selectedWeekdays].sort((a, b) => a - b) } : scheduleMode === "interval" ? { intervalDays, startDate: scheduleStart } : {}),
-      ...(activeFrom ? { activeFrom } : {}),
-      ...(activeUntil ? { activeUntil } : {}),
-      ...(pausedFrom && pausedUntil ? { pausedFrom, pausedUntil } : {}),
-    };
-  }
-
-  function resetScheduleDraft() {
-    setScheduleMode("monthly");
-    setSelectedWeekdays([1, 3, 5]);
-    setIntervalDays(2);
-    setScheduleStart(isoDate(today.getFullYear(), today.getMonth(), today.getDate()));
-    setActiveFrom("");
-    setActiveUntil("");
-    setPausedFrom("");
-    setPausedUntil("");
-  }
-
-  function addHabit() {
-    if (!newName.trim() || !modal) return;
-    const color = palette[(daily.length + weekly.length) % palette.length];
-    if (modal === "daily") {
-      const schedule = buildSchedule();
-      setDaily((items) => {
-        const draft = { id: Date.now(), name: newName.trim(), goal: newGoal, everyDay: scheduleMode === "daily", weekdaysOnly: scheduleMode === "weekdays", schedule, color, checks: [], category: selectedCategory };
-        return [...items, { ...draft, goal: schedule?.mode || draft.everyDay || draft.weekdaysOnly ? scheduledDaysInMonth(draft, year, month) : newGoal }];
-      });
-    } else {
-      setWeekly((items) => [...items, { id: Date.now(), name: newName.trim(), goal: Math.min(7, Math.max(1, newGoal)), color, checks: [], category: selectedCategory }]);
-    }
-    setNewName("");
-    setNewGoal(12);
-    setEveryDay(false);
-    setWeekdaysOnly(false);
-    resetScheduleDraft();
-    setSelectedCategory("health");
-    setModal(null);
-  }
-
-  function startEdit(type: "daily" | "weekly", habit: Habit) {
-    setEditing({ type, id: habit.id });
-    setNewName(habit.name);
-    setNewGoal(habit.goal);
-    setEveryDay(Boolean(habit.everyDay));
-    setWeekdaysOnly(Boolean(habit.weekdaysOnly));
-    setScheduleMode(type === "weekly" ? "monthly" : habit.schedule?.mode ?? (habit.everyDay ? "daily" : habit.weekdaysOnly ? "weekdays" : "monthly"));
-    setSelectedWeekdays(habit.schedule?.weekdays ?? [1, 3, 5]);
-    setIntervalDays(habit.schedule?.intervalDays ?? 2);
-    setScheduleStart(habit.schedule?.startDate ?? isoDate(today.getFullYear(), today.getMonth(), today.getDate()));
-    setActiveFrom(habit.schedule?.activeFrom ?? "");
-    setActiveUntil(habit.schedule?.activeUntil ?? "");
-    setPausedFrom(habit.schedule?.pausedFrom ?? "");
-    setPausedUntil(habit.schedule?.pausedUntil ?? "");
-    setSelectedColor(habit.color);
-    setSelectedCategory(habit.category ?? inferCategory(habit.name));
-    setActionHabit(null);
-  }
-
-  function saveEdit() {
-    if (!editing || !newName.trim()) return;
-    const update = (habit: Habit) => {
-      if (habit.id !== editing.id) return habit;
-      const schedule = editing.type === "daily" ? buildSchedule() : undefined;
-      const next = { ...habit, name: newName.trim(), goal: editing.type === "weekly" ? Math.min(7, Math.max(1, newGoal)) : newGoal, everyDay: editing.type === "daily" && scheduleMode === "daily", weekdaysOnly: editing.type === "daily" && scheduleMode === "weekdays", schedule, color: selectedColor, category: selectedCategory };
-      return { ...next, goal: editing.type === "daily" && (schedule?.mode || next.everyDay || next.weekdaysOnly) ? scheduledDaysInMonth(next, year, month) : next.goal };
-    };
-    if (editing.type === "daily") setDaily((items) => items.map(update));
-    else setWeekly((items) => items.map(update));
-    setEditing(null);
-    setNewName("");
-    setEveryDay(false);
-    setWeekdaysOnly(false);
-    resetScheduleDraft();
-    setSelectedColor(palette[0]);
-    setSelectedCategory("health");
-  }
-
-  function archiveHabit(type: "daily" | "weekly", id: number) {
-    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: true, archivedAt: isoDate(today.getFullYear(), today.getMonth(), today.getDate()) } : habit;
-    if (type === "daily") setDaily((items) => items.map(update));
-    else setWeekly((items) => items.map(update));
-    setActionHabit(null);
-  }
-
-  function restoreHabit(type: "daily" | "weekly", id: number) {
-    const update = (habit: Habit) => habit.id === id ? { ...habit, archived: false, archivedAt: undefined } : habit;
-    if (type === "daily") setDaily((items) => items.map(update));
-    else setWeekly((items) => items.map(update));
-  }
-
-  function deleteHabit() {
-    if (!deleting) return;
-    if (deleting.type === "daily") setDaily((items) => items.filter((habit) => habit.id !== deleting.id));
-    else setWeekly((items) => items.filter((habit) => habit.id !== deleting.id));
-    setGoals((items) => removeHabitFromGoals(items, deleting.id));
-    setDeleting(null);
-  }
-
   function reorderHabit(type: "daily" | "weekly", sourceId: number, targetId: number) {
     const reorder = <T extends Habit>(items: T[]) => {
       const from = items.findIndex((habit) => habit.id === sourceId);
@@ -670,76 +565,6 @@ export default function Home() {
     if (type === "daily") setDaily((items) => reorder(items));
     else setWeekly((items) => reorder(items));
     setDragging(null);
-  }
-
-  function startCategoryEdit(category?: Category) {
-    setEditingCategoryId(category?.id ?? null);
-    setCategoryName(category?.label ?? "");
-    setCategoryColor(category?.color ?? palette[habitCategories.length % palette.length]);
-    setCategoryIcon(category?.icon ?? "●");
-  }
-
-  function saveCategory() {
-    const label = categoryName.trim();
-    if (!label) return;
-    if (editingCategoryId) {
-      setHabitCategories((items) => items.map((category) => category.id === editingCategoryId ? { ...category, label, color: categoryColor, icon: categoryIcon.trim().slice(0, 2) || "●" } : category));
-    } else {
-      const id = `block-${Date.now()}`;
-      setHabitCategories((items) => [...items, { id, label, color: categoryColor, icon: categoryIcon.trim().slice(0, 2) || "●" }]);
-      setSelectedCategory(id);
-    }
-    setEditingCategoryId(null);
-    setCategoryName("");
-  }
-
-  function toggleCategoryPriority(categoryId: HabitCategory) {
-    setHabitCategories((items) => items.map((category) => category.id === categoryId ? { ...category, priority: !category.priority } : category));
-  }
-
-  function requestCategoryDelete(categoryId: HabitCategory) {
-    const replacement = habitCategories.find((category) => category.id !== categoryId);
-    if (!replacement) return;
-    setDeletingCategoryId(categoryId);
-    setReplacementCategoryId(replacement.id);
-  }
-
-  function deleteCategory() {
-    if (!deletingCategoryId || deletingCategoryId === replacementCategoryId) return;
-    setDaily((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
-    setWeekly((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
-    setGoals((items) => replaceCategory(items, deletingCategoryId, replacementCategoryId));
-    setHabitCategories((items) => items.filter((category) => category.id !== deletingCategoryId));
-    if (selectedChartCategory === deletingCategoryId) setSelectedChartCategory(replacementCategoryId);
-    if (selectedCategory === deletingCategoryId) setSelectedCategory(replacementCategoryId);
-    setDeletingCategoryId(null);
-  }
-
-  function saveMotivation() {
-    const text = motivationDraft.trim().replace(/\s+/g, " ");
-    if (!text) return;
-    if (editingMotivationIndex === null) {
-      if (!motivations.some((item) => item.toLocaleLowerCase("es") === text.toLocaleLowerCase("es"))) {
-        setMotivations((items) => [...items, text]);
-      }
-    } else {
-      setMotivations((items) => items.map((item, index) => index === editingMotivationIndex ? text : item));
-    }
-    setMotivationDraft("");
-    setEditingMotivationIndex(null);
-  }
-
-  function editMotivation(index: number) {
-    setMotivationDraft(motivations[index]);
-    setEditingMotivationIndex(index);
-  }
-
-  function deleteMotivation(index: number) {
-    setMotivations((items) => items.filter((_, itemIndex) => itemIndex !== index));
-    if (editingMotivationIndex === index) {
-      setMotivationDraft("");
-      setEditingMotivationIndex(null);
-    }
   }
 
   const progressResolvedGoals = goals.map((goal) => {
@@ -1080,7 +905,7 @@ export default function Home() {
           })}
         </GoalsView>}
 
-        {mainView === "habits" && <HabitsView activeTab={activeTab} archivedCount={archivedCount} syncStatus={syncStatus} onTabChange={setActiveTab} onOpenMotivations={() => setMotivationManagerOpen(true)} onOpenCategories={() => { setCategoryManagerOpen(true); startCategoryEdit(); }} onOpenBackup={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }} onOpenArchived={() => setArchivedManagerOpen(true)} onAddHabit={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); setEveryDay(false); setWeekdaysOnly(false); resetScheduleDraft(); setSelectedCategory("health"); }} onUseRemote={resolveConflictWithRemote} onKeepLocal={resolveConflictWithLocal}>
+        {mainView === "habits" && <HabitsView activeTab={activeTab} archivedCount={archivedCount} syncStatus={syncStatus} onTabChange={setActiveTab} onOpenMotivations={() => setMotivationManagerOpen(true)} onOpenCategories={() => { setCategoryManagerOpen(true); startCategoryEdit(); }} onOpenBackup={() => { setBackupManagerOpen(true); setBackupPreview(null); setBackupMessage(""); }} onOpenArchived={() => setArchivedManagerOpen(true)} onAddHabit={() => { setModal(activeTab); setNewGoal(activeTab === "daily" ? 12 : 1); resetScheduleDraft(); setSelectedCategory("health"); }} onUseRemote={resolveConflictWithRemote} onKeepLocal={resolveConflictWithLocal}>
           {activeTab === "daily" ? (
             <DailyHabitTracker year={year} month={month} days={days} today={today} todayNumber={todayNumber} evaluatedThrough={evaluatedThrough} calendar={calendar} categories={habitCategories} habits={activeDaily.map((habit) => ({ ...habit, category: habit.category ?? inferCategory(habit.name) }))} draggingHabitId={dragging?.type === "daily" ? dragging.id : undefined} scrollRef={tableScrollRef} isCollapsed={(categoryId) => isHabitBlockCollapsed("habits-daily", categoryId)} onToggleCategory={(categoryId) => toggleHabitBlock("habits-daily", categoryId)} goalFor={goalFor} checksFor={checksFor} missesFor={missesFor} skipsFor={skipsFor} toggleProps={longPressProps} onToggleDay={toggleDaily} onCycleException={(habitId, targetDate) => cycleException("daily", habitId, targetDate)} onManageHabit={(habit) => setActionHabit({ type: "daily", habit })} onDragStart={(id) => setDragging({ type: "daily", id })} onDragEnd={() => setDragging(null)} onReorder={(sourceId, targetId) => reorderHabit("daily", sourceId, targetId)} />
           ) : (
@@ -1096,14 +921,14 @@ export default function Home() {
 
       {goalModalOpen && <GoalEditorDialog editingGoalId={editingGoalId} title={goalTitle} period={goalPeriod} parentAnnualId={goalParentAnnualId} category={goalCategory} measurement={goalMeasurement} linkedHabitIds={goalLinkedHabitIds} target={goalTarget} unit={goalUnit} goals={goals} habits={daily} categories={habitCategories} onTitleChange={setGoalTitle} onPeriodChange={setGoalPeriod} onParentAnnualChange={setGoalParentAnnualId} onCategoryChange={setGoalCategory} onMeasurementChange={setGoalMeasurement} onToggleHabit={(habitId) => setGoalLinkedHabitIds((ids) => ids.includes(habitId) ? ids.filter((id) => id !== habitId) : [...ids, habitId])} onTargetChange={setGoalTarget} onUnitChange={setGoalUnit} onClose={closeGoalModal} onSave={createGoal} />}
 
-      {modal && <HabitEditorDialog variant="create" habitType={modal} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onClose={() => setModal(null)} onSave={addHabit} />}
-      {motivationManagerOpen && <MotivationManagerDialog motivations={motivations} draft={motivationDraft} editingIndex={editingMotivationIndex} onDraftChange={setMotivationDraft} onEdit={editMotivation} onDelete={deleteMotivation} onCancelEdit={() => { setEditingMotivationIndex(null); setMotivationDraft(""); }} onSave={saveMotivation} onClose={() => setMotivationManagerOpen(false)} />}
+      {modal && <HabitEditorDialog variant="create" habitType={modal} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={setScheduleMode} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onClose={() => setModal(null)} onSave={addHabit} />}
+      {motivationManagerOpen && <MotivationManagerDialog motivations={motivations} draft={motivationDraft} editingIndex={editingMotivationIndex} onDraftChange={setMotivationDraft} onEdit={editMotivation} onDelete={deleteMotivation} onCancelEdit={cancelMotivationEdit} onSave={saveMotivation} onClose={() => setMotivationManagerOpen(false)} />}
       {actionHabit && <HabitActionDialog type={actionHabit.type} habit={actionHabit.habit} onEdit={startEdit} onArchive={archiveHabit} onDelete={(target) => { setDeleting(target); setActionHabit(null); }} onClose={() => setActionHabit(null)} />}
       {categoryManagerOpen && <CategoryManagerDialog categories={habitCategories} daily={daily} weekly={weekly} goals={goals} editingCategoryId={editingCategoryId} name={categoryName} icon={categoryIcon} color={categoryColor} icons={blockIcons} palette={palette} onNameChange={setCategoryName} onIconChange={setCategoryIcon} onColorChange={setCategoryColor} onTogglePriority={toggleCategoryPriority} onEdit={startCategoryEdit} onRequestDelete={requestCategoryDelete} onCancelEdit={() => startCategoryEdit()} onSave={saveCategory} onClose={() => setCategoryManagerOpen(false)} />}
       {backupManagerOpen && <BackupManagerDialog inputRef={backupInputRef} message={backupMessage} preview={backupPreview} onInspect={(file) => void inspectBackup(file)} onExport={exportBackup} onRestore={restoreBackup} onClose={() => setBackupManagerOpen(false)} />}
       {archivedManagerOpen && <ArchivedManagerDialog goals={archivedGoals} habits={archivedHabits} categories={habitCategories} resolveHabitCategory={(habit) => habit.category ?? inferCategory(habit.name)} onRestoreGoal={restoreGoal} onRestoreHabit={restoreHabit} onClose={() => setArchivedManagerOpen(false)} />}
       {deletingCategoryId && <DeleteCategoryDialog categoryId={deletingCategoryId} replacementId={replacementCategoryId} categories={habitCategories} onReplacementChange={setReplacementCategoryId} onClose={() => setDeletingCategoryId(null)} onDelete={deleteCategory} />}
-      {editing && <HabitEditorDialog variant="edit" habitType={editing.type} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} color={selectedColor} palette={palette} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={(value) => { setScheduleMode(value); setEveryDay(value === "daily"); setWeekdaysOnly(value === "weekdays"); }} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onColorChange={setSelectedColor} onClose={() => setEditing(null)} onSave={saveEdit} />}
+      {editing && <HabitEditorDialog variant="edit" habitType={editing.type} daysInMonth={days} name={newName} category={selectedCategory} categories={habitCategories} goal={newGoal} scheduleMode={scheduleMode} selectedWeekdays={selectedWeekdays} intervalDays={intervalDays} scheduleStart={scheduleStart} activeFrom={activeFrom} activeUntil={activeUntil} pausedFrom={pausedFrom} pausedUntil={pausedUntil} color={selectedColor} palette={palette} onNameChange={setNewName} onCategoryChange={setSelectedCategory} onGoalChange={setNewGoal} onScheduleModeChange={setScheduleMode} onToggleWeekday={(value) => setSelectedWeekdays((items) => items.includes(value) ? items.filter((day) => day !== value) : [...items, value])} onIntervalDaysChange={setIntervalDays} onScheduleStartChange={setScheduleStart} onActiveFromChange={setActiveFrom} onActiveUntilChange={setActiveUntil} onPausedFromChange={setPausedFrom} onPausedUntilChange={setPausedUntil} onColorChange={setSelectedColor} onClose={() => setEditing(null)} onSave={saveEdit} />}
       {deleting && <DeleteHabitDialog name={deleting.name} onClose={() => setDeleting(null)} onDelete={deleteHabit} />}
       {streakCelebration && <StreakCelebrationDialog name={streakCelebration.name} color={streakCelebration.color} onClose={() => setStreakCelebration(null)} />}
     </main>

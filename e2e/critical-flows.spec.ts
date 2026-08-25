@@ -84,6 +84,28 @@ test("crear un hábito recorre interfaz, caché y guardado remoto", async ({ pag
   expect(JSON.stringify(saved)).toContain("Meditar");
 });
 
+test("crear un bloque y una frase conserva la configuración", async ({ page }) => {
+  let saved: Record<string, unknown> | undefined;
+  await openAuthenticatedApp(page, (body) => { saved = body; });
+  await page.getByRole("button", { name: "Hábitos" }).click();
+
+  await page.getByRole("button", { name: "Gestionar bloques" }).click();
+  const blocksDialog = page.getByRole("dialog", { name: "Gestionar bloques" });
+  await blocksDialog.getByLabel("Nombre").fill("Ocio");
+  await blocksDialog.getByRole("button", { name: "+ Añadir bloque" }).click();
+  await expect(blocksDialog.getByText("Ocio", { exact: true })).toBeVisible();
+  await blocksDialog.getByRole("button", { name: "Cerrar" }).click();
+
+  await page.getByRole("button", { name: "Frases" }).click();
+  const motivationsDialog = page.getByRole("dialog", { name: "Frases motivacionales" });
+  await motivationsDialog.getByRole("textbox", { name: "Frase", exact: true }).fill("Avanzar también es descansar.");
+  await motivationsDialog.getByRole("button", { name: "+ Añadir frase" }).click();
+  await expect(motivationsDialog.getByText(/Avanzar también es descansar/)).toBeVisible();
+
+  await expect.poll(() => JSON.stringify(saved)).toContain("Ocio");
+  await expect.poll(() => JSON.stringify(saved)).toContain("Avanzar también es descansar.");
+});
+
 test("crear un objetivo cuantitativo y sumar progreso conserva el flujo completo", async ({ page }) => {
   let saved: Record<string, unknown> | undefined;
   await openAuthenticatedApp(page, (body) => { saved = body; });

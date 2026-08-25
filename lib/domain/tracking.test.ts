@@ -8,6 +8,7 @@ import {
   availableDaysForMonthWeek,
   daysForMonthWeek,
   goalPeriodDetails,
+  ensureArchiveDate,
   habitAppliesOnDate,
   habitScheduledOnDate,
   isHabitVisibleInArchive,
@@ -340,5 +341,20 @@ describe("archived habit rules", () => {
     expect(isHabitVisibleInArchive(archived, new Date(2026, 7, 11, 12))).toBe(true);
     expect(isHabitVisibleInArchive(archived, new Date(2026, 7, 12, 12))).toBe(false);
     expect(isHabitVisibleInArchive({ goal: 31, archived: true }, new Date(2026, 7, 12, 12))).toBe(true);
+  });
+
+  it("starts the seven-day retention window for legacy archived habits", () => {
+    const legacyArchive = { id: 7, goal: 31, archived: true };
+    expect(ensureArchiveDate(legacyArchive, "2026-08-25")).toEqual({
+      ...legacyArchive,
+      archivedAt: "2026-08-25",
+    });
+  });
+
+  it("does not alter active habits or overwrite an existing archive date", () => {
+    const active = { goal: 31 };
+    const datedArchive = { goal: 31, archived: true, archivedAt: "2026-08-05" };
+    expect(ensureArchiveDate(active, "2026-08-25")).toBe(active);
+    expect(ensureArchiveDate(datedArchive, "2026-08-25")).toBe(datedArchive);
   });
 });

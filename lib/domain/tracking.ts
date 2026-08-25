@@ -58,6 +58,11 @@ export function isHabitVisibleInArchive(habit: TrackedHabit, today: Date) {
   return Math.floor((current.getTime() - archived.getTime()) / 86_400_000) < 7;
 }
 
+export function ensureArchiveDate<T extends TrackedHabit>(habit: T, todayKey: string): T {
+  if (!habit.archived || habit.archivedAt) return habit;
+  return { ...habit, archivedAt: todayKey };
+}
+
 export type CalendarWeek = {
   start: string;
   end: string;
