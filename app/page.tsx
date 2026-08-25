@@ -22,7 +22,6 @@ import {
   longestHabitStreak,
   localDateKey,
   monthCalendarWeeks,
-  monthlyHabitProgressThrough,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
   scheduledDaysInMonth,
@@ -30,7 +29,7 @@ import {
 import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
-import { Ring, TrendChart, type ChartSeries } from "./components/charts";
+import { Ring, TrendChart } from "./components/charts";
 import { AuthGate, ResetPassword } from "./components/auth";
 import { AppHeader, ClosureNoticeCard, type ClosureNotice, type MainView } from "./components/app-shell";
 import { GoalCard } from "./components/goal-card";
@@ -50,6 +49,8 @@ import { useGoalManager } from "./hooks/use-goal-manager";
 import { useGoalTemplates } from "./hooks/use-goal-templates";
 import { useHabitManager } from "./hooks/use-habit-manager";
 import { useTrackerSettings } from "./hooks/use-tracker-settings";
+import { buildChartMetrics } from "../lib/domain/chart-metrics";
+import { buildSummaryMetrics } from "../lib/domain/summary-metrics";
 import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, motivationForToday, palette, weeklyBarPalette } from "./config/tracker-defaults";
 
 
@@ -296,145 +297,39 @@ export default function Home() {
   const goalFor = (habit: Habit) => habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
     ? scheduledDaysInMonth(habit, year, month)
     : habit.goal;
-  const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
-  const evaluatedHabitProgress = activeDaily.map((habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough));
-  const totalChecks = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.completed, 0);
-  const totalGoal = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.eligible, 0);
-  const globalProgress = totalGoal ? (totalChecks / totalGoal) * 100 : 0;
-  const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const dailyScoreForDate = (value: Date) => calculateDailyScore(value, daily, weekly, habitCategories);
-  const referenceDay = isCurrentMonth ? today.getDate() : days;
-  const referenceDate = new Date(year, month, referenceDay);
-  const mondayOffset = (referenceDate.getDay() + 6) % 7;
-  const weekStart = Math.max(1, referenceDay - mondayOffset);
-  const weekEnd = Math.min(days, weekStart + 6);
-  const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
-  const habitsScheduledForDay = (day: number) => {
-    const dateKey = isoDate(year, month, day);
-    return daily.filter((habit) => habitScheduledOnDate(habit, dateKey) && !skipsFor(habit).includes(day));
-  };
-  const referenceDayHabits = habitsScheduledForDay(referenceDay);
-  const dayChecks = referenceDayHabits.filter((habit) => checksFor(habit).includes(referenceDay)).length;
-  const currentDayProgress = referenceDayHabits.length ? dayChecks / referenceDayHabits.length * 100 : 0;
-  const pastMonthDailyValues = isPastMonth
-    ? Array.from({ length: days }, (_, index) => {
-        const day = index + 1;
-        const scheduled = habitsScheduledForDay(day);
-        const completed = scheduled.filter((habit) => checksFor(habit).includes(day)).length;
-        return scheduled.length ? completed / scheduled.length * 100 : null;
-      }).filter((progress): progress is number => progress !== null)
-    : [];
-  const pastMonthDailyProgress = pastMonthDailyValues.length
-    ? pastMonthDailyValues.reduce((sum, progress) => sum + progress, 0) / pastMonthDailyValues.length
-    : 0;
-  const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
-  const weekDates = Array.from({ length: Math.max(0, evaluatedWeekEnd - weekStart + 1) }, (_, index) => new Date(year, month, weekStart + index));
-  const adjustedWeekBaseScore = weekDates.length ? weekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / weekDates.length : 0;
-  const referenceDateKey = isoDate(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  const currentWeeklyGoals = goals
-    .filter((goal) => goal.period === "weekly" && weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, referenceDateKey) && goal.status !== "discarded")
-    .map((goal) => {
-      if (!(goal.linkedHabitIds?.length || goal.linkedHabitId)) return goal;
-      const currentValue = linkedGoalProgress(goal, daily);
-      return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
-    });
-  const weeklyGoalResult = calculateWeeklyGoalBonus(adjustedWeekBaseScore, currentWeeklyGoals);
-  const weeklyGoalBonus = weeklyGoalResult.bonus;
-  const weekScore = weeklyGoalResult.finalScore;
-  const currentDayBreakdown = dailyScoreForDate(referenceDate);
-  const dayScore = isPastMonth ? scoreFromPercent(dayProgress) : currentDayBreakdown.finalScore;
-  const dayScoreTitle = isPastMonth ? "Nota media diaria" : "Nota del día";
-  const dayScoreDetail = isPastMonth
-    ? `Media de ${pastMonthDailyValues.length} días con hábitos en ${monthNames[month].toLowerCase()}`
-    : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
-  const monthScore = scoreFromPercent(globalProgress);
-  const habitCompletion = (habit: Habit) => {
-    const progress = monthlyHabitProgressThrough(habit, year, month, evaluatedThrough);
-    return progress.percent / 100;
-  };
-  const ranked = [...daily].filter((habit) => !habit.archived).sort((a, b) => habitCompletion(b) - habitCompletion(a));
-  const streakRanked = [...daily].filter((habit) => !habit.archived).sort((a, b) => longestHabitStreak(b) - longestHabitStreak(a));
-  const rankingItems = rankingView === "best" ? ranked : rankingView === "watch" ? [...ranked].reverse() : streakRanked;
-  const longestVisibleStreak = Math.max(1, ...streakRanked.slice(0, 5).map(longestHabitStreak));
-  const monthWeeks = monthCalendarWeeks(year, month);
-  const currentMonthWeek = isCurrentMonth ? monthWeeks.findIndex((week) => week.includes(today.getDate())) + 1 : 0;
-  const weeklyProgress = monthWeeks.map((weekDays) => {
-    const start = weekDays[0];
-    const end = weekDays.at(-1)!;
-    const projected = !isPastMonth && new Date(year, month, start) > today;
-    const evaluatedEnd = projected ? start - 1 : Math.min(end, isCurrentMonth ? today.getDate() : end);
-    let completed = 0; let possible = 0;
-    for (let day = start; day <= evaluatedEnd; day += 1) {
-      const scheduled = habitsScheduledForDay(day); possible += scheduled.length;
-      completed += scheduled.filter((habit) => checksFor(habit).includes(day)).length;
-    }
-    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range: `${start}–${end} ${monthNames[month].slice(0, 3).toLowerCase()}` };
+  const {
+    evaluatedThrough, totalChecks, totalGoal, dayProgress, dayScore, dayScoreTitle, dayScoreDetail,
+    weekStart, evaluatedWeekEnd, weeklyGoalBonus, weekScore, monthScore, habitCompletion,
+    ranked, rankingItems, longestVisibleStreak, monthWeeks, currentMonthWeek, weeklyProgress,
+  } = buildSummaryMetrics({
+    daily, weekly, categories: habitCategories, goals, rankingView, year, month, days,
+    isPastMonth, isCurrentMonth, today, monthNames,
   });
-  const selectedHabit = activeDaily.find((habit) => habit.id === selectedHabitId) ?? activeDaily[0];
-  const allCategoriesSelected = selectedChartCategory === "__all__";
-  const allHabitsSelected = selectedHabitId === 0;
-  const selectedCategoryMeta = habitCategories.find((category) => category.id === selectedChartCategory) ?? habitCategories[0] ?? defaultCategories[0];
-  const dataForHabits = (habits: Habit[]) => {
-    if (chartPeriod === "weekly") {
-      if (!isPastMonth && !isCurrentMonth) return [];
-      const selectedReference = isCurrentMonth ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : new Date(year, month + 1, 0);
-      const rangeStart = new Date(selectedReference);
-      rangeStart.setDate(selectedReference.getDate() - 6);
-      const weekDates = Array.from({ length: 7 }, (_, index) => {
-        const item = new Date(rangeStart);
-        item.setDate(rangeStart.getDate() + index);
-        return item;
-      });
-      return weekDates.map((item) => {
-        const key = `${item.getFullYear()}-${String(item.getMonth() + 1).padStart(2, "0")}`;
-        const day = item.getDate();
-        const dueHabits = habits.filter((habit) => habitScheduledOnDate(habit, isoDate(item.getFullYear(), item.getMonth(), day)) && !(habit.skips?.[key] ?? []).includes(day));
-        const completed = dueHabits.filter((habit) => checksFor(habit, key).includes(day)).length;
-        const label = item.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" }).replace(".", "");
-        return { label, value: dueHabits.length ? completed / dueHabits.length * 100 : 0 };
-      });
-    }
-    if (chartPeriod === "monthly") {
-      return Array.from({ length: elapsedDays }, (_, index) => {
-        const day = index + 1;
-        const completed = habits.reduce((sum, habit) => sum + checksFor(habit).filter((value) => value <= day).length, 0);
-        const target = habits.reduce((sum, habit) => {
-          const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, year, month, day) : Math.min(habit.goal, day);
-          return sum + Math.max(0, scheduled - skipsFor(habit).filter((value) => value <= day).length);
-        }, 0);
-        return { label: String(day), value: target ? Math.min(100, completed / target * 100) : 0 };
-      });
-    }
-    const elapsedMonths = year < today.getFullYear()
-      ? 12
-      : year === today.getFullYear()
-        ? today.getMonth() + 1
-        : 0;
-    return monthNames.slice(0, elapsedMonths).map((label, index) => {
-      const key = `${year}-${String(index + 1).padStart(2, "0")}`;
-      const completed = habits.reduce((sum, habit) => sum + checksFor(habit, key).length, 0);
-      const target = habits.reduce((sum, habit) => {
-        const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly ? scheduledDaysInMonth(habit, year, index) : habit.goal;
-        return sum + Math.max(0, scheduled - skipsFor(habit, key).length);
-      }, 0);
-      return { label: label.slice(0, 3), value: target ? Math.min(100, completed / target * 100) : 0 };
-    });
-  };
-  const chartSeries: ChartSeries[] = chartScope === "category" && allCategoriesSelected
-    ? habitCategories.map((category) => ({ name: category.label, color: category.color, data: dataForHabits(activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === category.id)) }))
-    : chartScope === "habit" && allHabitsSelected
-      ? activeDaily.map((habit) => ({ name: habit.name, color: habit.color, data: dataForHabits([habit]) }))
-      : chartScope === "category"
-        ? [{ name: selectedCategoryMeta.label, color: selectedCategoryMeta.color, data: dataForHabits(activeDaily.filter((habit) => (habit.category ?? inferCategory(habit.name)) === selectedCategoryMeta.id)) }]
-        : chartScope === "habit" && selectedHabit
-          ? [{ name: selectedHabit.name, color: selectedHabit.color, data: dataForHabits([selectedHabit]) }]
-          : [{ name: "General", color: "#3cc9ab", data: dataForHabits(activeDaily) }];
-  const rollingPeriodEnd = isCurrentMonth ? today : new Date(year, month + 1, 0);
-  const rollingPeriodStart = new Date(rollingPeriodEnd);
-  rollingPeriodStart.setDate(rollingPeriodEnd.getDate() - 6);
-  const shortDate = (value: Date) => value.toLocaleDateString("es-ES", { day: "numeric", month: "short" }).replace(".", "");
-  const rollingPeriodLabel = `${shortDate(rollingPeriodStart)} – ${shortDate(rollingPeriodEnd)}`;
+  const {
+    selectedHabit,
+    selectedCategory: selectedCategoryMeta,
+    allCategoriesSelected,
+    allHabitsSelected,
+    series: chartSeries,
+    rollingPeriodLabel,
+  } = buildChartMetrics({
+    habits: activeDaily,
+    categories: habitCategories,
+    fallbackCategory: defaultCategories[0],
+    selectedHabitId,
+    selectedCategoryId: selectedChartCategory,
+    period: chartPeriod,
+    scope: chartScope,
+    year,
+    month,
+    elapsedDays,
+    isPastMonth,
+    isCurrentMonth,
+    today,
+    monthNames,
+    resolveCategory: (habit) => habit.category ?? inferCategory(habit.name),
+  });
   function shiftMonth(direction: number) {
     setDate(new Date(year, month + direction, 1));
   }
