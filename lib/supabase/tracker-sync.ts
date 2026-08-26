@@ -34,6 +34,16 @@ export async function saveRemoteTrackerState(accessToken: string, base: TrackerS
   return response.json() as Promise<{ revision: number }>;
 }
 
+export function revisionFromBroadcastPayload(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as {
+    record?: { revision?: unknown };
+    new?: { revision?: unknown };
+  };
+  const revision = Number(payload.record?.revision ?? payload.new?.revision);
+  return Number.isSafeInteger(revision) ? revision : null;
+}
+
 export function subscribeToTrackerRevisions(
   userId: string,
   onRevision: (revision: number | null) => void,
@@ -44,12 +54,7 @@ export function subscribeToTrackerRevisions(
   const channel: RealtimeChannel = supabase
     .channel(`brujula-sync:${userId}`, { config: { private: true } })
     .on("broadcast", { event: "revision" }, (event) => {
-      const payload = event.payload as {
-        record?: { revision?: unknown };
-        new?: { revision?: unknown };
-      };
-      const revision = Number(payload.record?.revision ?? payload.new?.revision);
-      onRevision(Number.isSafeInteger(revision) ? revision : null);
+      onRevision(revisionFromBroadcastPayload(event.payload));
     });
 
   void supabase.realtime.setAuth()
