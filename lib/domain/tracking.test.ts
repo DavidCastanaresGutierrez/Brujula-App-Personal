@@ -362,6 +362,19 @@ describe("archived habit rules", () => {
     });
   });
 
+  it("freezes a flexible monthly target on the archive date", () => {
+    expect(monthlyHabitProgressThrough({
+      goal: 31,
+      archived: true,
+      archivedAt: "2026-08-04",
+      history: { "2026-08": [1, 2, 3] },
+    }, 2026, 7, 10)).toEqual({
+      completed: 3,
+      eligible: 3,
+      percent: 100,
+    });
+  });
+
   it("does not alter active habits or overwrite an existing archive date", () => {
     const active = { goal: 31 };
     const datedArchive = { goal: 31, archived: true, archivedAt: "2026-08-05" };
