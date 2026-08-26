@@ -1,4 +1,5 @@
 import {
+  calendarWeekForDate,
   calculateDailyScore,
   calculateWeeklyGoalBonus,
   habitScheduledOnDate,
@@ -51,11 +52,36 @@ export function buildSummaryMetrics({
     ? evaluatedDailyScores.reduce((sum, score) => sum + score.finalScore, 0) / evaluatedDailyScores.length
     : 0;
   const referenceDay = isCurrentMonth ? today.getDate() : days;
-  const referenceDate = new Date(year, month, referenceDay);
-  const mondayOffset = (referenceDate.getDay() + 6) % 7;
-  const weekStart = Math.max(1, referenceDay - mondayOffset);
-  const weekEnd = Math.min(days, weekStart + 6);
-  const evaluatedWeekEnd = isCurrentMonth ? Math.min(weekEnd, today.getDate()) : weekEnd;
+  const referenceDate = new Date(year, month, referenceDay, 12);
+  const referenceWeek = calendarWeekForDate(referenceDate);
+  const todayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const evaluatedWeekEndKey = referenceWeek.end < todayKey ? referenceWeek.end : todayKey;
+  const weekCursor = new Date(`${referenceWeek.start}T00:00:00Z`);
+  const weekLimit = new Date(`${evaluatedWeekEndKey}T00:00:00Z`);
+  const weekDates: Date[] = [];
+  while (weekCursor <= weekLimit) {
+    weekDates.push(new Date(
+      weekCursor.getUTCFullYear(),
+      weekCursor.getUTCMonth(),
+      weekCursor.getUTCDate(),
+      12,
+    ));
+    weekCursor.setUTCDate(weekCursor.getUTCDate() + 1);
+  }
+  const evaluatedWeekScores = weekDates
+    .map(dailyScoreForDate)
+    .filter((score) => score.scheduled > 0);
+  const adjustedWeekBaseScore = evaluatedWeekScores.length
+    ? evaluatedWeekScores.reduce((sum, score) => sum + score.finalScore, 0) / evaluatedWeekScores.length
+    : 0;
+  const shortMonth = (monthIndex: number) => monthNames[monthIndex].slice(0, 3).toLowerCase();
+  const formatShortDate = (dateKey: string) => {
+    const [, dateMonth, dateDay] = dateKey.split("-").map(Number);
+    return `${dateDay} ${shortMonth(dateMonth - 1)}`;
+  };
+  const weekRange = `${formatShortDate(referenceWeek.start)}–${formatShortDate(evaluatedWeekEndKey)}`;
+  const weekStart = Number(referenceWeek.start.slice(-2));
+  const evaluatedWeekEnd = Number(evaluatedWeekEndKey.slice(-2));
   const habitsScheduledForDay = (day: number) => {
     const dateKey = isoDate(year, month, day);
     return daily.filter((habit) => habitScheduledOnDate(habit, dateKey) && !skipsFor(habit).includes(day));
@@ -75,8 +101,6 @@ export function buildSummaryMetrics({
     ? pastMonthDailyValues.reduce((sum, progress) => sum + progress, 0) / pastMonthDailyValues.length
     : 0;
   const dayProgress = isPastMonth ? pastMonthDailyProgress : currentDayProgress;
-  const weekDates = Array.from({ length: Math.max(0, evaluatedWeekEnd - weekStart + 1) }, (_, index) => new Date(year, month, weekStart + index));
-  const adjustedWeekBaseScore = weekDates.length ? weekDates.reduce((sum, item) => sum + dailyScoreForDate(item).finalScore, 0) / weekDates.length : 0;
   const referenceDateKey = isoDate(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
   const currentWeeklyGoals = goals
     .filter((goal) => goal.period === "weekly" && weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, referenceDateKey) && goal.status !== "discarded")
@@ -100,8 +124,6 @@ export function buildSummaryMetrics({
   const monthWeeks = monthCalendarWeeks(year, month);
   const currentMonthWeek = isCurrentMonth ? monthWeeks.findIndex((week) => week.includes(today.getDate())) + 1 : 0;
   const chartWeeks = monthCalendarDateWeeks(year, month);
-  const todayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
-  const shortMonth = (monthIndex: number) => monthNames[monthIndex].slice(0, 3).toLowerCase();
   const weeklyProgress = chartWeeks.map((weekDates) => {
     const startKey = weekDates[0];
     const endKey = weekDates.at(-1)!;
@@ -136,6 +158,7 @@ export function buildSummaryMetrics({
     dayScoreDetail,
     weekStart,
     evaluatedWeekEnd,
+    weekRange,
     weeklyGoalBonus: weeklyGoalResult.bonus,
     weekScore: weeklyGoalResult.finalScore,
     monthScore,
