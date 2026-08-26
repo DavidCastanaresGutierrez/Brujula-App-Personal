@@ -51,6 +51,25 @@ describe("summary metrics", () => {
     expect(result.monthScore).toBeCloseTo(10 / 3);
   });
 
+  it("shows 100% for a habit completed on every elapsed day", () => {
+    const result = metrics([
+      {
+        id: 1,
+        name: "Zero nicotine",
+        goal: 31,
+        color: "#39c6a4",
+        category: "health",
+        everyDay: true,
+        history: { "2026-08": [1, 2, 3, 4, 5] },
+        checks: [],
+      },
+    ], {
+      today: new Date(2026, 7, 5, 12),
+    });
+
+    expect(result.topHabitPercent).toBe(100);
+  });
+
   it("orders habits by completion and by longest streak", () => {
     const habits: Habit[] = [
       { id: 1, name: "Irregular", goal: 31, color: "#39c6a4", everyDay: true, history: { "2026-08": [1] }, checks: [] },
