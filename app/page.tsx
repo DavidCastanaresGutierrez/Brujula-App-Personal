@@ -5,7 +5,6 @@ import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupP
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
   calculateProportionalGoalBonus,
-  calculateWeightedHabitDays,
   availableDaysForMonthWeek,
   calculateCategoryScores,
   calculateDailyScore,
@@ -18,7 +17,6 @@ import {
   habitAppliesOnDate,
   habitScheduledOnDate,
   isHabitVisibleInArchive,
-  linkedGoalProgress,
   longestHabitStreak,
   localDateKey,
   monthCalendarWeeks,
@@ -51,6 +49,7 @@ import { useHabitManager } from "./hooks/use-habit-manager";
 import { useTrackerSettings } from "./hooks/use-tracker-settings";
 import { buildChartMetrics } from "../lib/domain/chart-metrics";
 import { buildSummaryMetrics } from "../lib/domain/summary-metrics";
+import { resolveGoals, visibleGoalsForPeriod } from "../lib/domain/goal-metrics";
 import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, motivationForToday, palette, weeklyBarPalette } from "./config/tracker-defaults";
 
 
@@ -462,44 +461,11 @@ export default function Home() {
     setDragging(null);
   }
 
-  const progressResolvedGoals = goals.map((goal) => {
-    if (goal.status === "discarded") return goal;
-    if (goal.template === "reading") {
-      const currentValue = (goal.books ?? []).filter(isBookCompleted).length;
-      return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
-    }
-    if (goal.template === "fitness") {
-      const ids = goal.linkedHabitIds ?? [];
-      const currentValue = calculateWeightedHabitDays(daily, ids, goal.trackingStart, today);
-      return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
-    }
-    if (!(goal.linkedHabitIds?.length || goal.linkedHabitId)) return goal;
-    const currentValue = linkedGoalProgress(goal, daily);
-    return { ...goal, currentValue, status: currentValue >= goal.targetValue ? "completed" as const : "active" as const };
-  });
-  const resolvedGoals = progressResolvedGoals.map((goal) => {
-    if (goal.period !== "yearly") return goal;
-    const milestones = progressResolvedGoals.filter((item) => (item.period === "weekly" || item.period === "monthly")
-      && item.parentAnnualGoalId === goal.id
-      && item.status !== "discarded");
-    if (!milestones.length) return goal;
-    const completed = milestones.filter((item) => item.status === "completed").length;
-    return {
-      ...goal,
-      currentValue: completed,
-      targetValue: milestones.length,
-      unit: "hitos",
-      status: completed === milestones.length ? "completed" as const : "active" as const,
-    };
-  });
+  const resolvedGoals = resolveGoals({ goals, daily, today, isBookCompleted });
   const archivedGoals = resolvedGoals.filter((goal) => goal.archived && goal.status !== "discarded");
   const archivedCount = archivedHabits.length + archivedGoals.length;
   const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
-  const visibleGoals = resolvedGoals.filter((goal) => goal.period === goalFilter
-    && goal.status !== "discarded"
-    && !goal.archived
-    && (goalCategoryFilter === "all" || goal.category === goalCategoryFilter)
-    && (goal.period !== "weekly" || weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, realTodayKey) || (goal.status === "active" && goal.dueDate < realTodayKey)));
+  const visibleGoals = visibleGoalsForPeriod({ goals: resolvedGoals, period: goalFilter, category: goalCategoryFilter, todayKey: realTodayKey });
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active" && !goal.archived);
   const actionableInsights = generateActionableInsights(today, daily, habitCategories, resolvedGoals).filter((insight) => !dismissedInsights.has(insight.id));
   const dayViewKey = isoDate(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate());
