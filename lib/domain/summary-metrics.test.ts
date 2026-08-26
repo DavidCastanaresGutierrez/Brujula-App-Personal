@@ -60,6 +60,31 @@ describe("summary metrics", () => {
     expect(metrics(habits, { today: new Date(2026, 7, 3, 12), rankingView: "watch" }).rankingItems[0].name).toBe("Irregular");
   });
 
+  it("keeps the weekly score continuous when the month changes", () => {
+    const result = metrics([
+      {
+        id: 1,
+        name: "Caminar",
+        goal: 30,
+        color: "#39c6a4",
+        category: "health",
+        everyDay: true,
+        history: { "2026-09": [1] },
+        checks: [],
+      },
+    ], {
+      year: 2026,
+      month: 8,
+      days: 30,
+      isCurrentMonth: true,
+      isPastMonth: false,
+      today: new Date(2026, 8, 1, 12),
+    });
+
+    expect(result.weekScore).toBe(5);
+    expect(result.weekRange).toBe("31 ago–1 sep");
+  });
+
   it("uses the same block weighting in weekly bars as in daily scores", () => {
     const result = metrics([
       { id: 1, name: "Salud 1", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: { "2026-08": [3] }, checks: [] },
