@@ -1,4 +1,4 @@
-import { calculateDailyScore, habitScheduledOnDate, isoDate, weeklyGoalIncludesDate, type ScoreCategory, type TrackedHabit } from "./tracking";
+import { calculateDailyScore, habitScheduledOnDate, isoDate, type ScoreCategory, type TrackedHabit } from "./tracking";
 
 export type WeeklyReview = {
   weekStart: string;
@@ -66,5 +66,9 @@ export function summarizeWeek(
 export function goalsForWeek<T extends { period: string; periodKey: string; dueDate: string }>(goals: T[], start: string) {
   const end = new Date(`${start}T12:00:00`); end.setDate(end.getDate() + 6);
   const endKey = isoDate(end.getFullYear(), end.getMonth(), end.getDate());
-  return goals.filter((goal) => goal.period === "weekly" && weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, start) || goal.period === "weekly" && weeklyGoalIncludesDate(goal.periodKey, goal.dueDate, endKey));
+  return goals.filter((goal) => (
+    goal.period === "weekly"
+    && goal.periodKey <= endKey
+    && goal.dueDate >= start
+  ));
 }
