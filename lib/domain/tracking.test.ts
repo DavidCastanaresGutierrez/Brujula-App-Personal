@@ -15,6 +15,7 @@ import {
   localDateKey,
   linkedGoalProgress,
   isCalendarDayInFuture,
+  monthCalendarDateWeeks,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
   longestHabitStreak,
@@ -71,6 +72,16 @@ describe("calendar rules", () => {
       [24, 25, 26, 27, 28, 29, 30],
       [31],
     ]);
+  });
+
+  it("builds complete Monday-to-Sunday weeks shared by adjacent months", () => {
+    const augustLastWeek = monthCalendarDateWeeks(2026, 7).at(-1);
+    const septemberFirstWeek = monthCalendarDateWeeks(2026, 8)[0];
+    expect(augustLastWeek).toEqual([
+      "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03",
+      "2026-09-04", "2026-09-05", "2026-09-06",
+    ]);
+    expect(septemberFirstWeek).toEqual(augustLastWeek);
   });
 
   it("starts the first partial week on day one and ends it on Sunday", () => {
