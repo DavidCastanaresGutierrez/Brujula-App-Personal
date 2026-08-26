@@ -20,3 +20,7 @@ export function decideRemoteRevision(
   if (!Number.isSafeInteger(remoteRevision) || remoteRevision <= currentRevision) return "ignore";
   return hasLocalChanges ? "conflict" : "apply";
 }
+
+export function shouldPullNotifiedRevision(currentRevision: number, notifiedRevision: number | null) {
+  return notifiedRevision === null || (Number.isSafeInteger(notifiedRevision) && notifiedRevision > currentRevision);
+}
