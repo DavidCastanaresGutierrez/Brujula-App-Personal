@@ -40,3 +40,17 @@ create trigger broadcast_tracker_revision_change
 after insert or update on public.tracker_state_versions
 for each row
 execute function public.broadcast_tracker_revision();
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'tracker_state_versions'
+  ) then
+    alter publication supabase_realtime drop table public.tracker_state_versions;
+  end if;
+end;
+$$;
