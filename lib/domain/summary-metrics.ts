@@ -41,10 +41,15 @@ export function buildSummaryMetrics({
   const evaluatedHabitProgress = activeDaily.map((habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough));
   const totalChecks = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.completed, 0);
   const totalGoal = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.eligible, 0);
-  const globalProgress = totalGoal ? totalChecks / totalGoal * 100 : 0;
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const dailyScoreForDate = (value: Date) => calculateDailyScore(value, daily, weekly, categories);
+  const evaluatedDailyScores = Array.from({ length: evaluatedThrough }, (_, index) => (
+    dailyScoreForDate(new Date(year, month, index + 1, 12))
+  )).filter((score) => score.scheduled > 0);
+  const monthScore = evaluatedDailyScores.length
+    ? evaluatedDailyScores.reduce((sum, score) => sum + score.finalScore, 0) / evaluatedDailyScores.length
+    : 0;
   const referenceDay = isCurrentMonth ? today.getDate() : days;
   const referenceDate = new Date(year, month, referenceDay);
   const mondayOffset = (referenceDate.getDay() + 6) % 7;
@@ -133,7 +138,7 @@ export function buildSummaryMetrics({
     evaluatedWeekEnd,
     weeklyGoalBonus: weeklyGoalResult.bonus,
     weekScore: weeklyGoalResult.finalScore,
-    monthScore: scoreFromPercent(globalProgress),
+    monthScore,
     habitCompletion,
     ranked,
     rankingItems,
