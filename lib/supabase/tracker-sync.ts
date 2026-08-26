@@ -46,6 +46,7 @@ export function revisionFromBroadcastPayload(value: unknown) {
 
 export function subscribeToTrackerRevisions(
   userId: string,
+  accessToken: string,
   onRevision: (revision: number | null) => void,
   onStatus: (status: RealtimeSyncStatus) => void,
 ) {
@@ -57,7 +58,7 @@ export function subscribeToTrackerRevisions(
       onRevision(revisionFromBroadcastPayload(event.payload));
     });
 
-  void supabase.realtime.setAuth()
+  void supabase.realtime.setAuth(accessToken)
     .then(() => {
       if (!disposed) channel.subscribe((status) => onStatus(status as RealtimeSyncStatus));
     })
