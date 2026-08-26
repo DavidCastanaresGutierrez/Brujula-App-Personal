@@ -101,18 +101,15 @@ export function buildSummaryMetrics({
     const startKey = weekDates[0];
     const endKey = weekDates.at(-1)!;
     const projected = startKey > todayKey;
-    let completed = 0;
-    let possible = 0;
+    let accumulatedScore = 0;
+    let evaluatedDays = 0;
 
     weekDates.filter((dateKey) => dateKey <= todayKey).forEach((dateKey) => {
       const [dateYear, dateMonth, day] = dateKey.split("-").map(Number);
-      const historyKey = `${dateYear}-${String(dateMonth).padStart(2, "0")}`;
-      const scheduled = daily.filter((habit) => (
-        habitScheduledOnDate(habit, dateKey)
-        && !(habit.skips?.[historyKey] ?? []).includes(day)
-      ));
-      possible += scheduled.length;
-      completed += scheduled.filter((habit) => (habit.history?.[historyKey] ?? []).includes(day)).length;
+      const dailyBreakdown = dailyScoreForDate(new Date(dateYear, dateMonth - 1, day, 12));
+      if (!dailyBreakdown.scheduled) return;
+      accumulatedScore += dailyBreakdown.baseScore * 10;
+      evaluatedDays += 1;
     });
 
     const [, startMonth, startDay] = startKey.split("-").map(Number);
@@ -121,7 +118,7 @@ export function buildSummaryMetrics({
       ? `${startDay}–${endDay} ${shortMonth(startMonth - 1)}`
       : `${startDay} ${shortMonth(startMonth - 1)}–${endDay} ${shortMonth(endMonth - 1)}`;
 
-    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range };
+    return { value: projected ? null : evaluatedDays ? Math.round(accumulatedScore / evaluatedDays) : 0, projected, range };
   });
 
   return {
