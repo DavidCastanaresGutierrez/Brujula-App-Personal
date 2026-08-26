@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { belongsToActiveUser, decideRemoteRevision, shouldRetryPendingSave } from "./sync";
+import { belongsToActiveUser, decideRemoteRevision, shouldPullNotifiedRevision, shouldRetryPendingSave } from "./sync";
 
 describe("session isolation", () => {
   it("allows a sync response only for the user that started it", () => {
@@ -40,5 +40,15 @@ describe("pending local saves", () => {
 
   it("does not retry over an unresolved multi-device conflict", () => {
     expect(shouldRetryPendingSave(true, true, true)).toBe(false);
+  });
+});
+
+describe("realtime revision notifications", () => {
+  it("pulls only unknown or newer revisions", () => {
+    expect(shouldPullNotifiedRevision(5, 6)).toBe(true);
+    expect(shouldPullNotifiedRevision(5, null)).toBe(true);
+    expect(shouldPullNotifiedRevision(5, 5)).toBe(false);
+    expect(shouldPullNotifiedRevision(5, 4)).toBe(false);
+    expect(shouldPullNotifiedRevision(5, Number.NaN)).toBe(false);
   });
 });
