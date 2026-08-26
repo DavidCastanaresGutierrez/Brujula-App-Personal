@@ -44,6 +44,35 @@ describe("summary metrics", () => {
     expect(metrics(habits, { today: new Date(2026, 7, 3, 12), rankingView: "watch" }).rankingItems[0].name).toBe("Irregular");
   });
 
+  it("repeats a shared seven-day week in adjacent month views", () => {
+    const habit: Habit = {
+      id: 1,
+      name: "Caminar",
+      goal: 31,
+      color: "#39c6a4",
+      category: "health",
+      everyDay: true,
+      history: { "2026-08": [31], "2026-09": [1, 2] },
+      checks: [],
+    };
+    const august = metrics([habit], {
+      isCurrentMonth: false,
+      isPastMonth: true,
+      today: new Date(2026, 8, 10, 12),
+    });
+    const september = metrics([habit], {
+      year: 2026,
+      month: 8,
+      days: 30,
+      isCurrentMonth: true,
+      isPastMonth: false,
+      today: new Date(2026, 8, 10, 12),
+    });
+
+    expect(august.weeklyProgress.at(-1)).toEqual(september.weeklyProgress[0]);
+    expect(august.weeklyProgress.at(-1)?.range).toBe("31 ago–6 sep");
+  });
+
   it("marks weeks after today as projected", () => {
     const result = metrics([], { today: new Date(2026, 7, 5, 12) });
     expect(result.weeklyProgress.some((week) => week.projected)).toBe(true);
