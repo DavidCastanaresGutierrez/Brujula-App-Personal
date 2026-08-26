@@ -35,6 +35,22 @@ describe("summary metrics", () => {
     expect([result.totalChecks, result.totalGoal]).toEqual([1, 2]);
   });
 
+  it("calculates the monthly score from equally weighted blocks", () => {
+    const result = metrics([
+      { id: 1, name: "Salud 1", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: { "2026-08": [1] }, checks: [] },
+      { id: 2, name: "Salud 2", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: { "2026-08": [1] }, checks: [] },
+      { id: 3, name: "Salud 3", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: {}, checks: [] },
+      { id: 4, name: "Trabajo", goal: 31, color: "#8b7cf6", category: "work", everyDay: true, history: {}, checks: [] },
+    ], {
+      categories: [
+        categories[0],
+        { id: "work", label: "Trabajo", icon: "◇", color: "#8b7cf6" },
+      ],
+    });
+
+    expect(result.monthScore).toBeCloseTo(10 / 3);
+  });
+
   it("orders habits by completion and by longest streak", () => {
     const habits: Habit[] = [
       { id: 1, name: "Irregular", goal: 31, color: "#39c6a4", everyDay: true, history: { "2026-08": [1] }, checks: [] },
