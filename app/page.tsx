@@ -246,7 +246,7 @@ export default function Home() {
   const scoreLabel = (score: number) => score.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const {
     evaluatedThrough, totalChecks, totalGoal, dayProgress, dayScore, dayScoreTitle, dayScoreDetail,
-    weekStart, evaluatedWeekEnd, weeklyGoalBonus, weekScore, monthScore, habitCompletion,
+    weekRange, weeklyGoalBonus, weekScore, monthScore, habitCompletion,
     ranked, rankingItems, longestVisibleStreak, monthWeeks, currentMonthWeek, weeklyProgress,
   } = buildSummaryMetrics({
     daily, weekly, categories: habitCategories, goals, rankingView, year, month, days,
@@ -607,7 +607,7 @@ export default function Home() {
           <article className="metric">
             <span>Nota semanal</span>
             <strong>{scoreLabel(weekScore)} <small>/ 10</small></strong>
-            <p>Del día {weekStart} al {evaluatedWeekEnd}{weeklyGoalBonus > 0 ? ` · +${scoreLabel(weeklyGoalBonus)} bonus` : ""}</p>
+            <p>{weekRange}{weeklyGoalBonus > 0 ? ` · +${scoreLabel(weeklyGoalBonus)} bonus` : ""}</p>
           </article>
           <article className="metric">
             <span>Nota del mes</span>
