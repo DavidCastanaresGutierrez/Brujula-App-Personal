@@ -120,6 +120,7 @@ export function buildSummaryMetrics({
     : `${dayChecks} de ${referenceDayHabits.length} hábitos completados${currentDayBreakdown.bonus > 0 ? ` · +${scoreLabel(currentDayBreakdown.bonus)} bonus` : ""}`;
   const habitCompletion = (habit: Habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough).percent / 100;
   const ranked = [...activeDaily].sort((a, b) => habitCompletion(b) - habitCompletion(a));
+  const topHabitPercent = ranked[0] ? Math.round(habitCompletion(ranked[0]) * 100) : 0;
   const streakRanked = [...activeDaily].sort((a, b) => longestHabitStreak(b) - longestHabitStreak(a));
   const rankingItems = rankingView === "best" ? ranked : rankingView === "watch" ? [...ranked].reverse() : streakRanked;
   const longestVisibleStreak = Math.max(1, ...streakRanked.slice(0, 5).map(longestHabitStreak));
@@ -166,6 +167,7 @@ export function buildSummaryMetrics({
     monthScore,
     habitCompletion,
     ranked,
+    topHabitPercent,
     rankingItems,
     longestVisibleStreak,
     monthWeeks,
