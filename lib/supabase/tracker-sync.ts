@@ -40,15 +40,28 @@ export function subscribeToTrackerRevisions(
   onStatus: (status: RealtimeSyncStatus) => void,
 ) {
   const supabase = getSupabaseBrowserClient();
+  let disposed = false;
   const channel: RealtimeChannel = supabase
-    .channel(`brujula-sync:${userId}`)
-    .on("postgres_changes", {
-      event: "UPDATE", schema: "public", table: "tracker_state_versions", filter: `user_id=eq.${userId}`,
-    }, (event) => {
-      const revision = Number((event.new as { revision?: unknown }).revision);
+    .channel(`brujula-sync:${userId}`, { config: { private: true } })
+    .on("broadcast", { event: "revision" }, (event) => {
+      const payload = event.payload as {
+        record?: { revision?: unknown };
+        new?: { revision?: unknown };
+      };
+      const revision = Number(payload.record?.revision ?? payload.new?.revision);
       onRevision(Number.isSafeInteger(revision) ? revision : null);
-    })
-    .subscribe((status) => onStatus(status as RealtimeSyncStatus));
+    });
 
-  return () => { void supabase.removeChannel(channel); };
+  void supabase.realtime.setAuth()
+    .then(() => {
+      if (!disposed) channel.subscribe((status) => onStatus(status as RealtimeSyncStatus));
+    })
+    .catch(() => {
+      if (!disposed) onStatus("CHANNEL_ERROR");
+    });
+
+  return () => {
+    disposed = true;
+    void supabase.removeChannel(channel);
+  };
 }
