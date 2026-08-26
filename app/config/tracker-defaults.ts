@@ -150,9 +150,8 @@ export function upgradeDefaultMotivations(motivations: string[] | undefined) {
   return stillUsesLegacyDefaults ? dailyMotivations : available;
 }
 
-export function motivationForToday(motivations = dailyMotivations) {
+export function motivationForToday(motivations = dailyMotivations, date = new Date()) {
   const available = motivations.length ? motivations : dailyMotivations;
-  const now = new Date();
-  const dayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86_400_000);
+  const dayNumber = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
   return available[dayNumber % available.length];
 }
