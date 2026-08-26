@@ -134,9 +134,15 @@ export function monthlyHabitProgressThrough(habit: TrackedHabit, year: number, m
   const monthDays = new Date(year, monthIndex + 1, 0).getDate();
   const through = Math.max(0, Math.min(throughDay, monthDays));
   const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  let goalThrough = through;
+  if (habit.archivedAt) {
+    const archiveMonthKey = habit.archivedAt.slice(0, 7);
+    if (archiveMonthKey < monthKey) goalThrough = 0;
+    else if (archiveMonthKey === monthKey) goalThrough = Math.min(goalThrough, Math.max(0, Number(habit.archivedAt.slice(-2)) - 1));
+  }
   const scheduled = habit.schedule?.mode || habit.everyDay || habit.weekdaysOnly
     ? scheduledDaysInMonth(habit, year, monthIndex, through)
-    : Math.min(habit.goal, Math.ceil(habit.goal * through / Math.max(1, monthDays)));
+    : Math.min(habit.goal, Math.ceil(habit.goal * goalThrough / Math.max(1, monthDays)));
   const skippedDays = (habit.skips?.[monthKey] ?? []).filter((day) => day <= through);
   const skipped = skippedDays.length;
   const eligible = Math.max(0, scheduled - skipped);
