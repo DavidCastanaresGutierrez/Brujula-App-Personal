@@ -38,6 +38,7 @@ export function summarizeWeek(
 ) {
   const dates = Array.from({ length: 7 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date; });
   const dayScores = dates.map((date) => calculateDailyScore(date, daily, weekly, categories));
+  const evaluatedDayScores = dayScores.filter((score) => score.scheduled > 0);
   const categoryTotals = new Map<string, WeeklyCategorySummary>();
   dates.forEach((date) => {
     const dateKey = isoDate(date.getFullYear(), date.getMonth(), date.getDate());
@@ -55,7 +56,7 @@ export function summarizeWeek(
   });
   const categorySummaries = [...categoryTotals.values()].map((item) => ({ ...item, percent: item.scheduled ? item.completed / item.scheduled * 100 : 0 }));
   return {
-    score: dayScores.reduce((sum, item) => sum + item.finalScore, 0) / Math.max(1, dayScores.length),
+    score: evaluatedDayScores.reduce((sum, item) => sum + item.finalScore, 0) / Math.max(1, evaluatedDayScores.length),
     completed: dayScores.reduce((sum, item) => sum + item.completed, 0),
     scheduled: dayScores.reduce((sum, item) => sum + item.scheduled, 0),
     categories: categorySummaries.sort((a, b) => b.percent - a.percent),
