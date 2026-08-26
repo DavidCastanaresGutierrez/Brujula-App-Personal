@@ -70,6 +70,28 @@ describe("summary metrics", () => {
     expect(result.topHabitPercent).toBe(100);
   });
 
+  it("keeps pre-archive completions in historical monthly totals", () => {
+    const result = metrics([
+      {
+        id: 1,
+        name: "Hábito archivado",
+        goal: 31,
+        color: "#39c6a4",
+        category: "health",
+        everyDay: true,
+        archived: true,
+        archivedAt: "2026-08-04",
+        history: { "2026-08": [1, 2, 3] },
+        checks: [],
+      },
+    ], {
+      today: new Date(2026, 7, 5, 12),
+    });
+
+    expect([result.totalChecks, result.totalGoal]).toEqual([3, 3]);
+    expect(result.ranked).toHaveLength(0);
+  });
+
   it("orders habits by completion and by longest streak", () => {
     const habits: Habit[] = [
       { id: 1, name: "Irregular", goal: 31, color: "#39c6a4", everyDay: true, history: { "2026-08": [1] }, checks: [] },
