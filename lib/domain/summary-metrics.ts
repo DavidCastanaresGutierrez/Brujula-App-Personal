@@ -39,7 +39,7 @@ export function buildSummaryMetrics({
   const checksFor = (habit: Habit) => habit.history?.[monthKey] ?? [];
   const skipsFor = (habit: Habit) => habit.skips?.[monthKey] ?? [];
   const evaluatedThrough = isCurrentMonth ? today.getDate() : isPastMonth ? days : 0;
-  const evaluatedHabitProgress = activeDaily.map((habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough));
+  const evaluatedHabitProgress = daily.map((habit) => monthlyHabitProgressThrough(habit, year, month, evaluatedThrough));
   const totalChecks = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.completed, 0);
   const totalGoal = evaluatedHabitProgress.reduce((sum, progress) => sum + progress.eligible, 0);
   const scoreFromPercent = (percent: number) => Math.min(10, Math.max(0, percent / 10));
