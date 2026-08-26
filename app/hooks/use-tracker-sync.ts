@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { belongsToActiveUser, decideRemoteRevision, shouldRetryPendingSave } from "../../lib/domain/sync";
+import { belongsToActiveUser, decideRemoteRevision, shouldPullNotifiedRevision, shouldRetryPendingSave } from "../../lib/domain/sync";
 import { parseStoredTrackerState, readStoredValue, writeStoredValue } from "../../lib/domain/storage";
 import { trackerStatesEqual as statesEqual, type Category, type Goal, type Habit, type TrackerState, type WeeklyHabit } from "../../lib/domain/tracker-state";
 import type { WeeklyReview } from "../../lib/domain/weekly-review";
@@ -11,6 +11,8 @@ import { fetchRemoteTrackerState, saveRemoteTrackerState, subscribeToTrackerRevi
 import type { SyncStatusValue } from "../components/sync-status";
 
 type NormalizedTrackerState = Required<TrackerState>;
+
+const REMOTE_PULL_COOLDOWN_MS = 15_000;
 
 type UseTrackerSyncOptions = {
   initialState: NormalizedTrackerState;
@@ -59,12 +61,13 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
   const revisionRef = useRef(0);
   const conflictRef = useRef(false);
   const pendingRemoteRevisionRef = useRef<number | null>(null);
-  const pullLatestRef = useRef<(() => Promise<void>) | null>(null);
+  const pullLatestRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
   const stateRef = useRef<TrackerState>(initialState);
   const syncInFlight = useRef(false);
   const pendingLocalSaveRef = useRef(false);
   const activeUserIdRef = useRef<string | null>(null);
   const syncGenerationRef = useRef(0);
+  const lastRemotePullAtRef = useRef(0);
 
   const applyState = useCallback((state: TrackerState) => {
     const normalized = normalizeState(state);
@@ -121,6 +124,7 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     async function loadState() {
       try {
         const payload = await fetchRemoteTrackerState(accessToken);
+        lastRemotePullAtRef.current = Date.now();
         const hasPendingLocalChanges = Boolean(localState && (!localBaseline || !statesEqual(localState, localBaseline)));
         const remoteChangedSinceLocalBaseline = !Number.isSafeInteger(storedRevision) || payload.revision > storedRevision;
         const hasStartupConflict = Boolean(payload.state && localState && hasPendingLocalChanges && remoteChangedSinceLocalBaseline);
@@ -202,7 +206,7 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
         if (shouldRetry) setDaily((items) => [...items]);
         if (pendingRemoteRevisionRef.current !== null) {
           pendingRemoteRevisionRef.current = null;
-          void pullLatestRef.current?.();
+          void pullLatestRef.current?.(true);
         }
       }
     }, 600);
@@ -230,13 +234,15 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     const baselineKey = `brujula-baseline-v2:${session.user.id}`;
     const revisionKey = `brujula-revision-v1:${session.user.id}`;
 
-    const pullLatest = async () => {
+    const pullLatest = async (force = false) => {
       if (pulling || !navigator.onLine) return;
+      if (!force && Date.now() - lastRemotePullAtRef.current < REMOTE_PULL_COOLDOWN_MS) return;
       if (syncInFlight.current) {
         pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, revisionRef.current + 1);
         return;
       }
       pulling = true;
+      lastRemotePullAtRef.current = Date.now();
       pendingRemoteRevisionRef.current = null;
       try {
         const supabase = getSupabaseBrowserClient();
@@ -275,8 +281,9 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
     const onPageShow = () => void pullLatest();
     const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, (notifiedRevision) => {
+      if (!shouldPullNotifiedRevision(revisionRef.current, notifiedRevision)) return;
       if (notifiedRevision !== null) pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
-      if (!syncInFlight.current) void pullLatest();
+      if (!syncInFlight.current) void pullLatest(true);
     }, (status) => {
       if (cancelled) return;
       if (status === "SUBSCRIBED") {
@@ -290,7 +297,6 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     window.addEventListener("pageshow", onPageShow);
     window.addEventListener("online", onPageShow);
     document.addEventListener("visibilitychange", onFocus);
-    void pullLatest();
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
