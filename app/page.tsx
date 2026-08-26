@@ -16,7 +16,6 @@ import {
   habitAppliesOnDate,
   habitScheduledOnDate,
   isHabitVisibleInArchive,
-  longestHabitStreak,
   monthCalendarWeeks,
   toggleCompletionForDay,
   weeklyGoalIncludesDate,
@@ -25,7 +24,7 @@ import {
 import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
-import { Ring, TrendChart } from "./components/charts";
+import { TrendChart } from "./components/charts";
 import { AuthGate, ResetPassword } from "./components/auth";
 import { AppHeader, ClosureNoticeCard, type ClosureNotice, type MainView } from "./components/app-shell";
 import { GoalCard } from "./components/goal-card";
@@ -38,6 +37,7 @@ import { DeleteHabitDialog, HabitActionDialog, MotivationManagerDialog, StreakCe
 import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
+import { SummaryOverview } from "./components/summary-overview";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
 import type { Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
 import { useTrackerSync } from "./hooks/use-tracker-sync";
@@ -49,7 +49,7 @@ import { buildChartMetrics } from "../lib/domain/chart-metrics";
 import { buildSummaryMetrics } from "../lib/domain/summary-metrics";
 import { resolveGoals, visibleGoalsForPeriod } from "../lib/domain/goal-metrics";
 import { inferCategory, normalizeTrackerState, streakContaining } from "../lib/domain/tracker-normalization";
-import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, motivationForToday, palette, weeklyBarPalette } from "./config/tracker-defaults";
+import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, palette } from "./config/tracker-defaults";
 
 
 function normalizeState(state: TrackerState): Required<TrackerState> {
@@ -575,87 +575,37 @@ export default function Home() {
       <AppHeader activeView={mainView} userEmail={session.user.email} onNavigate={openView} onSignOut={() => getSupabaseBrowserClient().auth.signOut()} />
 
       <div className="page-shell">
-        {mainView === "summary" && <>
-        <section className="hero">
-          <div>
-            <p className="eyebrow">TU PANEL DE CONSTANCIA</p>
-            <h1>Pequeños pasos.<br /><em>Grandes cambios.</em></h1>
-            <p className="hero-copy">Visualiza tu progreso, protege tus rachas y convierte cada día en una victoria medible.</p>
-          </div>
-          <div className="hero-aside">
-            <blockquote className="panel-motivation"><span aria-hidden="true">✦</span><p>“{motivationForToday(motivations)}”</p></blockquote>
-            <div className="month-control">
-              <button onClick={() => shiftMonth(-1)} aria-label="Mes anterior">‹</button>
-              <div><span>PERIODO</span><strong>{monthNames[month]} {year}</strong></div>
-              <button onClick={() => shiftMonth(1)} aria-label="Mes siguiente">›</button>
-            </div>
-          </div>
-        </section>
-
-        </>}
+        {mainView === "summary" && <SummaryOverview
+          motivations={motivations}
+          monthName={monthNames[month]}
+          year={year}
+          onShiftMonth={shiftMonth}
+          dayScoreTitle={dayScoreTitle}
+          dayScore={dayScore}
+          dayScoreDetail={dayScoreDetail}
+          dayProgress={dayProgress}
+          weekScore={weekScore}
+          weekRange={weekRange}
+          weeklyGoalBonus={weeklyGoalBonus}
+          monthScore={monthScore}
+          totalChecks={totalChecks}
+          totalGoal={totalGoal}
+          topHabitName={ranked[0]?.name}
+          topHabitPercent={topHabitPercent}
+          weeklyProgress={weeklyProgress}
+          rankingView={rankingView}
+          rankingItems={rankingItems}
+          longestVisibleStreak={longestVisibleStreak}
+          habitCompletion={habitCompletion}
+          onRankingViewChange={setRankingView}
+          formatScore={scoreLabel}
+        />}
 
         {mainView === "week" && <WeeklyPlanningView currentWeek={currentWeek} previousWeek={previousWeek} reviewWeek={reviewWeek} reviewWeekKey={reviewWeekKey} reviewSummary={reviewSummary} selectedWeeklyReview={selectedWeeklyReview} reviewCompletedGoals={reviewCompletedGoals} reviewGoalCount={reviewGoals.length} weakestWeeklyCategory={weakestWeeklyCategory} categories={habitCategories} weeklyPlanDraft={weeklyPlanDraft} setWeeklyPlanDraft={setWeeklyPlanDraft} weeklyPlanSaved={weeklyPlanSaved} onSaveWeeklyPlan={saveWeeklyPlan} onReviewWeekChange={setReviewWeekKey} />}
 
         {mainView === "today" && <TodayView today={today} date={dayViewDate} monthKey={dayViewMonthKey} weekIndex={dayViewWeekIndex} isViewingToday={isViewingToday} habits={dayViewHabits} habitGroups={dayViewHabitGroups} weeklyHabits={dayViewWeekly} weeklyHabitGroups={weeklyHabitGroups} goals={dayViewGoals} categories={habitCategories} completedHabits={dayViewCompleted} finalScore={dayViewScore.finalScore} categoryScores={dayViewCategoryScores} isCollapsed={isHabitBlockCollapsed} onToggleCategory={toggleHabitBlock} toggleProps={longPressProps} onShiftDay={shiftDayView} onReturnToToday={() => setDayViewDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))} onToggleHabit={toggleDayViewHabit} onToggleWeeklyHabit={toggleDayViewWeeklyHabit} onCycleException={cycleException} onUpdateGoal={updateGoalProgress} onMarkGoalNotCompleted={markGoalNotCompleted} />}
 
         {mainView === "summary" && <>
-        <section className="metrics">
-          <article className="metric primary">
-            <div><span>{dayScoreTitle}</span><strong>{scoreLabel(dayScore)}<small> / 10</small></strong><p>{dayScoreDetail}</p></div>
-            <Ring value={dayProgress} />
-          </article>
-          <article className="metric">
-            <span>Nota semanal</span>
-            <strong>{scoreLabel(weekScore)} <small>/ 10</small></strong>
-            <p>{weekRange}{weeklyGoalBonus > 0 ? ` · +${scoreLabel(weeklyGoalBonus)} bonus` : ""}</p>
-          </article>
-          <article className="metric">
-            <span>Nota del mes</span>
-            <strong>{scoreLabel(monthScore)} <small>/ 10</small></strong>
-            <p>{totalChecks} de {totalGoal} acciones completadas</p>
-          </article>
-          <article className="metric">
-            <span>Hábito más sólido</span>
-            <strong className="compact">{ranked[0]?.name ?? "—"}</strong>
-            <p className="positive">{topHabitPercent}% completado</p>
-          </article>
-        </section>
-
-        <section className="dashboard-grid" id="insights">
-          <article className="panel overview">
-            <div className="panel-head"><div><p className="eyebrow">RITMO DEL MES</p><h2>Evolución del mes por semanas</h2></div><span className="legend"><i /> Completado</span></div>
-            <div className="bars">
-              {weeklyProgress.map((week, index) => (
-                <div className={`bar-column ${week.projected ? "projected" : ""}`} key={week.range}>
-                  <span>{week.value !== null ? `${week.value}%` : ""}</span>
-                  <div className="bar-track">{week.value !== null && <div style={{ height: `${Math.max(week.value, 4)}%`, background: weeklyBarPalette[index] }} />}</div>
-                  <strong><b>S{index + 1}</b><small>{week.range}</small></strong>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel ranking">
-            <div className="panel-head ranking-head"><div><p className="eyebrow">CLASIFICACIÓN</p><h2>{rankingView === "best" ? "Hábitos destacados" : rankingView === "watch" ? "Hábitos a vigilar" : "Mejores rachas"}</h2></div><span className="trophy">{rankingView === "best" ? "✦" : rankingView === "watch" ? "!" : "🔥"}</span></div>
-            <div className="tabs ranking-tabs" role="tablist" aria-label="Tipo de clasificación">
-              <button role="tab" aria-selected={rankingView === "best"} className={rankingView === "best" ? "active" : ""} onClick={() => setRankingView("best")}>Destacados</button>
-              <button role="tab" aria-selected={rankingView === "watch"} className={rankingView === "watch" ? "active" : ""} onClick={() => setRankingView("watch")}>A vigilar</button>
-              <button role="tab" aria-selected={rankingView === "streak"} className={rankingView === "streak" ? "active" : ""} onClick={() => setRankingView("streak")}>Mejor racha</button>
-            </div>
-            <div className="rank-list">
-              {rankingItems.slice(0, 5).map((habit, index) => {
-                const streak = longestHabitStreak(habit);
-                const progress = rankingView === "streak" ? Math.round(streak / longestVisibleStreak * 100) : Math.round(habitCompletion(habit) * 100);
-                return <div className="rank-row" key={habit.id}>
-                  <b>{String(index + 1).padStart(2, "0")}</b>
-                  <div><span>{habit.name}</span><div className="mini-track"><i style={{ width: `${progress}%`, background: habit.color }} /></div></div>
-                  <strong>{rankingView === "streak" ? `${streak} ${streak === 1 ? "día" : "días"}` : `${progress}%`}</strong>
-                </div>;
-              })}
-            </div>
-          </article>
-        </section>
-
         <section className="panel actionable-insights" aria-labelledby="actionable-insights-title">
           <div className="panel-head"><div><p className="eyebrow">REVISIÓN AUTOMÁTICA</p><h2 id="actionable-insights-title">Qué conviene revisar ahora</h2></div><span className="insight-method">Son avisos orientativos · tú decides qué cambiar</span></div>
           <div className="insight-grid">{actionableInsights.map((insight) => <article className={`insight-card ${insight.severity}`} key={insight.id}>
