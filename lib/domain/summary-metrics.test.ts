@@ -131,6 +131,20 @@ describe("summary metrics", () => {
     expect(august.weeklyProgress.at(-1)?.range).toBe("31 ago–6 sep");
   });
 
+  it("shows a valid complete range when browsing a future month", () => {
+    const result = metrics([], {
+      year: 2026,
+      month: 10,
+      days: 30,
+      isCurrentMonth: false,
+      isPastMonth: false,
+      today: new Date(2026, 7, 26, 12),
+    });
+
+    expect(result.weekScore).toBe(0);
+    expect(result.weekRange).toBe("30 nov–6 dic");
+  });
+
   it("marks weeks after today as projected", () => {
     const result = metrics([], { today: new Date(2026, 7, 5, 12) });
     expect(result.weeklyProgress.some((week) => week.projected)).toBe(true);
