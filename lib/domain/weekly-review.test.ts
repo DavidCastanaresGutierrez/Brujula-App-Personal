@@ -28,7 +28,14 @@ describe("weekly planning", () => {
   });
 
   it("selects weekly goals that overlap the requested week", () => {
-    const goals = [{ period: "weekly", periodKey: "2026-08-03", dueDate: "2026-08-09", title: "Cerrar propuesta" }, { period: "monthly", periodKey: "2026-08", dueDate: "2026-08-31", title: "Mes" }];
-    expect(goalsForWeek(goals, "2026-08-03").map((goal) => goal.title)).toEqual(["Cerrar propuesta"]);
+    const goals = [
+      { period: "weekly", periodKey: "2026-08-03", dueDate: "2026-08-09", title: "Cerrar propuesta" },
+      { period: "weekly", periodKey: "2026-08-05", dueDate: "2026-08-06", title: "Objetivo parcial antiguo" },
+      { period: "monthly", periodKey: "2026-08", dueDate: "2026-08-31", title: "Mes" },
+    ];
+    expect(goalsForWeek(goals, "2026-08-03").map((goal) => goal.title)).toEqual([
+      "Cerrar propuesta",
+      "Objetivo parcial antiguo",
+    ]);
   });
 });
