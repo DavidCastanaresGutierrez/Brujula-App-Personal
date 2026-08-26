@@ -4,13 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
-  calculateProportionalGoalBonus,
   availableDaysForMonthWeek,
   calculateCategoryScores,
   calculateDailyScore,
-  calculateWeeklyGoalBonus,
   daysForMonthWeek,
-  goalPeriodDetails,
   isoDate,
   isCalendarDayInFuture,
   habitAppliesOnDate,
@@ -21,12 +18,11 @@ import {
   weeklyGoalIncludesDate,
   scheduledDaysInMonth,
 } from "../lib/domain/tracking";
-import { parseStoredStringSet, readStoredValue, writeStoredValue } from "../lib/domain/storage";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
 import { TrendChart } from "./components/charts";
 import { AuthGate, ResetPassword } from "./components/auth";
-import { AppHeader, ClosureNoticeCard, type ClosureNotice, type MainView } from "./components/app-shell";
+import { AppHeader, ClosureNoticeCard, type MainView } from "./components/app-shell";
 import { GoalCard } from "./components/goal-card";
 import { GoalsView } from "./components/goals-view";
 import { HabitsView } from "./components/habits-view";
@@ -41,6 +37,7 @@ import { SummaryOverview } from "./components/summary-overview";
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
 import type { Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
 import { useTrackerSync } from "./hooks/use-tracker-sync";
+import { useClosureNotices } from "./hooks/use-closure-notices";
 import { useGoalManager } from "./hooks/use-goal-manager";
 import { useGoalTemplates } from "./hooks/use-goal-templates";
 import { useHabitManager } from "./hooks/use-habit-manager";
@@ -93,7 +90,6 @@ export default function Home() {
   const [weeklyPlanSaved, setWeeklyPlanSaved] = useState(false);
   const [reviewWeekKey, setReviewWeekKey] = useState(() => previousWeekBounds(new Date()).key);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(() => new Set());
-  const [closureNotice, setClosureNotice] = useState<ClosureNotice | null>(null);
   const [activeTab, setActiveTab] = useState<"daily" | "weekly">("daily");
   const [collapsedHabitBlocks, setCollapsedHabitBlocks] = useState<Set<string>>(() => new Set());
   const [date, setDate] = useState(() => new Date());
@@ -410,6 +406,16 @@ export default function Home() {
   }
 
   const resolvedGoals = resolveGoals({ goals, daily, today, isBookCompleted });
+  const { closureNotice, dismissClosureNotice, clearClosureNotice } = useClosureNotices({
+    enabled: mainView === "summary",
+    hydrated,
+    userId: session?.user.id,
+    today,
+    daily,
+    weekly,
+    categories: habitCategories,
+    goals: resolvedGoals,
+  });
   const archivedGoals = resolvedGoals.filter((goal) => goal.archived && goal.status !== "discarded");
   const archivedCount = archivedHabits.length + archivedGoals.length;
   const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
@@ -439,76 +445,6 @@ export default function Home() {
     });
   }
 
-  useEffect(() => {
-    if (!hydrated || !session || closureNotice || mainView !== "summary") return;
-    const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = parseStoredStringSet(readStoredValue(localStorage, deliveredKey));
-    const now = new Date();
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const yesterdayKey = `daily:${isoDate(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())}`;
-    const previousMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    const previousMonthKey = `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
-    const monthlyKey = `monthly:${previousMonthKey}`;
-    const previousYear = now.getFullYear() - 1;
-    const yearlyKey = `yearly:${previousYear}`;
-    let nextNotice: ClosureNotice | null = null;
-
-    const averageScore = (start: Date, end: Date) => {
-      let total = 0; let count = 0;
-      const cursor = new Date(start);
-      while (cursor <= end) {
-        total += calculateDailyScore(cursor, daily, weekly, habitCategories).finalScore;
-        count += 1;
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      return count ? total / count : 0;
-    };
-
-    if (!delivered.has(yearlyKey)) {
-      const yearGoals = resolvedGoals.filter((goal) => goal.period === "yearly" && goal.periodKey === String(previousYear) && goal.status !== "discarded");
-      const baseScore = averageScore(new Date(previousYear, 0, 1), new Date(previousYear, 11, 31));
-      const result = calculateProportionalGoalBonus(baseScore, yearGoals);
-      nextNotice = { key: yearlyKey, kind: "yearly", eyebrow: "CIERRE DEL AÑO", title: "Tu resumen anual", detail: yearGoals.length ? `${result.completed} de ${result.total} objetivos anuales completados · ${Math.round(result.completionRate * 100)}% de cumplimiento.` : "No había objetivos anuales definidos para este año.", baseScore, bonus: result.bonus, finalScore: result.finalScore };
-    }
-
-    if (!nextNotice && !delivered.has(monthlyKey)) {
-      const monthGoals = resolvedGoals.filter((goal) => goal.period === "monthly" && goal.periodKey === previousMonthKey && goal.status !== "discarded");
-      const baseScore = averageScore(new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1), previousMonth);
-      const result = calculateProportionalGoalBonus(baseScore, monthGoals);
-      nextNotice = { key: monthlyKey, kind: "monthly", eyebrow: "CIERRE DEL MES", title: "Tu resumen mensual", detail: monthGoals.length ? `${result.completed} de ${result.total} objetivos mensuales completados · ${Math.round(result.completionRate * 100)}% de cumplimiento.` : "No había objetivos mensuales definidos para este mes.", baseScore, bonus: result.bonus, finalScore: result.finalScore };
-    }
-
-    if (!nextNotice && now.getDay() === 1) {
-      const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const monday = new Date(sunday); monday.setDate(sunday.getDate() - 6);
-      const weeklyKey = `weekly:${isoDate(monday.getFullYear(), monday.getMonth(), monday.getDate())}`;
-      if (!delivered.has(weeklyKey)) {
-        const closedWeekDates = Array.from({ length: 7 }, (_, index) => { const item = new Date(monday); item.setDate(monday.getDate() + index); return item; });
-        const baseScore = closedWeekDates.reduce((sum, item) => sum + calculateDailyScore(item, daily, weekly, habitCategories).finalScore, 0) / 7;
-        const period = goalPeriodDetails("weekly", monday);
-        const weekGoals = resolvedGoals.filter((goal) => goal.period === "weekly" && goal.periodKey === period.key && goal.status !== "discarded");
-        const completed = weekGoals.filter((goal) => goal.status === "completed" || goal.currentValue >= goal.targetValue).length;
-        const result = calculateWeeklyGoalBonus(baseScore, weekGoals);
-        nextNotice = { key: weeklyKey, kind: "weekly", eyebrow: "CIERRE DE SEMANA", title: result.earned ? "Semana cerrada con bonus" : "Tu resumen semanal", detail: weekGoals.length ? `${completed} de ${weekGoals.length} objetivos semanales completados${result.earned ? ". Bonus de cierre conseguido." : "."}` : "No había objetivos semanales definidos para esta semana.", baseScore, bonus: result.bonus, finalScore: result.finalScore };
-      }
-    }
-
-    if (!nextNotice && !delivered.has(yesterdayKey)) {
-      const result = calculateDailyScore(yesterday, daily, weekly, habitCategories);
-      nextNotice = { key: yesterdayKey, kind: "daily", eyebrow: "CIERRE DEL DÍA", title: result.bonus > 0 ? "Tu constancia sumó un bonus" : "Así terminó tu día", detail: `${result.completed} de ${result.scheduled} hábitos diarios · ${result.eligibleWeeklyDoneToday} aportaciones semanales con bonus.`, baseScore: result.baseScore, bonus: result.bonus, finalScore: result.finalScore };
-    }
-    if (nextNotice) queueMicrotask(() => setClosureNotice(nextNotice));
-  }, [closureNotice, daily, habitCategories, hydrated, mainView, resolvedGoals, session, weekly]);
-
-  function dismissClosureNotice() {
-    if (!closureNotice || !session) return;
-    const deliveredKey = `brujula-closure-notices-v1:${session.user.id}`;
-    const delivered = parseStoredStringSet(readStoredValue(localStorage, deliveredKey));
-    delivered.add(closureNotice.key);
-    writeStoredValue(localStorage, deliveredKey, JSON.stringify([...delivered].slice(-120)));
-    setClosureNotice(null);
-  }
-
   function dismissInsight(id: string) {
     if (!session) return;
     const key = `brujula-dismissed-insights-v1:${session.user.id}`;
@@ -531,7 +467,7 @@ export default function Home() {
   }
 
   function openView(view: MainView) {
-    if (view !== "summary" && closureNotice) setClosureNotice(null);
+    if (view !== "summary" && closureNotice) clearClosureNotice();
     if (view === "goals") setGoalFilter("yearly");
     if (view === "week") {
       const review = weeklyReviews.find((item) => item.weekStart === weekBounds(today).key);
