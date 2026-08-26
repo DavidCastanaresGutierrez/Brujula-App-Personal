@@ -49,11 +49,12 @@ import { buildChartMetrics } from "../lib/domain/chart-metrics";
 import { buildSummaryMetrics } from "../lib/domain/summary-metrics";
 import { resolveGoals, visibleGoalsForPeriod } from "../lib/domain/goal-metrics";
 import { inferCategory, normalizeTrackerState, streakContaining } from "../lib/domain/tracker-normalization";
-import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, palette } from "./config/tracker-defaults";
+import { blockIcons, dailyMotivations, dayNames, defaultCategories, initialDaily, initialWeekly, monthNames, palette, upgradeDefaultMotivations } from "./config/tracker-defaults";
 
 
 function normalizeState(state: TrackerState): Required<TrackerState> {
-  return normalizeTrackerState(state, { defaultCategories, palette });
+  const normalized = normalizeTrackerState(state, { defaultCategories, palette });
+  return { ...normalized, motivations: upgradeDefaultMotivations(normalized.motivations) };
 }
 
 export default function Home() {
