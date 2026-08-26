@@ -44,6 +44,23 @@ describe("summary metrics", () => {
     expect(metrics(habits, { today: new Date(2026, 7, 3, 12), rankingView: "watch" }).rankingItems[0].name).toBe("Irregular");
   });
 
+  it("uses the same block weighting in weekly bars as in daily scores", () => {
+    const result = metrics([
+      { id: 1, name: "Salud 1", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: { "2026-08": [3] }, checks: [] },
+      { id: 2, name: "Salud 2", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: { "2026-08": [3] }, checks: [] },
+      { id: 3, name: "Salud 3", goal: 31, color: "#39c6a4", category: "health", everyDay: true, history: {}, checks: [] },
+      { id: 4, name: "Trabajo", goal: 31, color: "#8b7cf6", category: "work", everyDay: true, history: {}, checks: [] },
+    ], {
+      categories: [
+        categories[0],
+        { id: "work", label: "Trabajo", icon: "◇", color: "#8b7cf6" },
+      ],
+      today: new Date(2026, 7, 3, 12),
+    });
+
+    expect(result.weeklyProgress[1].value).toBe(33);
+  });
+
   it("repeats a shared seven-day week in adjacent month views", () => {
     const habit: Habit = {
       id: 1,
