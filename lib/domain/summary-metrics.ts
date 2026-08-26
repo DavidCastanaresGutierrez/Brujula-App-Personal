@@ -55,11 +55,13 @@ export function buildSummaryMetrics({
   const referenceDate = new Date(year, month, referenceDay, 12);
   const referenceWeek = calendarWeekForDate(referenceDate);
   const todayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const weekHasStarted = referenceWeek.start <= todayKey;
   const evaluatedWeekEndKey = referenceWeek.end < todayKey ? referenceWeek.end : todayKey;
+  const displayedWeekEndKey = weekHasStarted ? evaluatedWeekEndKey : referenceWeek.end;
   const weekCursor = new Date(`${referenceWeek.start}T00:00:00Z`);
   const weekLimit = new Date(`${evaluatedWeekEndKey}T00:00:00Z`);
   const weekDates: Date[] = [];
-  while (weekCursor <= weekLimit) {
+  while (weekHasStarted && weekCursor <= weekLimit) {
     weekDates.push(new Date(
       weekCursor.getUTCFullYear(),
       weekCursor.getUTCMonth(),
@@ -79,9 +81,9 @@ export function buildSummaryMetrics({
     const [, dateMonth, dateDay] = dateKey.split("-").map(Number);
     return `${dateDay} ${shortMonth(dateMonth - 1)}`;
   };
-  const weekRange = `${formatShortDate(referenceWeek.start)}–${formatShortDate(evaluatedWeekEndKey)}`;
+  const weekRange = `${formatShortDate(referenceWeek.start)}–${formatShortDate(displayedWeekEndKey)}`;
   const weekStart = Number(referenceWeek.start.slice(-2));
-  const evaluatedWeekEnd = Number(evaluatedWeekEndKey.slice(-2));
+  const evaluatedWeekEnd = Number(displayedWeekEndKey.slice(-2));
   const habitsScheduledForDay = (day: number) => {
     const dateKey = isoDate(year, month, day);
     return daily.filter((habit) => habitScheduledOnDate(habit, dateKey) && !skipsFor(habit).includes(day));
