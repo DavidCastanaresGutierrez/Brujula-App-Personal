@@ -215,15 +215,12 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
 
   useEffect(() => {
     if (!hydrated || !session) return;
-    const retry = () => {
-      if (document.visibilityState === "visible" || navigator.onLine) setDaily((items) => [...items]);
+    const retryPendingSave = () => {
+      if (conflictRef.current || statesEqual(stateRef.current, baselineRef.current)) return;
+      setDaily((items) => [...items]);
     };
-    window.addEventListener("online", retry);
-    document.addEventListener("visibilitychange", retry);
-    return () => {
-      window.removeEventListener("online", retry);
-      document.removeEventListener("visibilitychange", retry);
-    };
+    window.addEventListener("online", retryPendingSave);
+    return () => window.removeEventListener("online", retryPendingSave);
   }, [hydrated, session]);
 
   useEffect(() => {
@@ -280,7 +277,7 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     pullLatestRef.current = pullLatest;
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
     const onPageShow = () => void pullLatest();
-    const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, (notifiedRevision) => {
+    const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, session.access_token, (notifiedRevision) => {
       if (!shouldPullNotifiedRevision(revisionRef.current, notifiedRevision)) return;
       if (notifiedRevision !== null) pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
       if (!syncInFlight.current) void pullLatest(true);
