@@ -247,7 +247,7 @@ export default function Home() {
   const {
     evaluatedThrough, totalChecks, totalGoal, dayProgress, dayScore, dayScoreTitle, dayScoreDetail,
     weekRange, weeklyGoalBonus, weekScore, monthScore, habitCompletion,
-    ranked, rankingItems, longestVisibleStreak, monthWeeks, currentMonthWeek, weeklyProgress,
+    ranked, topHabitPercent, rankingItems, longestVisibleStreak, monthWeeks, currentMonthWeek, weeklyProgress,
   } = buildSummaryMetrics({
     daily, weekly, categories: habitCategories, goals, rankingView, year, month, days,
     isPastMonth, isCurrentMonth, today, monthNames,
@@ -617,7 +617,7 @@ export default function Home() {
           <article className="metric">
             <span>Hábito más sólido</span>
             <strong className="compact">{ranked[0]?.name ?? "—"}</strong>
-            <p className="positive">{ranked[0] ? Math.round(checksFor(ranked[0]).length / goalFor(ranked[0]) * 100) : 0}% completado</p>
+            <p className="positive">{topHabitPercent}% completado</p>
           </article>
         </section>
 
