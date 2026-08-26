@@ -207,6 +207,27 @@ export function monthCalendarWeeks(year: number, monthIndex: number) {
   return weeks;
 }
 
+export function monthCalendarDateWeeks(year: number, monthIndex: number) {
+  const monthStart = new Date(year, monthIndex, 1, 12);
+  const monthEnd = new Date(year, monthIndex + 1, 0, 12);
+  const firstWeek = calendarWeekForDate(monthStart);
+  const lastWeek = calendarWeekForDate(monthEnd);
+  const cursor = new Date(`${firstWeek.start}T00:00:00Z`);
+  const finalDay = new Date(`${lastWeek.end}T00:00:00Z`);
+  const weeks: string[][] = [];
+
+  while (cursor <= finalDay) {
+    const week: string[] = [];
+    for (let offset = 0; offset < 7; offset += 1) {
+      week.push(cursor.toISOString().slice(0, 10));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  return weeks;
+}
+
 export function weekOfMonth(year: number, monthIndex: number, day: number) {
   return monthCalendarWeeks(year, monthIndex).findIndex((week) => week.includes(day)) + 1;
 }
