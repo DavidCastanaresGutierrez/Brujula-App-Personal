@@ -4,7 +4,7 @@ import { dailyMotivations, motivationForToday, upgradeDefaultMotivations } from 
 describe("daily motivations", () => {
   it("provides a unique rotation for an entire quarter", () => {
     expect(dailyMotivations).toHaveLength(93);
-    expect(new Set(dailyMotivations)).toHaveLength(93);
+    expect(new Set(dailyMotivations).size).toBe(93);
 
     const start = new Date(2026, 0, 1);
     const rotation = Array.from({ length: dailyMotivations.length }, (_, offset) => {
@@ -13,7 +13,7 @@ describe("daily motivations", () => {
       return motivationForToday(dailyMotivations, date);
     });
 
-    expect(new Set(rotation)).toHaveLength(dailyMotivations.length);
+    expect(new Set(rotation).size).toBe(dailyMotivations.length);
   });
 
   it("upgrades only the untouched legacy catalog", () => {
