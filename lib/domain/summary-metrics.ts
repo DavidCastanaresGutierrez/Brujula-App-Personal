@@ -5,6 +5,7 @@ import {
   isoDate,
   linkedGoalProgress,
   longestHabitStreak,
+  monthCalendarDateWeeks,
   monthCalendarWeeks,
   monthlyHabitProgressThrough,
   weeklyGoalIncludesDate,
@@ -93,19 +94,34 @@ export function buildSummaryMetrics({
   const longestVisibleStreak = Math.max(1, ...streakRanked.slice(0, 5).map(longestHabitStreak));
   const monthWeeks = monthCalendarWeeks(year, month);
   const currentMonthWeek = isCurrentMonth ? monthWeeks.findIndex((week) => week.includes(today.getDate())) + 1 : 0;
-  const weeklyProgress = monthWeeks.map((weekDays) => {
-    const start = weekDays[0];
-    const end = weekDays.at(-1)!;
-    const projected = !isPastMonth && new Date(year, month, start) > today;
-    const evaluatedEnd = projected ? start - 1 : Math.min(end, isCurrentMonth ? today.getDate() : end);
+  const chartWeeks = monthCalendarDateWeeks(year, month);
+  const todayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const shortMonth = (monthIndex: number) => monthNames[monthIndex].slice(0, 3).toLowerCase();
+  const weeklyProgress = chartWeeks.map((weekDates) => {
+    const startKey = weekDates[0];
+    const endKey = weekDates.at(-1)!;
+    const projected = startKey > todayKey;
     let completed = 0;
     let possible = 0;
-    for (let day = start; day <= evaluatedEnd; day += 1) {
-      const scheduled = habitsScheduledForDay(day);
+
+    weekDates.filter((dateKey) => dateKey <= todayKey).forEach((dateKey) => {
+      const [dateYear, dateMonth, day] = dateKey.split("-").map(Number);
+      const historyKey = `${dateYear}-${String(dateMonth).padStart(2, "0")}`;
+      const scheduled = daily.filter((habit) => (
+        habitScheduledOnDate(habit, dateKey)
+        && !(habit.skips?.[historyKey] ?? []).includes(day)
+      ));
       possible += scheduled.length;
-      completed += scheduled.filter((habit) => checksFor(habit).includes(day)).length;
-    }
-    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range: `${start}–${end} ${monthNames[month].slice(0, 3).toLowerCase()}` };
+      completed += scheduled.filter((habit) => (habit.history?.[historyKey] ?? []).includes(day)).length;
+    });
+
+    const [, startMonth, startDay] = startKey.split("-").map(Number);
+    const [, endMonth, endDay] = endKey.split("-").map(Number);
+    const range = startMonth === endMonth
+      ? `${startDay}–${endDay} ${shortMonth(startMonth - 1)}`
+      : `${startDay} ${shortMonth(startMonth - 1)}–${endDay} ${shortMonth(endMonth - 1)}`;
+
+    return { value: projected ? null : possible ? Math.round(completed / possible * 100) : 0, projected, range };
   });
 
   return {
