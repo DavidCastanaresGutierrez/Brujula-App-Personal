@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchRemoteTrackerState, saveRemoteTrackerState, TrackerSyncError } from "./tracker-sync";
+import { fetchRemoteTrackerState, revisionFromBroadcastPayload, saveRemoteTrackerState, TrackerSyncError } from "./tracker-sync";
 
 const state = { daily: [], weekly: [] };
 
@@ -12,6 +12,13 @@ describe("tracker sync transport", () => {
 
     await expect(fetchRemoteTrackerState("token")).resolves.toEqual({ state, revision: 3 });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/state\?ts=\d+$/), expect.objectContaining({ cache: "no-store" }));
+  });
+
+  it("reads revisions from Broadcast payloads defensively", () => {
+    expect(revisionFromBroadcastPayload({ record: { revision: 7 } })).toBe(7);
+    expect(revisionFromBroadcastPayload({ new: { revision: "8" } })).toBe(8);
+    expect(revisionFromBroadcastPayload({ record: {} })).toBeNull();
+    expect(revisionFromBroadcastPayload(null)).toBeNull();
   });
 
   it("sends the baseline, snapshot and expected revision", async () => {
