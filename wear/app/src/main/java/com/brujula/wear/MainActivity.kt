@@ -29,7 +29,9 @@ import java.net.URL
 import java.time.LocalDate
 
 private const val BASE_URL = "https://brujula-app-personal.vercel.app"
-data class Habit(val id: Long, val name: String, val completed: Boolean)
+data class Habit(val id: Long, val name: String, val kind: String, val status: String)
+data class WeeklyGoal(val id: Long, val title: String, val status: String)
+data class TodayData(val habits: List<Habit>, val goals: List<WeeklyGoal>, val dayScore: Double, val weekScore: Double)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { BrujulaApp(this) } }
@@ -61,18 +63,31 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
 
 @Composable
 private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
-    var habits by remember { mutableStateOf<List<Habit>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
+    var data by remember { mutableStateOf(TodayData(emptyList(), emptyList(), 0.0, 0.0)) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    suspend fun refresh() { loading = true; error = try { habits = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; loading = false }
+    suspend fun refresh() { loading = true; error = try { data = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; loading = false }
+    fun setHabitStatus(habit: Habit, status: String) { val previous = data; data = data.copy(habits = data.habits.map { if (it.id == habit.id) it.copy(status = status) else it }); scope.launch { try { Api.setHabitStatus(token, habit.id, status) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
+    fun setGoalStatus(goal: WeeklyGoal, status: String) { val previous = data; data = data.copy(goals = data.goals.map { if (it.id == goal.id) it.copy(status = status) else it }); scope.launch { try { Api.setGoalStatus(token, goal.id, status) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
     LaunchedEffect(token) { refresh() }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("HOY", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) }
+        item { Row(Modifier.fillMaxWidth(.88f), horizontalArrangement = Arrangement.SpaceEvenly) { Score("DÍA", data.dayScore); Score("SEMANA", data.weekScore) } }
         if (loading) item { CircularProgressIndicator() }
         if (error.isNotEmpty()) item { Text(error, color = Color(0xFFFFC07A), textAlign = TextAlign.Center) }
-        if (!loading && habits.isEmpty() && error.isEmpty()) item { Text("No tienes hábitos para hoy", textAlign = TextAlign.Center) }
-        items(habits, key = { it.id }) { habit ->
-            Button(onClick = { val next = !habit.completed; habits = habits.map { if (it.id == habit.id) it.copy(completed = next) else it }; scope.launch { try { Api.toggle(token, habit.id, next) } catch (e: Exception) { habits = habits.map { if (it.id == habit.id) it.copy(completed = !next) else it }; error = e.message ?: "No se ha podido guardar" } } }, colors = ButtonDefaults.buttonColors(containerColor = if (habit.completed) Color(0xFF266F5E) else Color(0xFF162823)), modifier = Modifier.fillMaxWidth(.9f)) {
-                Text((if (habit.completed) "✓  " else "○  ") + habit.name, maxLines = 2)
+        if (!loading && data.habits.isEmpty() && data.goals.isEmpty() && error.isEmpty()) item { Text("No tienes tareas para hoy", color = Color.White, textAlign = TextAlign.Center) }
+        val daily = data.habits.filter { it.kind == "daily" }; val weekly = data.habits.filter { it.kind == "weekly" }
+        if (daily.isNotEmpty()) item { SectionTitle("HÁBITOS DIARIOS") }
+        items(daily, key = { "daily-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
+        if (weekly.isNotEmpty()) item { SectionTitle("HÁBITOS SEMANALES") }
+        items(weekly, key = { "weekly-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
+        if (data.goals.isNotEmpty()) item { SectionTitle("OBJETIVOS SEMANALES") }
+        items(data.goals, key = { "goal-${it.id}" }) { goal ->
+            Column(Modifier.fillMaxWidth(.9f).background(Color(0xFF132520)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(goal.title, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusButton("✓", goal.status == "completed", Color(0xFF26705D)) { setGoalStatus(goal, if (goal.status == "completed") "active" else "completed") }
+                    StatusButton("✕", goal.status == "discarded", Color(0xFF8F3842)) { setGoalStatus(goal, if (goal.status == "discarded") "active" else "discarded") }
+                }
             }
         }
         item { Button(onClick = { scope.launch { refresh() } }) { Text("Actualizar") } }
@@ -80,12 +95,27 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
     }
 }
 
+@Composable private fun Score(label: String, value: Double) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(label, color = Color(0xFF8FB9AE), fontSize = 10.sp); Text(String.format("%.1f", value), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) } }
+@Composable private fun SectionTitle(value: String) { Text(value, color = Color(0xFF65D9BA), fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+@Composable private fun HabitCard(habit: Habit, onStatus: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth(.9f).background(Color(0xFF132520)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(habit.name, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 2)
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            StatusButton("✓", habit.status == "completed", Color(0xFF26705D)) { onStatus(if (habit.status == "completed") "pending" else "completed") }
+            StatusButton("✕", habit.status == "missed", Color(0xFF8F3842)) { onStatus(if (habit.status == "missed") "pending" else "missed") }
+            StatusButton("—", habit.status == "skipped", Color(0xFF59666A)) { onStatus(if (habit.status == "skipped") "pending" else "skipped") }
+        }
+    }
+}
+@Composable private fun StatusButton(label: String, selected: Boolean, selectedColor: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.size(42.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selected) selectedColor else Color(0xFF233B35), contentColor = Color.White)) { Text(label, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) } }
+
 private fun securePrefs(context: Context) = EncryptedSharedPreferences.create(context, "brujula_watch", MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(), EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
 
 private object Api {
     suspend fun redeem(code: String) = withContext(Dispatchers.IO) { request("/api/watch/redeem", "POST", null, JSONObject().put("code", code).put("name", "Galaxy Watch 6").toString()).getString("token") }
-    suspend fun today(token: String) = withContext(Dispatchers.IO) { val json = request("/api/watch/today?date=${LocalDate.now()}", "GET", token); val array = json.getJSONArray("habits"); (0 until array.length()).map { array.getJSONObject(it).let { row -> Habit(row.getLong("id"), row.getString("name"), row.getBoolean("completed")) } } }
-    suspend fun toggle(token: String, id: Long, completed: Boolean) = withContext(Dispatchers.IO) { request("/api/watch/toggle", "POST", token, JSONObject().put("habitId", id).put("date", LocalDate.now().toString()).put("completed", completed).toString()) }
+    suspend fun today(token: String) = withContext(Dispatchers.IO) { val json = request("/api/watch/today?date=${LocalDate.now()}", "GET", token); val habitsJson = json.getJSONArray("habits"); val goalsJson = json.getJSONArray("goals"); val scores = json.getJSONObject("scores"); TodayData((0 until habitsJson.length()).map { habitsJson.getJSONObject(it).let { row -> Habit(row.getLong("id"), row.getString("name"), row.getString("kind"), row.getString("status")) } }, (0 until goalsJson.length()).map { goalsJson.getJSONObject(it).let { row -> WeeklyGoal(row.getLong("id"), row.getString("title"), row.getString("status")) } }, scores.getDouble("day"), scores.getDouble("week")) }
+    suspend fun setHabitStatus(token: String, id: Long, status: String) = withContext(Dispatchers.IO) { request("/api/watch/toggle", "POST", token, JSONObject().put("habitId", id).put("date", LocalDate.now().toString()).put("status", status).toString()) }
+    suspend fun setGoalStatus(token: String, id: Long, status: String) = withContext(Dispatchers.IO) { request("/api/watch/toggle", "POST", token, JSONObject().put("goalId", id).put("status", status).toString()) }
     private fun request(path: String, method: String, token: String?, body: String? = null): JSONObject {
         val connection = URL(BASE_URL + path).openConnection() as HttpURLConnection
         connection.requestMethod = method; connection.connectTimeout = 10_000; connection.readTimeout = 10_000; connection.setRequestProperty("Content-Type", "application/json")

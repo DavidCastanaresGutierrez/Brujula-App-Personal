@@ -48,6 +48,9 @@ nav button:hover, nav .nav-active { color: var(--ink); background: rgba(255,255,
 .avatar { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.15); border-radius: 50%; background: #202d48; color: #cdd6e9; font-size: 11px; font-weight: 700; }
 .logout-button { min-height: 34px; border: 1px solid #35435f; border-radius: 9px; background: rgba(255,255,255,.035); color: #c7d1e4; padding: 0 12px; font-size: 10px; font-weight: 700; cursor: pointer; }
 .logout-button:hover { border-color: #647493; background: rgba(255,255,255,.07); color: #fff; }
+.watch-header-link { min-height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid rgba(60,201,171,.3); border-radius: 9px; background: rgba(60,201,171,.07); color: var(--teal); font-size: 10px; font-weight: 750; text-decoration: none; }
+.watch-header-link:hover { border-color: rgba(60,201,171,.6); background: rgba(60,201,171,.13); }
+.watch-header-link b { font: inherit; }
 
 .page-shell { max-width: 1280px; margin: 0 auto; padding: 48px 24px 80px; }
 .view-intro { margin: 4px 0 30px; }
@@ -656,6 +659,8 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
   .motivation-row { grid-template-columns: 20px 1fr 28px 28px; }
   .session-actions { gap: 6px; }
   .logout-button { min-height: 32px; padding-inline: 9px; font-size: 9px; }
+  .watch-header-link { min-height: 32px; padding-inline: 9px; }
+  .watch-header-link b { display: none; }
   nav {
     position: fixed;
     z-index: 45;
@@ -1122,3 +1127,4 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .watch-connect-kicker{color:#65d9ba;font-size:12px;letter-spacing:.18em;font-weight:800}.watch-connect-card h1{margin:8px 0 14px;font-size:32px}.watch-connect-card p{color:#c7d8d3;line-height:1.55}
 .watch-connect-code{margin:28px 0;font:800 44px/1 ui-monospace,SFMono-Regular,monospace;letter-spacing:.12em;color:#fff}
 .watch-connect-button{display:inline-flex;justify-content:center;margin-top:18px;padding:14px 22px;border:0;border-radius:999px;background:#65d9ba;color:#06211a;font-weight:800;text-decoration:none;cursor:pointer}.watch-connect-button:disabled{opacity:.6}.watch-connect-error{color:#ff9f9f!important}.watch-connect-back{display:block;margin-top:26px;color:#a7c2bb;text-decoration:none;font-size:14px}
+.watch-device-section{margin-top:34px;padding-top:26px;border-top:1px solid rgba(122,231,203,.16);text-align:left}.watch-device-section h2{margin:0 0 12px;font-size:18px}.watch-device-section>p{margin:0;font-size:14px}.watch-device-list{display:grid;gap:10px}.watch-device{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px;border:1px solid rgba(122,231,203,.15);border-radius:14px;background:rgba(255,255,255,.035)}.watch-device div{min-width:0}.watch-device strong,.watch-device small{display:block}.watch-device strong{font-size:14px}.watch-device small{margin-top:5px;color:#9fb8b1;font-size:11px}.watch-device button{flex:0 0 auto;padding:8px 10px;border:1px solid rgba(255,159,159,.3);border-radius:9px;background:rgba(255,80,80,.07);color:#ffadad;font-size:11px;cursor:pointer}.watch-device button:disabled{opacity:.55}

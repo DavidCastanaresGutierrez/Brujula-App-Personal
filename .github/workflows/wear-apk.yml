@@ -1,8 +1,10 @@
 name: Wear OS APK
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ["wear/**", ".github/workflows/wear-apk.yml"]
   push:
-    branches: ["feat/galaxy-watch-mvp"]
+    branches: [main]
     paths: ["wear/**", ".github/workflows/wear-apk.yml"]
 permissions:
   contents: read
