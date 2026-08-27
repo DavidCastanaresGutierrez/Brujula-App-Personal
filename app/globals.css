@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 21067)
+Total output lines: 1124
+
 @import "tailwindcss";
 
 :root {
@@ -459,87 +462,7 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
 .color-picker { margin: 18px 0 4px; padding: 0; border: 0; }
 .color-picker legend { color: #aeb9cf; font-size: 11px; margin-bottom: 9px; }
 .color-palette { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; }
-.color-palette button { aspect-ratio: 1; min-width: 0; border: 2px solid transparent; border-radius: 9px; cursor: pointer; display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
-.color-palette button:hover { transform: scale(1.08); }
-.color-palette button.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.18), 0 0 14px rgba(0,0,0,.28); }
-.color-palette button span { color: #fff; font-size: 15px; font-weight: 900; text-shadow: 0 1px 4px rgba(0,0,0,.65); }
-.add-button.full { width: 100%; margin-top: 10px; padding: 13px; }
-.confirm-modal p:not(.eyebrow) { color: var(--muted); font-size: 13px; line-height: 1.6; }
-.celebration-backdrop { background: radial-gradient(circle at 50% 45%, rgba(60,201,171,.18), rgba(2,7,15,.86) 48%); }
-.celebration-modal {
-  --habit-color: var(--teal);
-  width: min(430px, 100%);
-  position: relative;
-  overflow: hidden;
-  text-align: center;
-  border: 1px solid color-mix(in srgb, var(--habit-color) 55%, white 8%);
-  border-radius: 24px;
-  background: linear-gradient(160deg, #172540 0%, #0e182c 70%);
-  padding: 34px 30px 30px;
-  box-shadow: 0 34px 100px rgba(0,0,0,.58), 0 0 45px color-mix(in srgb, var(--habit-color) 22%, transparent);
-  animation: celebration-rise .42s cubic-bezier(.2,.8,.2,1);
-}
-.celebration-modal::before {
-  content: "";
-  position: absolute;
-  width: 250px;
-  height: 250px;
-  left: 50%;
-  top: -150px;
-  translate: -50% 0;
-  border-radius: 50%;
-  background: var(--habit-color);
-  opacity: .11;
-  filter: blur(16px);
-}
-.celebration-modal h2 { margin: 8px 0 10px; font-size: 28px; }
-.celebration-modal > p:not(.eyebrow) { margin: 0 auto 24px; max-width: 350px; color: #aeb9cf; font-size: 14px; line-height: 1.65; }
-.celebration-modal > p strong { color: var(--ink); }
-.celebration-close { z-index: 2; }
-.compass-celebration {
-  width: 112px;
-  height: 112px;
-  position: relative;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 20px;
-  border: 3px solid var(--habit-color);
-  border-radius: 50%;
-  background: radial-gradient(circle, #17243b 0 45%, #0b1426 46% 100%);
-  box-shadow: inset 0 0 0 7px rgba(255,255,255,.05), 0 0 28px color-mix(in srgb, var(--habit-color) 35%, transparent);
-  animation: compass-pop .65s cubic-bezier(.2,1.4,.3,1);
-}
-.compass-celebration::before,
-.compass-celebration::after { content: ""; position: absolute; background: rgba(255,255,255,.17); }
-.compass-celebration::before { width: 1px; height: 82%; }
-.compass-celebration::after { width: 82%; height: 1px; }
-.compass-north { position: absolute; z-index: 2; top: 8px; color: var(--habit-color); font-size: 11px; font-weight: 900; letter-spacing: .08em; }
-.compass-needle {
-  position: absolute;
-  z-index: 2;
-  width: 20px;
-  height: 66px;
-  background: linear-gradient(to bottom, var(--habit-color) 0 50%, #d8e0ee 50% 100%);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  transform: rotate(28deg);
-  transform-origin: center;
-  filter: drop-shadow(0 3px 5px rgba(0,0,0,.45));
-  animation: needle-find-north .9s .18s cubic-bezier(.2,.8,.2,1) both;
-}
-.compass-center { z-index: 3; width: 9px; height: 9px; border: 2px solid #0d172a; border-radius: 50%; background: #f4f7fb; }
-@keyframes celebration-rise { from { opacity: 0; transform: translateY(16px) scale(.96); } to { opacity: 1; transform: none; } }
-@keyframes compass-pop { from { opacity: 0; transform: scale(.55) rotate(-20deg); } to { opacity: 1; transform: none; } }
-@keyframes needle-find-north { from { transform: rotate(-150deg); } to { transform: rotate(28deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .celebration-modal, .compass-celebration, .compass-needle { animation: none; }
-}
-.confirm-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
-.delete-button { border: 0; background: #e84b63; color: white; padding: 10px 14px; border-radius: 9px; font-weight: 700; font-size: 10px; cursor: pointer; }
-.blocks-modal { width: min(560px, 100%); }
-.archived-button { display: inline-flex; align-items: center; gap: 7px; }
-.archived-button span { min-width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; background: rgba(45,212,191,.16); color: var(--teal); font-size: 9px; font-weight: 800; }
-.archived-modal { width: min(620px, 100%); }
-.archived-sections { display: grid; gap: 20px; max-height: min(58vh, 500px); overflow-y: auto; padding-right: 3px; }
+.color-palette button { aspect-ratio: 1; min-width: 0; border: 2px solid transparent; border-radius: 9px; cursor: pointer; display: grid; place-items: center; …1067 tokens truncated…ht: min(58vh, 500px); overflow-y: auto; padding-right: 3px; }
 .archived-section { display: grid; gap: 9px; }
 .archived-section h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .archived-section h3 span { min-width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; background: rgba(160,177,212,.12); color: var(--muted); font-size: 9px; }
@@ -1115,3 +1038,10 @@ h2 { font-size: 19px; letter-spacing: -.025em; margin-bottom: 0; }
   .fitness-chart-controls select, .fitness-chart-controls .tabs { width: 100%; }
   .fitness-chart-summary { gap: 4px; }
 }
+/* Wear OS pairing */
+.watch-connect-page{min-height:100svh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#163f3a 0,#071411 58%,#040807 100%);color:#f7fbfa}
+.watch-connect-card{width:min(100%,460px);padding:40px 32px;border:1px solid rgba(122,231,203,.22);border-radius:28px;background:rgba(8,26,22,.88);box-shadow:0 28px 80px rgba(0,0,0,.35);text-align:center}
+.watch-connect-mark{width:64px;height:64px;display:grid;place-items:center;margin:0 auto 18px;border-radius:50%;background:#65d9ba;color:#06211a;font-size:38px;font-weight:700}
+.watch-connect-kicker{color:#65d9ba;font-size:12px;letter-spacing:.18em;font-weight:800}.watch-connect-card h1{margin:8px 0 14px;font-size:32px}.watch-connect-card p{color:#c7d8d3;line-height:1.55}
+.watch-connect-code{margin:28px 0;font:800 44px/1 ui-monospace,SFMono-Regular,monospace;letter-spacing:.12em;color:#fff}
+.watch-connect-button{display:inline-flex;justify-content:center;margin-top:18px;padding:14px 22px;border:0;border-radius:999px;background:#65d9ba;color:#06211a;font-weight:800;text-decoration:none;cursor:pointer}.watch-connect-button:disabled{opacity:.6}.watch-connect-error{color:#ff9f9f!important}.watch-connect-back{display:block;margin-top:26px;color:#a7c2bb;text-decoration:none;font-size:14px}
