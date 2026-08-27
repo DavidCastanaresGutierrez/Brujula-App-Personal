@@ -4,9 +4,13 @@ import { getWatchAdminClient } from "../../../../lib/watch/auth";
 export const dynamic = "force-dynamic";
 
 async function authenticatedUser(request: Request) {
-  const supabase = getSupabaseServerClient(request);
-  const { data, error } = await supabase.auth.getUser();
-  return error ? null : data.user;
+  try {
+    const supabase = getSupabaseServerClient(request);
+    const { data, error } = await supabase.auth.getUser();
+    return error ? null : data.user;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(request: Request) {
