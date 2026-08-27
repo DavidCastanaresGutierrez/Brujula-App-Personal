@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Brand } from "./auth";
 
 export type MainView = "summary" | "today" | "week" | "habits" | "goals";
@@ -63,6 +64,9 @@ export function AppHeader({ activeView, userEmail, onNavigate, onSignOut }: AppH
       ))}
     </nav>
     <div className="session-actions">
+      <Link className="watch-header-link" href="/watch-connect" aria-label="Gestionar Galaxy Watch" title="Gestionar Galaxy Watch">
+        <span aria-hidden="true">⌚</span><b>Reloj</b>
+      </Link>
       <span className="avatar" aria-hidden="true">{(userEmail?.slice(0, 2) ?? "BR").toUpperCase()}</span>
       <button className="logout-button" onClick={onSignOut}>Cerrar sesión</button>
     </div>
