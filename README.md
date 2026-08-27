@@ -13,6 +13,13 @@ bloques y analizar la constancia mensual y anual.
 La aplicación está diseñada para funcionar en los planes gratuitos de Supabase
 y Vercel. Cada usuario solo puede leer y modificar sus propios datos.
 
+## Galaxy Watch 6
+
+La carpeta `wear` contiene la aplicación independiente para Wear OS. El usuario
+genera un código temporal en `/watch-connect`; el reloj lo canjea por una
+credencial revocable y solo solicita los hábitos del día actual. Consulta
+[`wear/README.md`](wear/README.md) para compilar e instalar el APK.
+
 ## Configuración local
 
 1. Crea un proyecto gratuito en Supabase.
