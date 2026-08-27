@@ -14,7 +14,8 @@ android {
                 storeFile = file(keystorePath)
                 storePassword = System.getenv("WEAR_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("WEAR_KEY_ALIAS")
-                keyPassword = System.getenv("WEAR_KEY_PASSWORD")
+                // PKCS12 uses the store password for the private key as well.
+                keyPassword = System.getenv("WEAR_KEYSTORE_PASSWORD")
             }
         }
     }
