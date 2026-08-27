@@ -68,9 +68,9 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
 private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
     var data by remember { mutableStateOf(TodayData(emptyList(), emptyList(), 0.0, 0.0)) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    suspend fun refresh() { loading = true; error = try { data = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; loading = false }
-    fun setHabitStatus(habit: Habit, status: String) { val previous = data; data = data.copy(habits = data.habits.map { if (it.id == habit.id) it.copy(status = status) else it }); scope.launch { try { Api.setHabitStatus(token, habit.id, status) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
-    fun setGoalStatus(goal: WeeklyGoal, status: String) { val previous = data; data = data.copy(goals = data.goals.map { if (it.id == goal.id) it.copy(status = status) else it }); scope.launch { try { Api.setGoalStatus(token, goal.id, status) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
+    suspend fun refresh(showLoading: Boolean = true) { if (showLoading) loading = true; error = try { data = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; if (showLoading) loading = false }
+    fun setHabitStatus(habit: Habit, status: String) { val previous = data; data = data.copy(habits = data.habits.map { if (it.id == habit.id) it.copy(status = status) else it }); scope.launch { try { Api.setHabitStatus(token, habit.id, status); refresh(showLoading = false) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
+    fun setGoalStatus(goal: WeeklyGoal, status: String) { val previous = data; data = data.copy(goals = data.goals.map { if (it.id == goal.id) it.copy(status = status) else it }); scope.launch { try { Api.setGoalStatus(token, goal.id, status); refresh(showLoading = false) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
     LaunchedEffect(token) { refresh() }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { BrujulaMark(28.dp); Text("HOY", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) } }
