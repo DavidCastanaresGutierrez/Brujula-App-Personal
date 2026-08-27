@@ -5,11 +5,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +54,7 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
     var code by remember { mutableStateOf("") }; var error by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        item { BrujulaMark() }
         item { Text("BRÚJULA", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) }
         item { Text("Vincular reloj", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         item { Text("Genera un código en\nbrujula-app-personal.vercel.app/watch-connect", textAlign = TextAlign.Center, fontSize = 12.sp) }
@@ -70,7 +73,7 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
     fun setGoalStatus(goal: WeeklyGoal, status: String) { val previous = data; data = data.copy(goals = data.goals.map { if (it.id == goal.id) it.copy(status = status) else it }); scope.launch { try { Api.setGoalStatus(token, goal.id, status) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
     LaunchedEffect(token) { refresh() }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        item { Text("HOY", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) }
+        item { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { BrujulaMark(28.dp); Text("HOY", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) } }
         item { Row(Modifier.fillMaxWidth(.88f), horizontalArrangement = Arrangement.SpaceEvenly) { Score("DÍA", data.dayScore); Score("SEMANA", data.weekScore) } }
         if (loading) item { CircularProgressIndicator() }
         if (error.isNotEmpty()) item { Text(error, color = Color(0xFFFFC07A), textAlign = TextAlign.Center) }
@@ -93,6 +96,15 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
         item { Button(onClick = { scope.launch { refresh() } }) { Text("Actualizar") } }
         item { TextButton(onClick = onUnlink) { Text("Desvincular", color = Color(0xFF9CB5AE), fontSize = 11.sp) } }
     }
+}
+
+@Composable
+private fun BrujulaMark(size: androidx.compose.ui.unit.Dp = 48.dp) {
+    Image(
+        painter = painterResource(com.brujula.wear.R.drawable.ic_brujula_app),
+        contentDescription = "Brújula",
+        modifier = Modifier.size(size)
+    )
 }
 
 @Composable private fun Score(label: String, value: Double) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(label, color = Color(0xFF8FB9AE), fontSize = 10.sp); Text(String.format("%.1f", value), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) } }
