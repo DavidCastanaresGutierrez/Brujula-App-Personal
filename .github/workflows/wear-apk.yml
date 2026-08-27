@@ -12,6 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      WEAR_KEYSTORE_BASE64: ${{ secrets.WEAR_KEYSTORE_BASE64 }}
       WEAR_KEYSTORE_PASSWORD: ${{ secrets.WEAR_KEYSTORE_PASSWORD }}
       WEAR_KEY_ALIAS: ${{ secrets.WEAR_KEY_ALIAS }}
       WEAR_KEY_PASSWORD: ${{ secrets.WEAR_KEY_PASSWORD }}
@@ -27,14 +28,12 @@ jobs:
           gradle-version: "8.9"
       - run: gradle -p wear :app:assembleDebug --stacktrace
       - name: Restore release keystore
-        if: ${{ secrets.WEAR_KEYSTORE_BASE64 != '' }}
-        env:
-          WEAR_KEYSTORE_BASE64: ${{ secrets.WEAR_KEYSTORE_BASE64 }}
+        if: ${{ env.WEAR_KEYSTORE_BASE64 != '' }}
         run: |
           echo "$WEAR_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/brujula-wear.jks"
           echo "WEAR_KEYSTORE_PATH=$RUNNER_TEMP/brujula-wear.jks" >> "$GITHUB_ENV"
       - name: Build signed release APK
-        if: ${{ secrets.WEAR_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.WEAR_KEYSTORE_BASE64 != '' }}
         run: gradle -p wear :app:assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
@@ -42,7 +41,7 @@ jobs:
           path: wear/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
-        if: ${{ secrets.WEAR_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.WEAR_KEYSTORE_BASE64 != '' }}
         with:
           name: brujula-wear-release-apk
           path: wear/app/build/outputs/apk/release/app-release.apk
