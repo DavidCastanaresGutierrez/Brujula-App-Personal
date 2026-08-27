@@ -1,7 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:theme="@style/AppTheme" android:label="Brújula" android:allowBackup="false" android:usesCleartextTraffic="false">
+    <application
+        android:theme="@style/AppTheme"
+        android:label="Brújula"
+        android:icon="@drawable/ic_brujula_app"
+        android:roundIcon="@drawable/ic_brujula_app"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
         <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
