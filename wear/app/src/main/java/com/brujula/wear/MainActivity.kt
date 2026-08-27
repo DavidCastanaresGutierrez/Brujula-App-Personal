@@ -53,7 +53,7 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
         item { Text("BRÚJULA", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) }
         item { Text("Vincular reloj", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         item { Text("Genera un código en\nbrujula-app-personal.vercel.app/watch-connect", textAlign = TextAlign.Center, fontSize = 12.sp) }
-        item { TextField(value = code, onValueChange = { code = it.filter(Char::isDigit).take(6) }, label = { Text("Código de 6 cifras") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)) }
+        item { androidx.compose.material3.OutlinedTextField(value = code, onValueChange = { value -> code = value.filter(Char::isDigit).take(6) }, label = { androidx.compose.material3.Text("Código") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth(.82f)) }
         if (error.isNotEmpty()) item { Text(error, color = Color(0xFFFF9F9F), textAlign = TextAlign.Center, fontSize = 12.sp) }
         item { Button(onClick = { scope.launch { busy = true; error = try { onPair(code); "" } catch (e: Exception) { e.message ?: "No se ha podido vincular" }; busy = false } }, enabled = code.length == 6 && !busy) { Text(if (busy) "Vinculando…" else "Vincular") } }
     }
