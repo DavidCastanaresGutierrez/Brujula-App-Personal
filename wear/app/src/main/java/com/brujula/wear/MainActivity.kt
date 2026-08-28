@@ -180,7 +180,7 @@ private fun StatusButton(label: String, selected: Boolean, selectedColor: Color,
         Text(
             label,
             modifier = Modifier.fillMaxSize().wrapContentSize(Alignment.Center),
-            color = if (selected) Color(0xFF07131D) else Color.Transparent,
+            color = if (selected) Color(0xFF07131D) else Color.White.copy(alpha = 0.38f),
             style = TextStyle(fontSize = 18.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, platformStyle = PlatformTextStyle(includeFontPadding = false))
         )
     }
