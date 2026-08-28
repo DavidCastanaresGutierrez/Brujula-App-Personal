@@ -56,7 +56,7 @@ fun BrujulaApp(context: Context) {
     var token by remember { mutableStateOf(prefs.getString("device_token", null)) }
     MaterialTheme { Box(Modifier.fillMaxSize().background(Color(0xFF061411))) {
         if (token == null) PairScreen { code -> Api.redeem(code).also { prefs.edit().putString("device_token", it).apply(); token = it } }
-        else HabitsScreen(token!!, onUnlink = { prefs.edit().clear().apply(); token = null })
+        else HabitsScreen(token!!)
     } }
 }
 
@@ -76,7 +76,7 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
 }
 
 @Composable
-private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
+private fun HabitsScreen(token: String) {
     var data by remember { mutableStateOf(TodayData(emptyList(), emptyList(), 0.0, 0.0)) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(WatchTab.Daily) }
     val scope = rememberCoroutineScope()
@@ -123,7 +123,6 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
         }
         item { Text("Sincronización automática", color = Color(0xFF8FB9AE), fontSize = 10.sp) }
         item { TextButton(onClick = { scope.launch { refresh() } }) { Text("Actualizar ahora", fontSize = 11.sp) } }
-        item { TextButton(onClick = onUnlink) { Text("Desvincular", color = Color(0xFF9CB5AE), fontSize = 11.sp) } }
     }
 }
 
