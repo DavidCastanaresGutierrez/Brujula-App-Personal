@@ -5,8 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +72,7 @@ private fun PairScreen(onPair: suspend (String) -> Unit) {
 @Composable
 private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
     var data by remember { mutableStateOf(TodayData(emptyList(), emptyList(), 0.0, 0.0)) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf(WatchTab.Daily) }
     val scope = rememberCoroutineScope()
     suspend fun refresh(showLoading: Boolean = true) { if (showLoading) loading = true; error = try { data = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; if (showLoading) loading = false }
     fun setHabitStatus(habit: Habit, status: String) { val previous = data; data = data.copy(habits = data.habits.map { if (it.id == habit.id) it.copy(status = status) else it }); scope.launch { try { Api.setHabitStatus(token, habit.id, status); refresh(showLoading = false) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
@@ -78,25 +84,54 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
         if (loading) item { CircularProgressIndicator() }
         if (error.isNotEmpty()) item { Text(error, color = Color(0xFFFFC07A), textAlign = TextAlign.Center) }
         if (!loading && data.habits.isEmpty() && data.goals.isEmpty() && error.isEmpty()) item { Text("No tienes tareas para hoy", color = Color.White, textAlign = TextAlign.Center) }
-        val daily = data.habits.filter { it.kind == "daily" }; val weekly = data.habits.filter { it.kind == "weekly" }
-        if (daily.isNotEmpty()) item { SectionTitle("HÁBITOS DIARIOS") }
-        items(daily, key = { "daily-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
-        if (weekly.isNotEmpty()) item { SectionTitle("HÁBITOS SEMANALES") }
-        items(weekly, key = { "weekly-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
-        if (data.goals.isNotEmpty()) item { SectionTitle("OBJETIVOS SEMANALES") }
-        items(data.goals, key = { "goal-${it.id}" }) { goal ->
-            Column(Modifier.fillMaxWidth(.9f).background(Color(0xFF132520)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(goal.title, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusButton("✓", goal.status == "completed", Color(0xFF26705D)) { setGoalStatus(goal, if (goal.status == "completed") "active" else "completed") }
-                    StatusButton("✕", goal.status == "discarded", Color(0xFF8F3842)) { setGoalStatus(goal, if (goal.status == "discarded") "active" else "discarded") }
+        item { WatchTabs(selectedTab) { selectedTab = it } }
+        val daily = pendingFirst(data.habits.filter { it.kind == "daily" })
+        val weekly = pendingFirst(data.habits.filter { it.kind == "weekly" })
+        val weeklyGoals = data.goals.sortedBy { if (it.status == "active") 0 else 1 }
+        if (selectedTab == WatchTab.Daily) {
+            if (daily.isEmpty() && !loading) item { EmptyTab("No hay hábitos diarios") }
+            items(daily, key = { "daily-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
+        } else {
+            if (weekly.isNotEmpty()) item { SectionTitle("HÁBITOS") }
+            items(weekly, key = { "weekly-${it.id}" }) { habit -> HabitCard(habit) { setHabitStatus(habit, it) } }
+            if (weeklyGoals.isNotEmpty()) item { SectionTitle("OBJETIVOS") }
+            items(weeklyGoals, key = { "goal-${it.id}" }) { goal ->
+                Column(Modifier.fillMaxWidth(.9f).background(Color(0xFF132520)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(goal.title, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatusButton("✓", goal.status == "completed", Color(0xFF3CC9AB)) { setGoalStatus(goal, if (goal.status == "completed") "active" else "completed") }
+                        StatusButton("✕", goal.status == "discarded", Color(0xFFEF4444)) { setGoalStatus(goal, if (goal.status == "discarded") "active" else "discarded") }
+                    }
                 }
             }
+            if (weekly.isEmpty() && weeklyGoals.isEmpty() && !loading) item { EmptyTab("No hay tareas semanales") }
         }
         item { Button(onClick = { scope.launch { refresh() } }) { Text("Actualizar") } }
         item { TextButton(onClick = onUnlink) { Text("Desvincular", color = Color(0xFF9CB5AE), fontSize = 11.sp) } }
     }
 }
+
+private enum class WatchTab { Daily, Weekly }
+
+private fun pendingFirst(habits: List<Habit>) = habits.sortedBy { if (it.status == "pending") 0 else 1 }
+
+@Composable
+private fun WatchTabs(selected: WatchTab, onSelect: (WatchTab) -> Unit) {
+    Row(Modifier.fillMaxWidth(.9f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        WatchTabButton("Diarios", selected == WatchTab.Daily, Modifier.weight(1f)) { onSelect(WatchTab.Daily) }
+        WatchTabButton("Semanales", selected == WatchTab.Weekly, Modifier.weight(1f)) { onSelect(WatchTab.Weekly) }
+    }
+}
+
+@Composable
+private fun WatchTabButton(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.height(34.dp).background(if (selected) Color(0xFF3CC9AB) else Color(0xFF18243C), RoundedCornerShape(9.dp)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Text(label, color = if (selected) Color(0xFF07131D) else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+}
+
+@Composable private fun EmptyTab(message: String) { Text(message, color = Color(0xFF9CB5AE), fontSize = 12.sp, textAlign = TextAlign.Center) }
 
 @Composable
 private fun BrujulaMark(size: androidx.compose.ui.unit.Dp = 48.dp) {
@@ -113,13 +148,28 @@ private fun BrujulaMark(size: androidx.compose.ui.unit.Dp = 48.dp) {
     Column(Modifier.fillMaxWidth(.9f).background(Color(0xFF132520)).padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(habit.name, color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, maxLines = 2)
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            StatusButton("✓", habit.status == "completed", Color(0xFF26705D)) { onStatus(if (habit.status == "completed") "pending" else "completed") }
-            StatusButton("✕", habit.status == "missed", Color(0xFF8F3842)) { onStatus(if (habit.status == "missed") "pending" else "missed") }
-            StatusButton("—", habit.status == "skipped", Color(0xFF59666A)) { onStatus(if (habit.status == "skipped") "pending" else "skipped") }
+            StatusButton("✓", habit.status == "completed", Color(0xFF3CC9AB)) { onStatus(if (habit.status == "completed") "pending" else "completed") }
+            StatusButton("✕", habit.status == "missed", Color(0xFFEF4444)) { onStatus(if (habit.status == "missed") "pending" else "missed") }
+            StatusButton("—", habit.status == "skipped", Color(0xFF7F8BA3)) { onStatus(if (habit.status == "skipped") "pending" else "skipped") }
         }
     }
 }
-@Composable private fun StatusButton(label: String, selected: Boolean, selectedColor: Color, onClick: () -> Unit) { Button(onClick = onClick, modifier = Modifier.size(42.dp), contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selected) selectedColor else Color(0xFF233B35), contentColor = Color.White)) { Text(label, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) } }
+@Composable
+private fun StatusButton(label: String, selected: Boolean, selectedColor: Color, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        Modifier.size(42.dp).background(if (selected) selectedColor else Color(0xFF18243C), shape)
+            .border(1.dp, if (selected) selectedColor else Color(0xFF35435F), shape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            modifier = Modifier.fillMaxSize().wrapContentSize(Alignment.Center),
+            color = if (selected) Color(0xFF07131D) else Color.Transparent,
+            style = TextStyle(fontSize = 18.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, platformStyle = PlatformTextStyle(includeFontPadding = false))
+        )
+    }
+}
 
 private fun securePrefs(context: Context) = EncryptedSharedPreferences.create(context, "brujula_watch", MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(), EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
 
