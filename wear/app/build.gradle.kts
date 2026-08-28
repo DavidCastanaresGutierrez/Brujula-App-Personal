@@ -3,7 +3,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "com.brujula.wear"
     compileSdk = 35
-    defaultConfig { applicationId = "com.brujula.wear"; minSdk = 30; targetSdk = 35; versionCode = 5; versionName = "0.2.3" }
+    defaultConfig { applicationId = "com.brujula.wear"; minSdk = 30; targetSdk = 35; versionCode = 6; versionName = "0.2.4" }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
