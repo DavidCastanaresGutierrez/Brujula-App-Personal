@@ -1,6 +1,6 @@
 # Brújula para Wear OS
 
-Aplicación independiente para Galaxy Watch 6. Se vincula desde `/watch-connect`, guarda una credencial revocable en el almacenamiento cifrado del reloj y consulta únicamente los hábitos del día.
+Aplicación independiente para Galaxy Watch 6. Se vincula desde `/watch-connect`, guarda una credencial revocable en el almacenamiento cifrado del reloj y consulta únicamente los hábitos del día. Mientras la aplicación está visible, actualiza automáticamente los cambios cada 30 segundos; los cambios realizados en el reloj se envían al instante y avisan al móvil mediante Supabase Realtime.
 
 ## Compilar
 

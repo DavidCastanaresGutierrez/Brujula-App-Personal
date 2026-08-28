@@ -13,6 +13,7 @@ import type { SyncStatusValue } from "../components/sync-status";
 type NormalizedTrackerState = Required<TrackerState>;
 
 const REMOTE_PULL_COOLDOWN_MS = 15_000;
+const VISIBLE_SYNC_FALLBACK_MS = 60_000;
 
 type UseTrackerSyncOptions = {
   initialState: NormalizedTrackerState;
@@ -277,6 +278,9 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     pullLatestRef.current = pullLatest;
     const onFocus = () => { if (document.visibilityState === "visible") void pullLatest(); };
     const onPageShow = () => void pullLatest();
+    const fallbackTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void pullLatest();
+    }, VISIBLE_SYNC_FALLBACK_MS);
     const unsubscribeRealtime = subscribeToTrackerRevisions(session.user.id, session.access_token, (notifiedRevision) => {
       if (!shouldPullNotifiedRevision(revisionRef.current, notifiedRevision)) return;
       if (notifiedRevision !== null) pendingRemoteRevisionRef.current = Math.max(pendingRemoteRevisionRef.current ?? 0, notifiedRevision);
@@ -288,6 +292,7 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
         void pullLatest();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         setSyncStatus((current) => current === "conflict" || current === "saving" ? current : navigator.onLine ? "error" : "offline");
+        void pullLatest(true);
       }
     });
     window.addEventListener("focus", onFocus);
@@ -300,6 +305,7 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("online", onPageShow);
       document.removeEventListener("visibilitychange", onFocus);
+      window.clearInterval(fallbackTimer);
       pullLatestRef.current = null;
       unsubscribeRealtime();
     };

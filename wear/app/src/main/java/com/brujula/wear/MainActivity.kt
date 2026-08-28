@@ -24,10 +24,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -36,6 +41,7 @@ import java.net.URL
 import java.time.LocalDate
 
 private const val BASE_URL = "https://brujula-app-personal.vercel.app"
+private const val AUTO_REFRESH_INTERVAL_MS = 30_000L
 data class Habit(val id: Long, val name: String, val kind: String, val status: String)
 data class WeeklyGoal(val id: Long, val title: String, val status: String)
 data class TodayData(val habits: List<Habit>, val goals: List<WeeklyGoal>, val dayScore: Double, val weekScore: Double)
@@ -74,10 +80,19 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
     var data by remember { mutableStateOf(TodayData(emptyList(), emptyList(), 0.0, 0.0)) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(WatchTab.Daily) }
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
     suspend fun refresh(showLoading: Boolean = true) { if (showLoading) loading = true; error = try { data = Api.today(token); "" } catch (e: Exception) { e.message ?: "Sin conexión" }; if (showLoading) loading = false }
     fun setHabitStatus(habit: Habit, status: String) { val previous = data; data = data.copy(habits = data.habits.map { if (it.id == habit.id) it.copy(status = status) else it }); scope.launch { try { Api.setHabitStatus(token, habit.id, status); refresh(showLoading = false) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
     fun setGoalStatus(goal: WeeklyGoal, status: String) { val previous = data; data = data.copy(goals = data.goals.map { if (it.id == goal.id) it.copy(status = status) else it }); scope.launch { try { Api.setGoalStatus(token, goal.id, status); refresh(showLoading = false) } catch (e: Exception) { data = previous; error = e.message ?: "No se ha podido guardar" } } }
-    LaunchedEffect(token) { refresh() }
+    LaunchedEffect(token, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            refresh()
+            while (isActive) {
+                delay(AUTO_REFRESH_INTERVAL_MS)
+                refresh(showLoading = false)
+            }
+        }
+    }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { BrujulaMark(28.dp); Text("HOY", color = Color(0xFF65D9BA), fontWeight = FontWeight.Bold) } }
         item { Row(Modifier.fillMaxWidth(.88f), horizontalArrangement = Arrangement.SpaceEvenly) { Score("DÍA", data.dayScore); Score("SEMANA", data.weekScore) } }
@@ -106,7 +121,8 @@ private fun HabitsScreen(token: String, onUnlink: () -> Unit) {
             }
             if (weekly.isEmpty() && weeklyGoals.isEmpty() && !loading) item { EmptyTab("No hay tareas semanales") }
         }
-        item { Button(onClick = { scope.launch { refresh() } }) { Text("Actualizar") } }
+        item { Text("Sincronización automática", color = Color(0xFF8FB9AE), fontSize = 10.sp) }
+        item { TextButton(onClick = { scope.launch { refresh() } }) { Text("Actualizar ahora", fontSize = 11.sp) } }
         item { TextButton(onClick = onUnlink) { Text("Desvincular", color = Color(0xFF9CB5AE), fontSize = 11.sp) } }
     }
 }
