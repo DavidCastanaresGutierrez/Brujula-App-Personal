@@ -20,10 +20,17 @@ function AuthIcon({ name }: { name: "mail" | "lock" | "eye" | "eyeOff" | "shield
 export function AuthGate() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  function changeMode(nextMode: "login" | "signup" | "forgot") {
+    setMode(nextMode);
+    setMessage("");
+    setShowPassword(false);
+    if (nextMode === "forgot") setPassword("");
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -31,13 +38,31 @@ export function AuthGate() {
     setMessage("");
     try {
       const supabase = getSupabaseBrowserClient();
+      const normalizedEmail = email.trim().toLowerCase();
+
       if (mode === "forgot") {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
         if (error) throw error;
-        setMessage("Te hemos enviado un enlace para restablecer la contraseña. Revisa también la carpeta de spam.");
+        setMessage("Si existe una cuenta con ese correo, recibirás un enlace para restablecer la contraseña. Revisa también la carpeta de spam.");
         return;
       }
-      const result = await supabase.auth.signInWithPassword({ email, password });
+
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) throw error;
+        if (data.session) {
+          setMessage("Cuenta creada correctamente. Entrando en Brújula…");
+        } else {
+          setMessage("Cuenta creada. Revisa tu correo para confirmar el acceso y después inicia sesión.");
+        }
+        return;
+      }
+
+      const result = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
       if (result.error) throw result.error;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo completar el acceso.");
@@ -46,17 +71,23 @@ export function AuthGate() {
     }
   }
 
+  const isLogin = mode === "login";
+  const isSignup = mode === "signup";
+
   return (
     <main className="auth-page"><div className="auth-shell"><section className="auth-card"><div className="auth-content">
       <div className="auth-brand" aria-label="Brújula, tu rumbo personal"><Image className="auth-logo" src="/compass-mark-light.png" width={92} height={92} alt="" priority /><strong>Brújula</strong><span>TU RUMBO PERSONAL</span></div>
-      <div className="auth-intro"><h1>{mode === "login" ? "Construye la persona que quieres llegar a ser." : "Recupera el acceso a tu rumbo."}</h1><p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : "Cada pequeño hábito cambia tu dirección."}</p></div>
+      <div className="auth-intro"><h1>{isLogin ? "Construye la persona que quieres llegar a ser." : isSignup ? "Empieza a construir tu rumbo." : "Recupera el acceso a tu rumbo."}</h1><p>{mode === "forgot" ? "Escribe tu correo y recibirás un enlace seguro para crear una contraseña nueva." : isSignup ? "Crea tu cuenta para empezar a registrar tus hábitos y objetivos." : "Cada pequeño hábito cambia tu dirección."}</p></div>
       <form onSubmit={submit}>
         <label htmlFor="auth-email">Correo</label><div className="auth-field"><span className="auth-field-icon"><AuthIcon name="mail" /></span><input id="auth-email" type="email" placeholder="tu@email.com" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></div>
-        {mode !== "forgot" && <><label htmlFor="auth-password">Contraseña</label><div className="auth-field password-field"><span className="auth-field-icon"><AuthIcon name="lock" /></span><input id="auth-password" type={showPassword ? "text" : "password"} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}><AuthIcon name={showPassword ? "eyeOff" : "eye"} /></button></div></>}
+        {mode !== "forgot" && <><label htmlFor="auth-password">Contraseña</label><div className="auth-field password-field"><span className="auth-field-icon"><AuthIcon name="lock" /></span><input id="auth-password" type={showPassword ? "text" : "password"} placeholder="Mínimo 8 caracteres" minLength={8} autoComplete={isSignup ? "new-password" : "current-password"} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}><AuthIcon name={showPassword ? "eyeOff" : "eye"} /></button></div></>}
         {message && <p className="auth-message" role="status">{message}</p>}
-        <button className="auth-submit" disabled={busy}>{busy ? <><span className="auth-spinner" aria-hidden="true" />Procesando…</> : <>{mode === "login" ? "Entrar" : "Enviar enlace"}<span aria-hidden="true">→</span></>}</button>
+        <button className="auth-submit" disabled={busy}>{busy ? <><span className="auth-spinner" aria-hidden="true" />Procesando…</> : <>{isLogin ? "Entrar" : isSignup ? "Crear cuenta" : "Enviar enlace"}<span aria-hidden="true">→</span></>}</button>
       </form>
-      <p className="auth-trust"><AuthIcon name="shield" /> Acceso privado · Seguro · Sincronizado</p><div className="auth-links">{mode === "login" ? <button className="auth-switch" onClick={() => { setMode("forgot"); setMessage(""); }}>¿Has olvidado tu contraseña?</button> : <button className="auth-switch secondary" onClick={() => { setMode("login"); setMessage(""); setShowPassword(false); }}>Volver al inicio de sesión</button>}</div>
+      <p className="auth-trust"><AuthIcon name="shield" /> Acceso privado · Seguro · Sincronizado</p>
+      <div className="auth-links">
+        {isLogin ? <><button className="auth-switch" onClick={() => changeMode("signup")}>Crear una cuenta</button><button className="auth-switch secondary" onClick={() => changeMode("forgot")}>¿Has olvidado tu contraseña?</button></> : <button className="auth-switch secondary" onClick={() => changeMode("login")}>Volver al inicio de sesión</button>}
+      </div>
     </div></section><aside className="auth-visual" aria-hidden="true"><div className="auth-visual-message"><span className="auth-visual-icon"><AuthIcon name="compass" /></span><blockquote>“No se trata de llegar más rápido, sino de avanzar en la dirección correcta.”</blockquote></div></aside></div></main>
   );
 }
