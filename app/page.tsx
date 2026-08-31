@@ -505,6 +505,9 @@ export default function Home() {
   }
   if (passwordRecovery) return <ResetPassword onComplete={completePasswordRecovery} />;
   if (!session) return <AuthGate />;
+  if (!hydrated) {
+    return <main className="auth-page"><p className="eyebrow" role="status">CARGANDO TUS DATOS…</p></main>;
+  }
 
   return (
     <main>
