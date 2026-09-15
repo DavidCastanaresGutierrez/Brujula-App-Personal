@@ -27,23 +27,49 @@
 .nutrition-track { height:130px; position:relative; margin:12px 0; background:var(--bg); border-radius:6px; }
 .nutrition-track i { position:absolute; bottom:0; left:20%; width:60%; background:var(--teal); border-radius:5px 5px 0 0; }
 .nutrition-target { position:absolute; left:0; right:0; border-top:2px dashed #e8b967; z-index:1; }
-.nutrition-comparison { display:grid; gap:20px; }
-.nutrition-comparison-key { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:14px; }
-.nutrition-comparison-key span { display:flex; gap:6px; align-items:center; }
-.nutrition-key { display:inline-block; width:10px; height:10px; border-radius:50%; }
-.nutrition-key.actual { background:var(--teal); }
-.nutrition-key.target { background:#e8b967; }
-.nutrition-comparison-rows { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 24px; }
-.nutrition-comparison-row { min-width:0; }
-.nutrition-comparison-label { display:flex; justify-content:space-between; gap:8px; margin-bottom:8px; font-size:14px; }
-.nutrition-comparison-label span { color:var(--muted); white-space:nowrap; }
-.nutrition-comparison-bars { display:grid; gap:5px; }
-.nutrition-comparison-bar { display:block; min-height:12px; border-radius:999px; transition:width .2s ease; }
-.nutrition-comparison-bar.actual { background:var(--teal); }
-.nutrition-comparison-bar.target { background:#e8b967; }
+.nutrition-visuals { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.nutrition-calorie-card { display:grid; grid-template-columns:1fr auto; gap:8px 16px; }
+.nutrition-calorie-card > div:first-child strong { display:block; font-size:52px; line-height:1; letter-spacing:-2px; }
+.nutrition-calorie-card > div:first-child > span { font-size:18px; color:var(--muted); }
+.nutrition-calorie-target { text-align:right; color:var(--muted); font-size:14px; }
+.nutrition-calorie-target strong { display:block; color:var(--ink); font-size:17px; margin-top:4px; }
+.nutrition-calorie-progress { grid-column:1 / -1; position:relative; height:16px; background:var(--bg); border-radius:999px; overflow:hidden; margin-top:12px; }
+.nutrition-calorie-progress i { position:absolute; inset:0 auto 0 0; background:var(--teal); border-radius:999px; }
+.nutrition-calorie-progress b { position:absolute; top:-3px; bottom:-3px; width:3px; background:#e8b967; border-radius:3px; transform:translateX(-1px); }
+.nutrition-calorie-scale { grid-column:1 / -1; display:flex; justify-content:space-between; color:var(--muted); font-size:13px; }
+.nutrition-calorie-card > p { grid-column:1 / -1; margin:6px 0 0; }
+.nutrition-macro-card { display:grid; gap:12px; }
+.nutrition-macro-card h2 { margin:0; }
+.nutrition-macro-values,.nutrition-macro-percentages { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.nutrition-macro-values > div { border:1px solid var(--line); border-radius:12px; padding:10px; text-align:center; }
+.nutrition-macro-values span,.nutrition-macro-caption { color:var(--muted); font-size:13px; }
+.nutrition-macro-values strong { display:block; font-size:20px; margin-top:4px; }
+.nutrition-macro-values .carbs,.nutrition-macro-percentages .carbs { color:#bb8cf5; }
+.nutrition-macro-values .fat,.nutrition-macro-percentages .fat { color:#ef7c8b; }
+.nutrition-macro-values .protein,.nutrition-macro-percentages .protein { color:#e8ca53; }
+.nutrition-macro-caption { margin:0; }
+.nutrition-macro-bar { display:flex; height:14px; overflow:hidden; border-radius:6px; background:var(--bg); }
+.nutrition-macro-bar i { display:block; min-width:0; }
+.nutrition-macro-bar .carbs { background:#bb8cf5; }
+.nutrition-macro-bar .fat { background:#ef7c8b; }
+.nutrition-macro-bar .protein { background:#e8ca53; }
+.nutrition-macro-bar.target { height:8px; opacity:.72; }
+.nutrition-macro-percentages { font-weight:700; }
+.nutrition-history { display:grid; gap:14px; }
+.nutrition-history-tabs,.nutrition-history-metrics { display:flex; gap:8px; flex-wrap:wrap; }
+.nutrition-history-tabs button,.nutrition-history-metrics button { border-radius:999px; }
+.nutrition-history-tabs .active,.nutrition-history-metrics .active { background:var(--teal); color:#06221f; border-color:var(--teal); font-weight:700; }
+.nutrition-history-average { font-size:46px; line-height:1; letter-spacing:-1px; }
+.nutrition-history-average small { font-size:19px; color:var(--muted); letter-spacing:0; }
+.nutrition-history-chart { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; align-items:end; min-height:210px; padding-top:14px; }
+.nutrition-history-chart > div { min-width:0; text-align:center; }
+.nutrition-history-track { height:170px; position:relative; border-bottom:1px solid var(--line); background:linear-gradient(to top,transparent 49%,var(--line) 50%,transparent 51%); }
+.nutrition-history-track i { position:absolute; bottom:0; left:25%; width:50%; background:var(--teal); border-radius:8px 8px 0 0; min-height:3px; }
+.nutrition-history-track b { position:absolute; left:0; right:0; border-top:2px dashed #e8b967; }
+.nutrition-history-chart small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:8px; color:var(--muted); }
 @media(max-width:850px) { .nutrition-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .nutrition .panel-head,.nutrition-meal { align-items:flex-start; flex-direction:column; } }
-@media(max-width:600px) { .nutrition-comparison-rows { grid-template-columns:1fr; } }
-@media(max-width:450px) { .nutrition .panel { padding:16px; } .nutrition-metric strong { font-size:22px; } .nutrition-chart { gap:5px; } .nutrition-chart small { font-size:11px; } .nutrition-comparison-label { align-items:flex-start; flex-direction:column; gap:2px; } }
+@media(max-width:850px) { .nutrition-visuals { grid-template-columns:1fr; } }
+@media(max-width:450px) { .nutrition .panel { padding:16px; } .nutrition-metric strong { font-size:22px; } .nutrition-chart { gap:5px; } .nutrition-chart small,.nutrition-history-chart small { font-size:10px; } .nutrition-history-chart { gap:4px; } }
 .nutrition progress { appearance:none; border:0; border-radius:8px; overflow:hidden; background:var(--bg); }
 .nutrition progress::-webkit-progress-bar { background:var(--bg); border-radius:8px; }
 .nutrition progress::-webkit-progress-value { background:var(--teal); border-radius:8px; }
