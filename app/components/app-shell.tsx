@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Brand } from "./auth";
 
-export type MainView = "summary" | "today" | "week" | "habits" | "goals";
+export type MainView = "summary" | "today" | "week" | "habits" | "goals" | "nutrition";
 
 export type ClosureNotice = {
   key: string;
@@ -51,6 +51,7 @@ const navigation: { view: MainView; label: string }[] = [
   { view: "week", label: "Semana" },
   { view: "habits", label: "Hábitos" },
   { view: "goals", label: "Objetivos" },
+  { view: "nutrition", label: "Nutrición" },
 ];
 
 export function AppHeader({ activeView, userEmail, onNavigate, onSignOut }: AppHeaderProps) {
