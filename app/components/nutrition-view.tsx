@@ -44,13 +44,14 @@ export function NutritionView({ userId }: { userId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [goalDraft, setGoalDraft] = useState<Macros | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [raw, setRaw] = useState("");
   const [preview, setPreview] = useState<NutritionImport | null>(null);
+  const [importFileName, setImportFileName] = useState("");
+  const [importReading, setImportReading] = useState(false);
+  const [importError, setImportError] = useState("");
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [frequentSearch, setFrequentSearch] = useState("");
   const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>("days");
   const operation = useRef(false);
-  const nutritionFileInput = useRef<HTMLInputElement>(null);
   const editorKind = editor ? "meal" : goalDraft ? "goals" : importOpen ? "import" : deleting ? "delete" : "";
   useEffect(() => {
     if (editorKind) document.querySelector(".nutrition-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -117,7 +118,7 @@ export function NutritionView({ userId }: { userId: string }) {
     const result = await db().from("nutrition_entries").upsert(rows, { onConflict: "user_id,import_key", ignoreDuplicates: true }).select("id");
     check(result);
     setMessage(result.data?.length ? `${result.data.length} comidas importadas.` : "Este JSON ya estaba importado. No se han duplicado comidas.");
-    setImportOpen(false); setPreview(null); setRaw(""); changeDate(preview.date);
+    setImportOpen(false); setPreview(null); setImportFileName(""); setImportError(""); changeDate(preview.date);
   }
   const daily = entries.filter(entry => entry.date === date);
   const total = sumMacros(daily);
@@ -140,15 +141,19 @@ export function NutritionView({ userId }: { userId: string }) {
   function openMeal(meal: Meal = blankMeal(), id: string | null = null) { setGoalDraft(null); setImportOpen(false); setDeleting(null); setEditor({ name: meal.name, type: meal.type, calories: meal.calories, protein: meal.protein, carbs: meal.carbs, fat: meal.fat }); setEditingId(id); setError(""); }
   function loadNutritionFile(file: File | undefined) {
     if (!file) return;
-    if (file.size > 100000) { setPreview(null); setError("El JSON supera el tamaño máximo (100 KB)."); return; }
+    setImportFileName(file.name);
+    setImportReading(true);
+    setImportError("");
+    setPreview(null);
+    if (file.size > 100000) { setImportReading(false); setImportError("El JSON supera el tamaño máximo (100 KB)."); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const content = typeof reader.result === "string" ? reader.result : "";
-      setRaw(content);
-      try { setPreview(parseNutrition(content)); setError(""); }
-      catch (cause) { setPreview(null); setError(cause instanceof Error ? cause.message : "No se ha podido leer el archivo."); }
+      setImportReading(false);
+      try { setPreview(parseNutrition(content)); setImportError(""); }
+      catch (cause) { setPreview(null); setImportError(cause instanceof Error ? cause.message : "No se ha podido leer el archivo."); }
     };
-    reader.onerror = () => { setPreview(null); setError("No se ha podido leer el archivo. Descárgalo de nuevo e inténtalo otra vez."); };
+    reader.onerror = () => { setImportReading(false); setPreview(null); setImportError("No se ha podido leer el archivo. Descárgalo de nuevo e inténtalo otra vez."); };
     reader.readAsText(file, "utf-8");
   }
 
@@ -168,7 +173,7 @@ export function NutritionView({ userId }: { userId: string }) {
     </>}
     {editor && <section className="panel nutrition-editor" aria-label="Formulario de comida"><h2>{editingId ? "Editar comida" : "Añadir comida"}</h2><form onSubmit={e => { e.preventDefault(); void run(saveMeal); }}><fieldset disabled={busy}><label>Nombre de la comida<input autoFocus required maxLength={200} value={editor.name} onChange={e => setEditor({...editor,name:e.target.value})} /></label><label>Tipo de comida<select value={editor.type} onChange={e => setEditor({...editor,type:e.target.value as Meal["type"]})}>{Object.entries(mealTypes).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label><MacroFields value={editor} onChange={value => setEditor({...editor,...value})} /><div className="nutrition-actions"><button type="submit">Guardar comida</button><button type="button" onClick={() => setEditor(null)}>Cancelar</button></div></fieldset></form></section>}
     {goalDraft && <section className="panel nutrition-editor" aria-label="Objetivos nutricionales"><h2>Objetivos diarios</h2><p>Introduce tus objetivos. Se usarán también para comparar días anteriores.</p><form onSubmit={e => { e.preventDefault(); void run(saveGoals); }}><fieldset disabled={busy}><MacroFields value={goalDraft} onChange={setGoalDraft} positive /><div className="nutrition-actions"><button type="submit">Guardar objetivos</button><button type="button" onClick={() => setGoalDraft(null)}>Cancelar</button></div></fieldset></form></section>}
-    {importOpen && <section className="panel nutrition-editor" aria-label="Importación desde ChatGPT"><h2>Importar desde ChatGPT</h2><p>Descarga el JSON de ChatGPT y selecciónalo aquí. Revisarás las comidas antes de guardarlas.</p><input ref={nutritionFileInput} className="nutrition-file-input" type="file" accept="application/json,.json" disabled={busy} onChange={e => { loadNutritionFile(e.target.files?.[0]); e.currentTarget.value = ""; }} /><div className="nutrition-actions"><button type="button" disabled={busy} onClick={() => nutritionFileInput.current?.click()}>Seleccionar JSON de ChatGPT</button><button type="button" disabled={busy} onClick={() => { setImportOpen(false); setPreview(null); setRaw(""); }}>Cancelar</button></div><details><summary>¿Cómo lo descargo?</summary><p>Cuando ChatGPT genere el archivo, pulsa sobre el enlace de descarga. Después elige ese archivo JSON aquí.</p></details>{preview && <div className="nutrition-import-preview"><h3>Archivo listo · {preview.date} · {preview.meals.length} comidas</h3>{preview.meals.map((meal,i) => <p key={i}><b>{mealTypes[meal.type]}: {meal.name}</b><br />{macroText(meal)}</p>)}<p><strong>Total: {macroText(sumMacros(preview.meals))}</strong></p><p>Se añadirán a las comidas existentes de esa fecha. Un JSON idéntico no se importa dos veces.</p><button disabled={busy} onClick={() => void run(importMeals)}>Confirmar importación</button></div>}</section>}
+    {importOpen && <section className="panel nutrition-editor" aria-label="Importación desde ChatGPT"><h2>Importar desde ChatGPT</h2><p>Descarga el JSON de ChatGPT y selecciónalo aquí. Revisarás las comidas antes de guardarlas.</p><label className="nutrition-file-picker">Archivo JSON<input aria-label="Seleccionar JSON de ChatGPT" className="nutrition-file-input" type="file" accept="application/json,.json" disabled={busy || importReading} onChange={e => loadNutritionFile(e.currentTarget.files?.[0])} /></label>{importReading && <p className="nutrition-file-status" role="status">Leyendo {importFileName}…</p>}{!importReading && importFileName && !importError && !preview && <p className="nutrition-file-status">Archivo seleccionado: {importFileName}</p>}{importError && <p className="nutrition-error" role="alert">{importError}</p>}<div className="nutrition-actions"><button type="button" disabled={busy || importReading} onClick={() => { setImportOpen(false); setPreview(null); setImportFileName(""); setImportError(""); }}>Cancelar</button></div><details><summary>¿Cómo lo descargo?</summary><p>Cuando ChatGPT genere el archivo, pulsa sobre el enlace de descarga. Después elige ese archivo JSON aquí.</p></details>{preview && <div className="nutrition-import-preview"><h3>Archivo listo · {preview.date} · {preview.meals.length} comidas</h3><p className="nutrition-file-status">{importFileName}</p>{preview.meals.map((meal,i) => <p key={i}><b>{mealTypes[meal.type]}: {meal.name}</b><br />{macroText(meal)}</p>)}<p><strong>Total: {macroText(sumMacros(preview.meals))}</strong></p><p>Se añadirán a las comidas existentes de esa fecha. Un JSON idéntico no se importa dos veces.</p><button disabled={busy} onClick={() => void run(importMeals)}>Confirmar importación</button></div>}</section>}
     {deleting && <section className="panel nutrition-editor"><h2>¿Eliminar {deleting.name}?</h2><div className="nutrition-actions"><button disabled={busy} onClick={() => void run(async () => { check(await db().from("nutrition_entries").delete().eq("user_id",userId).eq("id",deleting.id)); setEntries(current => current.filter(e => e.id !== deleting.id)); setDeleting(null); })}>Confirmar eliminación</button><button disabled={busy} onClick={() => setDeleting(null)}>Cancelar</button></div></section>}
   </section>;
 }
