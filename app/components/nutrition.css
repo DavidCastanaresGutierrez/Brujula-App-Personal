@@ -16,9 +16,13 @@
 .nutrition-status.above { border-left-color:#e8b967; }
 .nutrition-meal { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 0; border-top:1px solid var(--line); }
 .nutrition-meal h3 { margin:4px 0; overflow-wrap:anywhere; }
+.nutrition-frequent-badge { display:inline-flex; align-items:center; margin-left:8px; padding:3px 7px; border:1px solid color-mix(in srgb, var(--teal) 60%, var(--line)); border-radius:999px; background:color-mix(in srgb, var(--teal) 16%, transparent); color:var(--teal); font-size:12px; font-weight:700; letter-spacing:.01em; vertical-align:middle; white-space:nowrap; }
 .nutrition input,.nutrition select,.nutrition textarea { color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; width:100%; min-width:0; color-scheme:dark; }
 .nutrition-date input { width:auto; }
 .nutrition label { display:grid; gap:8px; margin:12px 0; }
+.nutrition-search { max-width:420px; }
+.nutrition-file-input { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.nutrition-import-preview { margin-top:20px; padding-top:4px; }
 .nutrition fieldset { border:0; padding:0; min-width:0; }
 .nutrition-error { border:1px solid #e8b967; padding:16px; border-radius:10px; }
 .nutrition-editor { border:1px solid var(--teal); scroll-margin-top:20px; }
