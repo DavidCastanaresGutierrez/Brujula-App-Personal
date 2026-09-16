@@ -47,7 +47,7 @@ type AppHeaderProps = {
 
 const navigation: { view: MainView; label: string }[] = [
   { view: "summary", label: "Resumen" },
-  { view: "today", label: "Tu día" },
+  { view: "today", label: "Mi día" },
   { view: "week", label: "Semana" },
   { view: "habits", label: "Hábitos" },
   { view: "goals", label: "Objetivos" },

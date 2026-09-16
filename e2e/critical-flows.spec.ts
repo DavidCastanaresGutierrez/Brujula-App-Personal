@@ -223,6 +223,9 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
     return route.fulfill({json:Array.isArray(body) ? added : added[0]});
   });
   await openAuthenticatedApp(page);
+  const mainNavigation = page.getByRole("navigation",{name:"Navegación principal"});
+  await expect(mainNavigation.getByRole("button")).toHaveCount(6);
+  await expect(mainNavigation.getByRole("button",{name:"Mi día",exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Nutrición",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Sin comidas registradas"})).toBeVisible();
   await page.getByRole("button",{name:"Configurar objetivos"}).click();
