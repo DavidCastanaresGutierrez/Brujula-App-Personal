@@ -1,13 +1,21 @@
 export const mealTypes = { breakfast: "Desayuno", mid_morning: "Media mañana", lunch: "Comida", snack: "Merienda", dinner: "Cena", other: "Otros" } as const;
 export const metrics = { calories: "Calorías", protein: "Proteína", carbs: "Carbohidratos", fat: "Grasas" } as const;
+export const detailMetrics = { fiber: "Fibra", sugars: "Azúcares", saturated_fat: "Grasas saturadas", salt: "Sal" } as const;
+export const units = { unit: "unidad", serving: "ración", cup: "taza", glass: "vaso", package: "envase", g: "g", ml: "ml" } as const;
 export type Metric = keyof typeof metrics;
+export type DetailMetric = keyof typeof detailMetrics;
 export type Macros = Record<Metric, number>;
-export type Meal = Macros & { type: keyof typeof mealTypes; name: string };
+export type NutritionDetails = Record<DetailMetric, number>;
+export type Nutrients = Macros & NutritionDetails;
+export type Meal = Nutrients & { type: keyof typeof mealTypes; name: string; quantity: number; unit: keyof typeof units };
 export type NutritionImport = { schema_version: 1; date: string; meals: Meal[] };
 export type Entry = Meal & { id: string; date: string };
 export type FrequentMeal = Meal & { id: string };
 export const metricKeys = Object.keys(metrics) as Metric[];
+export const detailMetricKeys = Object.keys(detailMetrics) as DetailMetric[];
 export const emptyMacros = (): Macros => ({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+export const emptyDetails = (): NutritionDetails => ({ fiber: 0, sugars: 0, saturated_fat: 0, salt: 0 });
+export const emptyNutrients = (): Nutrients => ({ ...emptyMacros(), ...emptyDetails() });
 export function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < "1900-01-01" || value > "9999-12-31") return false;
   const date = new Date(`${value}T12:00:00Z`);
@@ -29,21 +37,44 @@ export function parseNutrition(raw: string): NutritionImport {
     const meal = item as Record<string, unknown>;
     if (typeof meal.name !== "string" || !meal.name.trim() || meal.name.trim().length > 200) throw new Error(`${prefix}: name debe tener entre 1 y 200 caracteres.`);
     if (typeof meal.type !== "string" || !Object.hasOwn(mealTypes, meal.type)) throw new Error(`${prefix}: type no válido.`);
-    const macros = emptyMacros();
+    const nutrients = emptyNutrients();
     for (const key of metricKeys) {
       const number = meal[key];
       if (typeof number !== "number" || !Number.isFinite(number) || number < 0 || number > 100000) throw new Error(`${prefix}: ${key} debe ser un número entre 0 y 100.000.`);
-      macros[key] = number;
+      nutrients[key] = number;
     }
-    return { type: meal.type as Meal["type"], name: meal.name.trim(), ...macros };
+    for (const key of detailMetricKeys) {
+      const number = meal[key] ?? 0;
+      if (typeof number !== "number" || !Number.isFinite(number) || number < 0 || number > 100000) throw new Error(`${prefix}: ${key} debe ser un número entre 0 y 100.000.`);
+      nutrients[key] = number;
+    }
+    const quantity = meal.quantity ?? 1;
+    if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0 || quantity > 100000) throw new Error(`${prefix}: quantity debe ser un número mayor que 0 y menor o igual a 100.000.`);
+    const unit = meal.unit ?? "unit";
+    if (typeof unit !== "string" || !Object.hasOwn(units, unit)) throw new Error(`${prefix}: unit no válida.`);
+    return { type: meal.type as Meal["type"], name: meal.name.trim(), quantity, unit: unit as Meal["unit"], ...nutrients };
   });
   return { schema_version: 1, date: data.date, meals };
 }
-export function sumMacros(meals: Macros[]): Macros {
+export function totalNutrients(meal: Nutrients & { quantity?: number }): Nutrients {
+  const quantity = meal.quantity ?? 1;
+  const total = emptyNutrients();
+  for (const key of [...metricKeys, ...detailMetricKeys]) total[key] = meal[key] * quantity;
+  return total;
+}
+export function sumMacros(meals: (Macros & { quantity?: number })[]): Macros {
   return meals.reduce((total, meal) => {
-    for (const key of metricKeys) total[key] += meal[key];
+    const quantity = meal.quantity ?? 1;
+    for (const key of metricKeys) total[key] += meal[key] * quantity;
     return total;
   }, emptyMacros());
+}
+export function sumDetails(meals: (NutritionDetails & { quantity?: number })[]): NutritionDetails {
+  return meals.reduce((total, meal) => {
+    const quantity = meal.quantity ?? 1;
+    for (const key of detailMetricKeys) total[key] += meal[key] * quantity;
+    return total;
+  }, emptyDetails());
 }
 export function metricStatus(key: Metric, consumed: number, target: number) {
   if (key === "protein") return consumed >= target ? "within" : "below";

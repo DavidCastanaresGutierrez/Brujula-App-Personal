@@ -233,6 +233,7 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
   await page.getByRole("button",{name:"+ Añadir comida"}).click();
   const form = page.getByRole("region",{name:"Formulario de comida"});
   await form.getByLabel("Nombre de la comida").fill("Pollo de prueba");
+  await form.getByLabel("Unidad").selectOption("serving");
   for (const [label,value] of [["Calorías (kcal)","550"],["Proteína (g)","72"],["Carbohidratos (g)","35"],["Grasas (g)","13"]]) await form.getByLabel(label,{exact:true}).fill(value);
   await form.getByRole("button",{name:"Guardar comida"}).click();
   const meal = page.locator(".nutrition-meal").filter({hasText:"Pollo de prueba"});
@@ -244,8 +245,16 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
   await meal.getByRole("button",{name:"Guardar como frecuente"}).click();
   await page.getByRole("button",{name:"Pollo de prueba · 600 kcal"}).click();
   await form.getByLabel("Nombre de la comida").fill("Pollo repetido");
+  await form.getByLabel("Cantidad").fill("2");
+  await form.getByText("Información nutricional adicional").click();
+  await form.getByLabel("Azúcares (g)").fill("1.5");
+  await expect(form.getByText("Total: 1200 kcal",{exact:false})).toBeVisible();
   await form.getByRole("button",{name:"Guardar comida"}).click();
   await expect(page.locator(".nutrition-meal")).toHaveCount(2);
+  const repeated = page.locator(".nutrition-meal").filter({hasText:"Pollo repetido"});
+  await expect(repeated).toContainText("2 raciones");
+  await expect(repeated).toContainText("1200 kcal");
+  await expect(repeated).toContainText("Azúcares 3 g");
   await page.getByRole("button",{name:"Importar desde ChatGPT",exact:true}).click();
   const importForm = page.getByRole("region",{name:"Importación desde ChatGPT"});
   const importInput = importForm.getByLabel("Seleccionar JSON de ChatGPT");

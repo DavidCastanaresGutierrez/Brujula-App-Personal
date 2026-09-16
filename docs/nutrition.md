@@ -17,6 +17,8 @@ El módulo reutiliza la sesión autenticada de Supabase y consulta únicamente l
 ## Importación v1
 
 Objeto JSON: `schema_version: 1`, `date: "AAAA-MM-DD"`, `meals: [...]`.
+
+Cada comida mantiene calorías y macronutrientes por unidad. `quantity` y `unit` son opcionales y por defecto equivalen a `1 unidad`. Las unidades admitidas son `unit`, `serving`, `cup`, `glass`, `package`, `g` y `ml`. También son opcionales `fiber`, `sugars`, `saturated_fat` y `salt`, expresados en gramos y con valor cero cuando no se conocen.
 Cada comida contiene `type`, `name`, `calories`, `protein`, `carbs`, `fat`.
 Tipos admitidos: `breakfast`, `mid_morning`, `lunch`, `snack`, `dinner`, `other`.
 Máximo 100 comidas, 100 KB de texto, nombres de 1–200 caracteres y números finitos entre 0 y 100.000.
