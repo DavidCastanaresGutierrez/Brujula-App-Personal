@@ -1,11 +1,15 @@
-.nutrition { display:grid; gap:20px; padding:24px 0; }
-.nutrition h1 { font-size:32px; margin:0; }
+.nutrition { display:grid; gap:14px; padding:4px 0; }
 .nutrition p,.nutrition small { color:var(--muted); }
-.nutrition .panel { padding:24px; }
-.nutrition button { background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 14px; cursor:pointer; }
+.nutrition .panel { padding:23px; }
+.nutrition button { background:transparent; border:1px solid #35435f; border-radius:9px; color:#aeb9cf; padding:9px 12px; font-size:10px; cursor:pointer; }
+.nutrition button:hover { border-color:#62708c; color:var(--ink); }
+.nutrition .add-button { border:0; background:var(--teal); color:#07131d; padding:10px 15px; font-size:11px; font-weight:750; }
+.nutrition .add-button:hover { border-color:transparent; filter:brightness(1.07); transform:translateY(-1px); }
 .nutrition button:disabled { opacity:.5; cursor:wait; }
 .nutrition button:focus-visible,.nutrition input:focus-visible,.nutrition textarea:focus-visible,.nutrition select:focus-visible { outline:2px solid var(--teal); outline-offset:3px; }
 .nutrition-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.nutrition-intro { position:relative; }
+.nutrition-intro-actions { margin-top:20px; }
 .nutrition-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
 .nutrition-metric strong { font-size:27px; display:block; }
 .nutrition-metric strong small { font-size:16px; }
