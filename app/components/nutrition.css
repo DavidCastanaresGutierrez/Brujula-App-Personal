@@ -18,8 +18,9 @@
 .nutrition-status { border-left:4px solid #6e9be9; }
 .nutrition-status.within { border-left-color:var(--teal); }
 .nutrition-status.above { border-left-color:#e8b967; }
-.nutrition-meal { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 0; border-top:1px solid var(--line); }
-.nutrition-meal h3 { margin:4px 0; overflow-wrap:anywhere; }
+.nutrition-meal-group { margin-top:18px; }.nutrition-meal-group > h3 { margin:0; padding:0 0 8px; color:var(--teal); font-size:13px; letter-spacing:.05em; text-transform:uppercase; }
+.nutrition-meal { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 0; border-top:1px solid var(--line); }
+.nutrition-meal h4 { margin:4px 0; overflow-wrap:anywhere; font-size:16px; }
 .nutrition-frequent-badge { display:inline-flex; align-items:center; margin-left:8px; padding:3px 7px; border:1px solid color-mix(in srgb, var(--teal) 60%, var(--line)); border-radius:999px; background:color-mix(in srgb, var(--teal) 16%, transparent); color:var(--teal); font-size:12px; font-weight:700; letter-spacing:.01em; vertical-align:middle; white-space:nowrap; }
 .nutrition input,.nutrition select,.nutrition textarea { color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; width:100%; min-width:0; color-scheme:dark; }
 .nutrition-date input { width:auto; }
