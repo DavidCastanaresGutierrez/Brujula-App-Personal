@@ -517,7 +517,6 @@ export default function Home() {
 
       <div className="page-shell">
         {mainView === "nutrition" && <NutritionView key={session.user.id} userId={session.user.id} />}
-        {(mainView === "summary" || mainView === "today" || mainView === "habits") && <section className="panel" style={{ padding: 16, marginTop: 16 }}><p className="eyebrow">SALUD</p><button onClick={() => openView("nutrition")}>Nutrición · Registrar comidas y comparar objetivos →</button></section>}
         {mainView === "summary" && <SummaryOverview
           motivations={motivations}
           monthName={monthNames[month]}

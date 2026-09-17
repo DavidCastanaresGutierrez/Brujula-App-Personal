@@ -25,6 +25,9 @@
 .nutrition-file-input { padding:6px; }
 .nutrition-file-input::file-selector-button { margin-right:10px; padding:8px 12px; color:var(--ink); background:var(--panel-2); border:1px solid var(--line); border-radius:8px; cursor:pointer; }
 .nutrition-file-status { margin:8px 0; overflow-wrap:anywhere; }
+.nutrition-import-divider { display:flex; align-items:center; gap:12px; max-width:520px; margin:18px 0 4px; color:var(--muted); font-size:14px; }
+.nutrition-import-divider::before,.nutrition-import-divider::after { content:""; flex:1; border-top:1px solid var(--line); }
+.nutrition-json-input { max-width:720px; min-height:180px; resize:vertical; font-family:var(--font-geist-mono),ui-monospace,SFMono-Regular,Consolas,monospace; font-size:14px; line-height:1.5; }
 .nutrition-import-preview { margin-top:20px; padding-top:4px; }
 .nutrition-quantity { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
 .nutrition-optional-fields { margin:16px 0; padding:12px 14px; border:1px solid var(--line); border-radius:10px; }

@@ -90,7 +90,16 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      activeUserIdRef.current = nextSession?.user.id ?? null;
+      const nextUserId = nextSession?.user.id ?? null;
+      const userChanged = activeUserIdRef.current !== nextUserId;
+      activeUserIdRef.current = nextUserId;
+      // Supabase refreshes its token when the browser regains focus. That must not
+      // clear the screen and replay the full application loading state.
+      if (!userChanged && event === "TOKEN_REFRESHED") {
+        setSession(nextSession);
+        setAuthReady(true);
+        return;
+      }
       syncGenerationRef.current += 1;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       syncInFlight.current = false;

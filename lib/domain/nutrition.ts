@@ -7,10 +7,13 @@ export type DetailMetric = keyof typeof detailMetrics;
 export type Macros = Record<Metric, number>;
 export type NutritionDetails = Record<DetailMetric, number>;
 export type Nutrients = Macros & NutritionDetails;
-export type Meal = Nutrients & { type: keyof typeof mealTypes; name: string; quantity: number; unit: keyof typeof units };
+// A frequent food stores nutrition for one reference unit (for example, one cup).
+// The number consumed belongs only to a meal entry, never to the reusable food.
+export type FoodDefinition = Nutrients & { type: keyof typeof mealTypes; name: string; unit: keyof typeof units };
+export type Meal = FoodDefinition & { quantity: number };
 export type NutritionImport = { schema_version: 1; date: string; meals: Meal[] };
 export type Entry = Meal & { id: string; date: string };
-export type FrequentMeal = Meal & { id: string };
+export type FrequentMeal = FoodDefinition & { id: string };
 export const metricKeys = Object.keys(metrics) as Metric[];
 export const detailMetricKeys = Object.keys(detailMetrics) as DetailMetric[];
 export const emptyMacros = (): Macros => ({ calories: 0, protein: 0, carbs: 0, fat: 0 });
