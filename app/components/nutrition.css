@@ -85,9 +85,14 @@
 .nutrition-quality-card > p { margin:0; }
 .nutrition-quality-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
 .nutrition-quality-item { padding:12px; border:1px solid var(--line); border-top:3px solid var(--teal); border-radius:12px; display:grid; gap:10px; }
-.nutrition-quality-item.sugars { border-top-color:#bb8cf5; }.nutrition-quality-item.saturated { border-top-color:#ef7c8b; }.nutrition-quality-item.salt { border-top-color:#e8ca53; }
+.nutrition-quality-item.sugars { border-top-color:#bb8cf5; }
+.nutrition-quality-item.saturated_fat,.nutrition-quality-item.trans_fat,.nutrition-quality-item.cholesterol { border-top-color:#ef7c8b; }
+.nutrition-quality-item.sodium { border-top-color:#e8ca53; }
 .nutrition-quality-item > div { display:grid; gap:4px; }.nutrition-quality-item span,.nutrition-quality-note { color:var(--muted); font-size:12px; }.nutrition-quality-item strong { font-size:20px; }.nutrition-quality-item strong small { font-size:12px; }
 .nutrition-quality-item progress { margin:0; }.nutrition-quality-item.above progress { accent-color:#ef7c8b; }.nutrition-quality-item.above progress::-webkit-progress-value { background:#ef7c8b; }.nutrition-quality-item.above progress::-moz-progress-bar { background:#ef7c8b; }.nutrition-quality-item.below progress { accent-color:#e8b967; }.nutrition-quality-item.below progress::-webkit-progress-value { background:#e8b967; }.nutrition-quality-item.below progress::-moz-progress-bar { background:#e8b967; }
+.nutrition-quality-item.sugars progress { accent-color:#bb8cf5; }.nutrition-quality-item.sugars progress::-webkit-progress-value { background:#bb8cf5; }.nutrition-quality-item.sugars progress::-moz-progress-bar { background:#bb8cf5; }
+.nutrition-quality-item.saturated_fat progress,.nutrition-quality-item.trans_fat progress,.nutrition-quality-item.cholesterol progress { accent-color:#ef7c8b; }.nutrition-quality-item.saturated_fat progress::-webkit-progress-value,.nutrition-quality-item.trans_fat progress::-webkit-progress-value,.nutrition-quality-item.cholesterol progress::-webkit-progress-value { background:#ef7c8b; }.nutrition-quality-item.saturated_fat progress::-moz-progress-bar,.nutrition-quality-item.trans_fat progress::-moz-progress-bar,.nutrition-quality-item.cholesterol progress::-moz-progress-bar { background:#ef7c8b; }
+.nutrition-quality-item.sodium progress { accent-color:#e8ca53; }.nutrition-quality-item.sodium progress::-webkit-progress-value { background:#e8ca53; }.nutrition-quality-item.sodium progress::-moz-progress-bar { background:#e8ca53; }
 .nutrition-quality-note { display:block; }
 .nutrition-body { display:grid; gap:16px; }
 .nutrition-body-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
