@@ -39,8 +39,6 @@
 .nutrition-optional-fields { margin:16px 0; padding:12px 14px; border:1px solid var(--line); border-radius:10px; }
 .nutrition-optional-fields summary { cursor:pointer; font-weight:700; }
 .nutrition-details-line { font-size:.9rem; }
-.nutrition-details-summary strong,.nutrition-details-summary span { display:block; }
-.nutrition-details-summary strong { margin-top:4px; font-size:20px; }
 .nutrition fieldset { border:0; padding:0; min-width:0; }
 .nutrition-error { border:1px solid #e8b967; padding:16px; border-radius:10px; }
 .nutrition-editor { border:1px solid var(--teal); scroll-margin-top:20px; }
