@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseNutrition, metricStatus, nutritionWeek, sumDetails, sumMacros, weeklyNutrition, type Meal } from "./nutrition";
-const meal: Meal = { name: "Pollo", type: "lunch", quantity: 1, unit: "serving", calories: 550, protein: 72, carbs: 35, fat: 13, fiber: 2, sugars: 1, saturated_fat: 3, salt: 0.8 };
+const meal: Meal = { name: "Pollo", type: "lunch", quantity: 1, unit: "serving", calories: 550, protein: 72, carbs: 35, fat: 13, fiber: 2, sugars: 1, saturated_fat: 3, trans_fat: 0, cholesterol: 0, sodium: 0, potassium: 0, vitamin_a: 0, vitamin_c: 0, calcium: 0, iron: 0, salt: 0.8 };
 const payload = { schema_version: 1, date: "2026-09-15", meals: [meal] };
 describe("nutrition import", () => {
   it("accepts fractional estimates without deriving calories", () => expect(parseNutrition(JSON.stringify({...payload, meals:[{...meal,protein:72.5}]})).meals[0].protein).toBe(72.5));

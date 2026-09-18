@@ -1,6 +1,14 @@
 export const mealTypes = { breakfast: "Desayuno", mid_morning: "Media mañana", lunch: "Comida", snack: "Merienda", dinner: "Cena", other: "Otros" } as const;
 export const metrics = { calories: "Calorías", protein: "Proteína", carbs: "Carbohidratos", fat: "Grasas" } as const;
-export const detailMetrics = { fiber: "Fibra", sugars: "Azúcares", saturated_fat: "Grasas saturadas", salt: "Sal" } as const;
+export const detailMetrics = {
+  fiber: "Fibra dietética", sugars: "Azúcares", saturated_fat: "Grasas saturadas", trans_fat: "Grasas trans",
+  cholesterol: "Colesterol", sodium: "Sodio", potassium: "Potasio", vitamin_a: "Vitamina A", vitamin_c: "Vitamina C",
+  calcium: "Calcio", iron: "Hierro", salt: "Sal"
+} as const;
+export const detailMetricUnits = {
+  fiber: "g", sugars: "g", saturated_fat: "g", trans_fat: "g", cholesterol: "mg", sodium: "mg", potassium: "mg",
+  vitamin_a: "µg", vitamin_c: "mg", calcium: "mg", iron: "mg", salt: "g"
+} as const;
 export const units = { unit: "unidad", serving: "ración", cup: "taza", glass: "vaso", package: "envase", g: "g", ml: "ml" } as const;
 export type Metric = keyof typeof metrics;
 export type DetailMetric = keyof typeof detailMetrics;
@@ -17,7 +25,7 @@ export type FrequentMeal = FoodDefinition & { id: string };
 export const metricKeys = Object.keys(metrics) as Metric[];
 export const detailMetricKeys = Object.keys(detailMetrics) as DetailMetric[];
 export const emptyMacros = (): Macros => ({ calories: 0, protein: 0, carbs: 0, fat: 0 });
-export const emptyDetails = (): NutritionDetails => ({ fiber: 0, sugars: 0, saturated_fat: 0, salt: 0 });
+export const emptyDetails = (): NutritionDetails => ({ fiber: 0, sugars: 0, saturated_fat: 0, trans_fat: 0, cholesterol: 0, sodium: 0, potassium: 0, vitamin_a: 0, vitamin_c: 0, calcium: 0, iron: 0, salt: 0 });
 export const emptyNutrients = (): Nutrients => ({ ...emptyMacros(), ...emptyDetails() });
 export function validDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value < "1900-01-01" || value > "9999-12-31") return false;

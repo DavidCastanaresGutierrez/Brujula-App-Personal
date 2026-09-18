@@ -93,9 +93,10 @@ export function useTrackerSync({ initialState, fallbackMotivations, normalizeSta
       const nextUserId = nextSession?.user.id ?? null;
       const userChanged = activeUserIdRef.current !== nextUserId;
       activeUserIdRef.current = nextUserId;
-      // Supabase refreshes its token when the browser regains focus. That must not
-      // clear the screen and replay the full application loading state.
-      if (!userChanged && event === "TOKEN_REFRESHED") {
+      // A tab focus can emit TOKEN_REFRESHED or SIGNED_IN again for the same
+      // session. Keep the current UI hydrated in both cases; this is a
+      // background session update, not a sign-in.
+      if (!userChanged && nextUserId) {
         setSession(nextSession);
         setAuthReady(true);
         return;
