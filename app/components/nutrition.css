@@ -1177,7 +1177,9 @@
   align-items: end;
   min-height: 210px;
   padding-top: 14px;
+  position: relative;
 }
+.nutrition-history-chart.calories::before { content:"Límite calórico"; position:absolute; z-index:3; top:3px; right:8px; padding:3px 7px; color:#f4ca68; border:1px solid #e8b967; border-radius:999px; background:var(--panel-2); font-size:11px; font-weight:700; }.nutrition-history-chart.calories::after { content:""; position:absolute; z-index:2; top:14px; left:0; right:0; border-top:3px solid #e8b967; pointer-events:none; }
 .nutrition-history-chart > div {
   min-width: 0;
   text-align: center;
@@ -1240,6 +1242,7 @@
     transparent 67%
   );
 }
+.nutrition-history-ideal { position:relative; padding-left:8px; border-left:1px dashed var(--line); }.nutrition-history-ideal > span { display:block; height:18px; color:#e8b967; font-size:12px; font-weight:700; }.nutrition-history-ideal .nutrition-history-track { height:170px; }.nutrition-history-ideal .nutrition-history-track i { left:28%; width:44%; min-height:0; border-radius:0; }.nutrition-history-ideal .nutrition-history-track i.protein { background:#e8ca53; }.nutrition-history-ideal .nutrition-history-track i.fat { background:#ef7c8b; }.nutrition-history-ideal .nutrition-history-track i.carbs { background:#bb8cf5; }
 .nutrition-history-track i.protein {
   left: 29%;
   background: #e8ca53;
