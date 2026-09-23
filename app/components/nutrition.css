@@ -1051,6 +1051,20 @@
 .nutrition-history-balance {
   border-left: 4px solid var(--teal);
 }
+.nutrition-period-conclusion {
+  border-left: 4px solid var(--teal);
+}
+.nutrition-period-conclusion h2 {
+  margin: 4px 0 10px;
+}
+.nutrition-period-conclusion p {
+  margin: 7px 0;
+}
+.nutrition-period-conclusion small {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+}
 .nutrition-history-balance.surplus {
   border-left-color: #ef7c8b;
 }

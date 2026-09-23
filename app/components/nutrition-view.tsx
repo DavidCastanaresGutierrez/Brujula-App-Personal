@@ -53,6 +53,7 @@ function macroText(meal: Macros) {
 }
 type NutritionGoals = Macros & NutritionDetails;
 type BodyDraft = Omit<BodyComposition, "id">;
+type BodyImport = { schema_version: 1; measurements: BodyDraft[] };
 type BodyMetric = "weight" | "body_fat" | "muscle" | "lean_mass";
 const emptyGoals = (): NutritionGoals => ({
   ...emptyMacros(),
@@ -69,6 +70,78 @@ const emptyBodyDraft = (): BodyDraft => ({
   bmi: null,
   basal_metabolic_rate: null,
 });
+function parseBodyImport(raw: string): BodyImport {
+  if (raw.length > 100000)
+    throw new Error("El JSON supera el tamaño máximo (100 KB).");
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error("JSON no válido. Revisa las comillas, comas y llaves.");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("El JSON debe ser un objeto.");
+  const data = value as Record<string, unknown>;
+  if (data.schema_version !== 1) throw new Error("Usa schema_version: 1.");
+  if (
+    !Array.isArray(data.measurements) ||
+    !data.measurements.length ||
+    data.measurements.length > 100
+  )
+    throw new Error("measurements debe contener entre 1 y 100 mediciones.");
+  const optional = [
+    "fat_mass",
+    "lean_mass",
+    "body_water",
+    "bmi",
+    "basal_metabolic_rate",
+  ] as const;
+  const measurements = data.measurements.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error(`Medición ${index + 1}: debe ser un objeto.`);
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.recorded_at !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.recorded_at)
+    )
+      throw new Error(
+        `Medición ${index + 1}: recorded_at debe usar AAAA-MM-DD.`,
+      );
+    for (const key of ["weight", "body_fat", "muscle"] as const)
+      if (
+        typeof row[key] !== "number" ||
+        !Number.isFinite(row[key]) ||
+        row[key] < 0
+      )
+        throw new Error(
+          `Medición ${index + 1}: ${key} debe ser un número válido.`,
+        );
+    const result: BodyDraft = {
+      recorded_at: row.recorded_at,
+      weight: row.weight as number,
+      body_fat: row.body_fat as number,
+      muscle: row.muscle as number,
+      fat_mass: null,
+      lean_mass: null,
+      body_water: null,
+      bmi: null,
+      basal_metabolic_rate: null,
+    };
+    for (const key of optional) {
+      const number = row[key];
+      if (
+        number !== undefined &&
+        (typeof number !== "number" || !Number.isFinite(number) || number < 0)
+      )
+        throw new Error(
+          `Medición ${index + 1}: ${key} debe ser un número válido.`,
+        );
+      result[key] = (number ?? null) as BodyDraft[typeof key];
+    }
+    return result;
+  });
+  return { schema_version: 1, measurements };
+}
 const detailDirection: Partial<
   Record<keyof NutritionDetails, "minimum" | "maximum">
 > = {
@@ -332,6 +405,12 @@ export function NutritionView({ userId }: { userId: string }) {
   );
   const [goalDraft, setGoalDraft] = useState<NutritionGoals | null>(null);
   const [bodyDraft, setBodyDraft] = useState<BodyDraft | null>(null);
+  const [bodyImportOpen, setBodyImportOpen] = useState(false);
+  const [bodyImportText, setBodyImportText] = useState("");
+  const [bodyImportPreview, setBodyImportPreview] = useState<BodyImport | null>(
+    null,
+  );
+  const [bodyImportError, setBodyImportError] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [preview, setPreview] = useState<NutritionImport | null>(null);
   const [importFileName, setImportFileName] = useState("");
@@ -645,6 +724,31 @@ export function NutritionView({ userId }: { userId: string }) {
       "Composición guardada. Revisa y confirma los objetivos propuestos.",
     );
   }
+  async function importBodyComposition() {
+    if (!bodyImportPreview) return;
+    const result = await db()
+      .from("body_composition_entries")
+      .insert(
+        bodyImportPreview.measurements.map((measurement) => ({
+          ...measurement,
+          user_id: userId,
+        })),
+      )
+      .select();
+    check(result);
+    const saved = result.data as BodyComposition[];
+    setBodyEntries((items) =>
+      [...items, ...saved].sort((a, b) =>
+        a.recorded_at.localeCompare(b.recorded_at),
+      ),
+    );
+    setBodyImportOpen(false);
+    setBodyImportText("");
+    setBodyImportPreview(null);
+    setMessage(
+      `${saved.length} medición${saved.length === 1 ? "" : "es"} importada${saved.length === 1 ? "" : "s"}.`,
+    );
+  }
   async function importMeals() {
     if (!preview) return;
     // Stable content keys make retries (including a lost response) idempotent.
@@ -812,6 +916,22 @@ export function NutritionView({ userId }: { userId: string }) {
         0,
       )
     : 0;
+  const periodConclusion = (() => {
+    if (!goals || !historyRecorded.length) return null;
+    const calorieAverage = historyAverage.calories,
+      proteinAverage = historyAverage.protein;
+    const balance =
+      calorieAverage < goals.calories * 0.9
+        ? "Has mantenido un déficit medio."
+        : calorieAverage > goals.calories * 1.1
+          ? "Has estado, de media, por encima de tu objetivo calórico."
+          : "Tu ingesta calórica media ha estado cerca del objetivo.";
+    const protein =
+      proteinAverage < goals.protein
+        ? `La principal mejora es subir la proteína: promedias ${fmt(proteinAverage)} g frente a ${fmt(goals.protein)} g.`
+        : "La proteína media ha alcanzado el objetivo, una buena base para preservar masa muscular.";
+    return { balance, protein };
+  })();
   const visibleFrequent = frequent.filter(
     (meal) =>
       matchesMealSearch(meal.name, frequentSearch) &&
@@ -1115,17 +1235,6 @@ export function NutritionView({ userId }: { userId: string }) {
                           ? `Te quedan aproximadamente ${fmt(target - total[key])} ${unit}`
                           : `${fmt(total[key] - target)} ${unit} por encima del objetivo`}
                   </p>
-                  <small>
-                    {!target
-                      ? ""
-                      : state === "within"
-                        ? key === "protein"
-                          ? "Proteína objetivo alcanzada"
-                          : "Dentro del rango"
-                        : state === "below"
-                          ? "Por debajo del objetivo"
-                          : "Por encima del objetivo"}
-                  </small>
                 </article>
               );
             })}
@@ -1457,12 +1566,17 @@ export function NutritionView({ userId }: { userId: string }) {
                 <p className="eyebrow">COMPOSICIÓN CORPORAL</p>
                 <h2>Tu evolución semanal</h2>
               </div>
-              <button
-                disabled={busy}
-                onClick={() => setBodyDraft(emptyBodyDraft())}
-              >
-                + Añadir medición
-              </button>
+              <div className="nutrition-actions">
+                <button disabled={busy} onClick={() => setBodyImportOpen(true)}>
+                  Importar JSON
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => setBodyDraft(emptyBodyDraft())}
+                >
+                  + Añadir medición
+                </button>
+              </div>
             </div>
             {!bodyEntries.length ? (
               <p>
@@ -1920,6 +2034,23 @@ export function NutritionView({ userId }: { userId: string }) {
               })}
             </div>
           </article>
+          {historyPeriod !== "days" && periodConclusion && (
+            <article className="panel nutrition-period-conclusion">
+              <p className="eyebrow">CONCLUSIÓN DEL PERÍODO</p>
+              <h2>
+                {historyPeriod === "weeks"
+                  ? "Cómo va tu semana"
+                  : "Cómo va tu mes"}
+              </h2>
+              <p>{periodConclusion.balance}</p>
+              <p>{periodConclusion.protein}</p>
+              <small>
+                Conclusión basada en {historyRecorded.length} períodos con
+                comidas registradas; no se imputan consumos a los días sin
+                datos.
+              </small>
+            </article>
+          )}
           {goals && historyRecorded.length > 0 && (
             <article
               className={`panel nutrition-history-balance ${historyCalorieDelta <= 0 ? "deficit" : "surplus"}`}
@@ -2240,6 +2371,90 @@ export function NutritionView({ userId }: { userId: string }) {
               </div>
             </fieldset>
           </form>
+        </section>
+      )}
+      {bodyImportOpen && (
+        <section
+          className="panel nutrition-editor"
+          aria-label="Importar composición corporal"
+        >
+          <h2>Importar mediciones corporales</h2>
+          <p>
+            Pega el JSON de Samsung Health o de una medición. Revísalo antes de
+            guardarlo.
+          </p>
+          <textarea
+            className="nutrition-json-input"
+            aria-label="JSON de composición corporal"
+            placeholder={
+              '{\n  "schema_version": 1,\n  "measurements": [{ "recorded_at": "2026-09-22", "weight": 86.6, "body_fat": 15.4, "muscle": 42.1 }]\n}'
+            }
+            value={bodyImportText}
+            onChange={(e) => {
+              setBodyImportText(e.target.value);
+              setBodyImportPreview(null);
+              setBodyImportError("");
+            }}
+          />
+          {bodyImportError && (
+            <p className="nutrition-error" role="alert">
+              {bodyImportError}
+            </p>
+          )}
+          {bodyImportPreview && (
+            <div className="nutrition-import-preview">
+              <h3>
+                {bodyImportPreview.measurements.length} medición
+                {bodyImportPreview.measurements.length === 1 ? "" : "es"} lista
+                {bodyImportPreview.measurements.length === 1 ? "" : "s"}
+              </h3>
+              {bodyImportPreview.measurements.map((measurement) => (
+                <p key={measurement.recorded_at}>
+                  <b>{measurement.recorded_at}</b> · {fmt(measurement.weight)}{" "}
+                  kg · {fmt(measurement.body_fat)}% grasa ·{" "}
+                  {fmt(measurement.muscle)} kg músculo
+                </p>
+              ))}
+              <button
+                disabled={busy}
+                onClick={() => void run(importBodyComposition)}
+              >
+                Confirmar importación
+              </button>
+            </div>
+          )}
+          <div className="nutrition-actions">
+            <button
+              type="button"
+              disabled={!bodyImportText.trim()}
+              onClick={() => {
+                try {
+                  setBodyImportPreview(parseBodyImport(bodyImportText));
+                  setBodyImportError("");
+                } catch (cause) {
+                  setBodyImportPreview(null);
+                  setBodyImportError(
+                    cause instanceof Error
+                      ? cause.message
+                      : "No se ha podido leer el JSON.",
+                  );
+                }
+              }}
+            >
+              Previsualizar JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBodyImportOpen(false);
+                setBodyImportText("");
+                setBodyImportPreview(null);
+                setBodyImportError("");
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
         </section>
       )}
       {bodyDraft && (
