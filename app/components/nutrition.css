@@ -936,6 +936,9 @@
 .nutrition-body-tabs .active.weight {
   background: var(--teal);
 }
+.nutrition-body-tabs .active.body_score {
+  background: #8c6ff0;
+}
 .nutrition-body-tabs .active.body_fat {
   background: #ef7c8b;
 }
@@ -980,6 +983,11 @@
 .nutrition-body-trend.body_fat .nutrition-body-week i {
   stroke: #ef7c8b;
   background: #ef7c8b;
+}
+.nutrition-body-trend.body_score svg polyline,
+.nutrition-body-trend.body_score .nutrition-body-week i {
+  stroke: #8c6ff0;
+  background: #8c6ff0;
 }
 .nutrition-body-trend.muscle svg polyline,
 .nutrition-body-trend.muscle .nutrition-body-week i {
