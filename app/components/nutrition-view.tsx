@@ -54,7 +54,17 @@ function macroText(meal: Macros) {
 type NutritionGoals = Macros & NutritionDetails;
 type BodyDraft = Omit<BodyComposition, "id">;
 type BodyImport = { schema_version: 1; measurements: BodyDraft[] };
-type BodyMetric = "weight" | "body_fat" | "muscle" | "lean_mass";
+type BodyMetric =
+  | "bmi"
+  | "weight"
+  | "height_cm"
+  | "body_fat"
+  | "fat_mass"
+  | "imme"
+  | "body_water"
+  | "lean_mass"
+  | "basal_metabolic_rate"
+  | "skeletal_muscle_mass";
 const emptyGoals = (): NutritionGoals => ({
   ...emptyMacros(),
   ...emptyDetails(),
@@ -98,6 +108,8 @@ function parseBodyImport(raw: string): BodyImport {
     "body_water",
     "bmi",
     "basal_metabolic_rate",
+    "height_cm",
+    "imme",
   ] as const;
   const measurements = data.measurements.map((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item))
@@ -110,7 +122,7 @@ function parseBodyImport(raw: string): BodyImport {
       throw new Error(
         `Medición ${index + 1}: recorded_at debe usar AAAA-MM-DD.`,
       );
-    for (const key of ["weight", "body_fat", "muscle"] as const)
+    for (const key of ["weight", "body_fat"] as const)
       if (
         typeof row[key] !== "number" ||
         !Number.isFinite(row[key]) ||
@@ -119,11 +131,23 @@ function parseBodyImport(raw: string): BodyImport {
         throw new Error(
           `Medición ${index + 1}: ${key} debe ser un número válido.`,
         );
+    const skeletalMuscleMass =
+      typeof row.skeletal_muscle_mass === "number"
+        ? row.skeletal_muscle_mass
+        : row.muscle;
+    if (
+      typeof skeletalMuscleMass !== "number" ||
+      !Number.isFinite(skeletalMuscleMass) ||
+      skeletalMuscleMass < 0
+    )
+      throw new Error(
+        `Medición ${index + 1}: skeletal_muscle_mass debe ser un número válido.`,
+      );
     const result: BodyDraft = {
       recorded_at: row.recorded_at,
       weight: row.weight as number,
       body_fat: row.body_fat as number,
-      muscle: row.muscle as number,
+      muscle: skeletalMuscleMass,
       fat_mass: null,
       lean_mass: null,
       body_water: null,
@@ -131,7 +155,7 @@ function parseBodyImport(raw: string): BodyImport {
       basal_metabolic_rate: null,
       height_cm: null,
       imme: null,
-      skeletal_muscle_mass: null,
+      skeletal_muscle_mass: skeletalMuscleMass,
     };
     for (const key of optional) {
       const number = row[key];
@@ -177,12 +201,37 @@ const detailCardOrder = [
   "calcium",
   "iron",
 ] as const;
+const bodyMetricOrder: BodyMetric[] = [
+  "bmi",
+  "weight",
+  "height_cm",
+  "body_fat",
+  "fat_mass",
+  "imme",
+  "body_water",
+  "lean_mass",
+  "basal_metabolic_rate",
+  "skeletal_muscle_mass",
+];
 const bodyMetricMeta: Record<BodyMetric, { label: string; unit: string }> = {
+  bmi: { label: "IMC", unit: "kg/m²" },
   weight: { label: "Peso", unit: "kg" },
-  body_fat: { label: "Grasa corporal", unit: "%" },
-  muscle: { label: "Masa muscular", unit: "kg" },
+  height_cm: { label: "Altura", unit: "cm" },
+  body_fat: { label: "Porcentaje de grasa corporal", unit: "%" },
+  fat_mass: { label: "Masa grasa corporal", unit: "kg" },
+  imme: { label: "IMME", unit: "kg/m²" },
+  body_water: { label: "Agua total en el cuerpo", unit: "L" },
   lean_mass: { label: "Masa libre de grasa", unit: "kg" },
+  basal_metabolic_rate: { label: "Metabolismo basal", unit: "kcal" },
+  skeletal_muscle_mass: { label: "Masa músculo-esquelética", unit: "kg" },
 };
+function bodyMetricValue(entry: BodyComposition, key: BodyMetric) {
+  if (key === "lean_mass")
+    return entry.lean_mass ?? entry.weight * (1 - entry.body_fat / 100);
+  if (key === "skeletal_muscle_mass")
+    return entry.skeletal_muscle_mass ?? entry.muscle;
+  return entry[key] ?? 0;
+}
 function detailText(meal: NutritionDetails) {
   return detailMetricKeys
     .filter((key) => meal[key] > 0)
@@ -499,7 +548,7 @@ export function NutritionView({ userId }: { userId: string }) {
       db
         .from("body_composition_entries")
         .select(
-          "id,recorded_at,weight,body_fat,muscle,fat_mass,lean_mass,body_water,bmi,basal_metabolic_rate",
+          "id,recorded_at,weight,body_fat,muscle,fat_mass,lean_mass,body_water,bmi,basal_metabolic_rate,height_cm,imme,skeletal_muscle_mass",
         )
         .eq("user_id", userId)
         .order("recorded_at"),
@@ -672,21 +721,31 @@ export function NutritionView({ userId }: { userId: string }) {
     setMessage("Objetivos guardados.");
   }
   async function saveBodyComposition() {
+    const skeletalMuscleMass =
+      bodyDraft?.skeletal_muscle_mass ?? bodyDraft?.muscle;
     if (
       !bodyDraft ||
       !Number.isFinite(bodyDraft.weight) ||
       bodyDraft.weight <= 0 ||
       !Number.isFinite(bodyDraft.body_fat) ||
-      !Number.isFinite(bodyDraft.muscle)
+      !Number.isFinite(skeletalMuscleMass) ||
+      !skeletalMuscleMass ||
+      skeletalMuscleMass <= 0
     )
       throw new Error(
-        "Introduce peso, porcentaje de grasa y masa muscular válidos.",
+        "Introduce peso, porcentaje de grasa y masa músculo-esquelética válidos.",
       );
     const calculatedLeanMass =
       bodyDraft.lean_mass ?? bodyDraft.weight * (1 - bodyDraft.body_fat / 100);
     const result = await db()
       .from("body_composition_entries")
-      .insert({ ...bodyDraft, lean_mass: calculatedLeanMass, user_id: userId })
+      .insert({
+        ...bodyDraft,
+        muscle: skeletalMuscleMass,
+        skeletal_muscle_mass: skeletalMuscleMass,
+        lean_mass: calculatedLeanMass,
+        user_id: userId,
+      })
       .select()
       .single();
     check(result);
@@ -961,10 +1020,7 @@ export function NutritionView({ userId }: { userId: string }) {
   const bodyWeeks = bodyWeeklyBuckets(bodyEntries);
   const bodyValues = bodyWeeks.map((week) =>
     week.measurement
-      ? bodyMetric === "lean_mass"
-        ? (week.measurement.lean_mass ??
-          week.measurement.weight * (1 - week.measurement.body_fat / 100))
-        : week.measurement[bodyMetric]
+      ? bodyMetricValue(week.measurement, bodyMetric)
       : null,
   );
   const populatedBodyValues = bodyValues.filter(
@@ -1559,20 +1615,9 @@ export function NutritionView({ userId }: { userId: string }) {
             ) : (
               <>
                 <div className="nutrition-body-summary">
-                  {(
-                    [
-                      "weight",
-                      "body_fat",
-                      "muscle",
-                      "lean_mass",
-                    ] as BodyMetric[]
-                  ).map((key) => {
+                  {bodyMetricOrder.map((key) => {
                     const latest = bodyEntries.at(-1)!;
-                    const value =
-                      key === "lean_mass"
-                        ? (latest.lean_mass ??
-                          latest.weight * (1 - latest.body_fat / 100))
-                        : latest[key];
+                    const value = bodyMetricValue(latest, key);
                     return (
                       <div key={key}>
                         <span>{bodyMetricMeta[key].label}</span>
@@ -1588,7 +1633,7 @@ export function NutritionView({ userId }: { userId: string }) {
                   role="tablist"
                   aria-label="Métrica de composición corporal"
                 >
-                  {(Object.keys(bodyMetricMeta) as BodyMetric[]).map((key) => (
+                  {bodyMetricOrder.map((key) => (
                     <button
                       key={key}
                       role="tab"
@@ -2361,7 +2406,7 @@ export function NutritionView({ userId }: { userId: string }) {
             className="nutrition-json-input"
             aria-label="JSON de composición corporal"
             placeholder={
-              '{\n  "schema_version": 1,\n  "measurements": [{ "recorded_at": "2026-09-22", "weight": 86.6, "body_fat": 15.4, "muscle": 42.1 }]\n}'
+              '{\n  "schema_version": 1,\n  "measurements": [{ "recorded_at": "2026-09-22", "bmi": 26.1, "weight": 86.6, "height_cm": 182, "body_fat": 15.4, "fat_mass": 13.3, "imme": 9.2, "body_water": 53.6, "lean_mass": 73.3, "basal_metabolic_rate": 1952, "skeletal_muscle_mass": 42.1 }]\n}'
             }
             value={bodyImportText}
             onChange={(e) => {
@@ -2386,7 +2431,8 @@ export function NutritionView({ userId }: { userId: string }) {
                 <p key={measurement.recorded_at}>
                   <b>{measurement.recorded_at}</b> · {fmt(measurement.weight)}{" "}
                   kg · {fmt(measurement.body_fat)}% grasa ·{" "}
-                  {fmt(measurement.muscle)} kg músculo
+                  {fmt(measurement.skeletal_muscle_mass ?? measurement.muscle)} kg
+                  {" "}músculo-esquelética
                 </p>
               ))}
               <button
@@ -2462,14 +2508,16 @@ export function NutritionView({ userId }: { userId: string }) {
               <div className="nutrition-grid">
                 {(
                   [
-                    ["weight", "Peso (kg)"],
-                    ["body_fat", "Grasa corporal (%)"],
-                    ["muscle", "Masa muscular (kg)"],
-                    ["fat_mass", "Masa grasa (kg)"],
-                    ["lean_mass", "Masa libre de grasa (kg)"],
-                    ["body_water", "Agua corporal total (L)"],
                     ["bmi", "IMC (kg/m²)"],
+                    ["weight", "Peso (kg)"],
+                    ["height_cm", "Altura (cm)"],
+                    ["body_fat", "Porcentaje de grasa corporal (%)"],
+                    ["fat_mass", "Masa grasa corporal (kg)"],
+                    ["imme", "IMME (kg/m²)"],
+                    ["body_water", "Agua total en el cuerpo (L)"],
+                    ["lean_mass", "Masa libre de grasa (kg)"],
                     ["basal_metabolic_rate", "Metabolismo basal (kcal)"],
+                    ["skeletal_muscle_mass", "Masa músculo-esquelética (kg)"],
                   ] as const
                 ).map(([key, label]) => (
                   <label key={key}>
@@ -2478,7 +2526,7 @@ export function NutritionView({ userId }: { userId: string }) {
                       required={
                         key === "weight" ||
                         key === "body_fat" ||
-                        key === "muscle"
+                        key === "skeletal_muscle_mass"
                       }
                       type="number"
                       min="0"
