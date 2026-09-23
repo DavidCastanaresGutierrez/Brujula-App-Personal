@@ -420,7 +420,7 @@ function macroEnergyPercentages(
     protein: total ? (energy.protein / total) * 100 : 0,
   };
 }
-type HistoryPeriod = "days" | "weeks" | "months";
+type HistoryPeriod = "weeks" | "months";
 const dateLabel = (value: string, options: Intl.DateTimeFormatOptions) =>
   new Date(`${value}T12:00:00`).toLocaleDateString("es-ES", options);
 function historyBuckets(
@@ -428,18 +428,10 @@ function historyBuckets(
   today: string,
   entries: Entry[],
 ) {
-  const count = period === "days" ? 7 : period === "weeks" ? 8 : 12;
+  const count = period === "weeks" ? 8 : 12;
   const currentWeek = nutritionWeek(today)[0];
   return Array.from({ length: count }, (_, reverse) => {
     const index = count - 1 - reverse;
-    if (period === "days") {
-      const start = shiftDate(today, -index);
-      return {
-        start,
-        end: start,
-        label: dateLabel(start, { weekday: "short", day: "numeric" }),
-      };
-    }
     if (period === "weeks") {
       const start = shiftDate(currentWeek, -index * 7);
       return {
@@ -460,7 +452,7 @@ function historyBuckets(
     );
     const recorded = [...new Set(rows.map((row) => row.date))].length;
     const total = sumMacros(rows);
-    const divisor = period === "days" ? 1 : recorded;
+    const divisor = recorded;
     return {
       ...bucket,
       macros: recorded
@@ -535,7 +527,7 @@ export function NutritionView({ userId }: { userId: string }) {
   const [selectedFrequentId, setSelectedFrequentId] = useState<string | null>(
     null,
   );
-  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>("days");
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>("weeks");
   const [historyChart, setHistoryChart] = useState<"calories" | "macros">(
     "calories",
   );
@@ -1019,15 +1011,11 @@ export function NutritionView({ userId }: { userId: string }) {
     }),
     {} as Macros,
   );
-  const historyGoals =
-    goals ??
-    metricKeys.reduce(
-      (result, key) => ({
-        ...result,
-        [key]: Math.max(...history.map((item) => item.macros?.[key] ?? 0), 1),
-      }),
-      {} as Macros,
-    );
+  const historyChartMax = Math.max(
+    goals?.calories ?? 0,
+    ...history.map((item) => item.macros?.calories ?? 0),
+    1,
+  );
   const historyCalorieDelta = goals
     ? history.reduce(
         (sum, item) =>
@@ -1988,7 +1976,7 @@ export function NutritionView({ userId }: { userId: string }) {
                 <h2>Resumen combinado</h2>
               </div>
               <div className="nutrition-history-tabs" role="tablist">
-                {(["days", "weeks", "months"] as HistoryPeriod[]).map(
+                {(["weeks", "months"] as HistoryPeriod[]).map(
                   (period) => (
                     <button
                       key={period}
@@ -1997,11 +1985,7 @@ export function NutritionView({ userId }: { userId: string }) {
                       className={historyPeriod === period ? "active" : ""}
                       onClick={() => setHistoryPeriod(period)}
                     >
-                      {period === "days"
-                        ? "Días"
-                        : period === "weeks"
-                          ? "Semanas"
-                          : "Meses"}
+                      {period === "weeks" ? "Semanas" : "Meses"}
                     </button>
                   ),
                 )}
@@ -2060,60 +2044,103 @@ export function NutritionView({ userId }: { userId: string }) {
               {historyRecorded.length}/{history.length} periodos con registros.
               Las medias excluyen periodos sin datos.
             </p>
-            <div
-              className={`nutrition-history-chart ${historyChart}`}
-              aria-label={
-                historyChart === "calories"
-                  ? "Evolución de calorías"
-                  : "Evolución de distribución de macronutrientes"
-              }
-            >
-              {history.map((item) => {
-                const distribution = item.macros
-                  ? macroEnergyPercentages(item.macros)
-                  : null;
-                return (
-                  <div
-                    key={item.start}
-                    title={
-                      item.macros === null
-                        ? `${item.label}: sin registros`
-                        : `${item.label}: ${metricKeys.map((key) => `${metrics[key]} ${fmt(item.macros?.[key] ?? 0)}${key === "calories" ? " kcal" : " g"}`).join(" · ")}`
-                    }
-                  >
-                    <div className="nutrition-history-track">
-                      {historyChart === "calories" && item.macros && (
-                        <i
-                          className="calories"
-                          style={{
-                            height: `${Math.min((item.macros.calories / historyGoals.calories) * 100, 100)}%`,
-                          }}
-                        />
-                      )}
-                      {historyChart === "calories" && (
-                        <b className="calories" />
-                      )}
-                      {historyChart === "macros" &&
-                        distribution &&
-                        macroStackOrder.map((key, index) => (
-                          <i
-                            className={key}
-                            key={key}
+            {historyChart === "calories" ? (
+              <div
+                className="nutrition-chart nutrition-period-chart"
+                aria-label="Evolución de calorías medias diarias"
+              >
+                {history.map((item) => {
+                  const calories = item.macros?.calories ?? null;
+                  const delta =
+                    goals && calories !== null
+                      ? calories - goals.calories
+                      : null;
+                  return (
+                    <div
+                      key={item.start}
+                      title={
+                        calories === null
+                          ? `${item.label}: sin registros`
+                          : `${item.label}: media de ${fmt(calories)} kcal al día`
+                      }
+                    >
+                      <small>{calories === null ? "—" : fmt(calories)}</small>
+                      <div className="nutrition-track">
+                        {goals && (
+                          <span
+                            className="nutrition-target"
                             style={{
-                              height: `${distribution[key]}%`,
-                              bottom: `${macroStackOrder.slice(0, index).reduce((sum, previous) => sum + distribution[previous], 0)}%`,
+                              bottom: `${(goals.calories / historyChartMax) * 100}%`,
                             }}
                           />
-                        ))}
+                        )}
+                        {calories !== null && (
+                          <i
+                            style={{
+                              height: `${(calories / historyChartMax) * 100}%`,
+                            }}
+                          />
+                        )}
+                      </div>
+                      {delta !== null && (
+                        <em
+                          className={
+                            delta <= 0
+                              ? "nutrition-deficit"
+                              : "nutrition-surplus"
+                          }
+                        >
+                          {delta <= 0
+                            ? `−${fmt(Math.abs(delta))}`
+                            : `+${fmt(delta)}`} {" "}
+                          kcal/día
+                        </em>
+                      )}
+                      <small>{item.label}</small>
                     </div>
-                    <small>{item.label}</small>
-                  </div>
-                );
-              })}
-              {historyChart === "macros" && idealMacroDistribution && <div className="nutrition-history-ideal" aria-label="Reparto ideal de macronutrientes"><span>Ideal</span><div className="nutrition-history-track">{macroStackOrder.map((key, index) => <i className={key} key={key} style={{ height: `${idealMacroDistribution[key]}%`, bottom: `${macroStackOrder.slice(0,index).reduce((sum, previous) => sum + idealMacroDistribution[previous], 0)}%` }} />)}</div><small>Objetivo</small></div>}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div
+                className="nutrition-history-chart macros"
+                aria-label="Evolución de distribución de macronutrientes"
+              >
+                {history.map((item) => {
+                  const distribution = item.macros
+                    ? macroEnergyPercentages(item.macros)
+                    : null;
+                  return (
+                    <div
+                      key={item.start}
+                      title={
+                        item.macros === null
+                          ? `${item.label}: sin registros`
+                          : `${item.label}: ${metricKeys.map((key) => `${metrics[key]} ${fmt(item.macros?.[key] ?? 0)}${key === "calories" ? " kcal" : " g"}`).join(" · ")}`
+                      }
+                    >
+                      <div className="nutrition-history-track">
+                        {distribution &&
+                          macroStackOrder.map((key, index) => (
+                            <i
+                              className={key}
+                              key={key}
+                              style={{
+                                height: `${distribution[key]}%`,
+                                bottom: `${macroStackOrder.slice(0, index).reduce((sum, previous) => sum + distribution[previous], 0)}%`,
+                              }}
+                            />
+                          ))}
+                      </div>
+                      <small>{item.label}</small>
+                    </div>
+                  );
+                })}
+                {idealMacroDistribution && <div className="nutrition-history-ideal" aria-label="Reparto ideal de macronutrientes"><span>Ideal</span><div className="nutrition-history-track">{macroStackOrder.map((key, index) => <i className={key} key={key} style={{ height: `${idealMacroDistribution[key]}%`, bottom: `${macroStackOrder.slice(0,index).reduce((sum, previous) => sum + idealMacroDistribution[previous], 0)}%` }} />)}</div><small>Objetivo</small></div>}
+              </div>
+            )}
           </article>
-          {historyPeriod !== "days" && periodConclusion && (
+          {periodConclusion && (
             <article className="panel nutrition-period-conclusion">
               <p className="eyebrow">CONCLUSIÓN DEL PERÍODO</p>
               <h2>
@@ -2145,11 +2172,9 @@ export function NutritionView({ userId }: { userId: string }) {
                 {fmt(Math.abs(historyCalorieDelta))} <small>kcal</small>
               </strong>
               <p>
-                {historyPeriod === "days"
-                  ? "Suma de los días registrados"
-                  : historyPeriod === "weeks"
-                    ? "Suma de las semanas mostradas"
-                    : "Suma de los meses mostrados"}
+                {historyPeriod === "weeks"
+                  ? "Suma de las semanas mostradas"
+                  : "Suma de los meses mostrados"}
                 . Solo cuenta períodos con comidas registradas.
               </p>
             </article>
