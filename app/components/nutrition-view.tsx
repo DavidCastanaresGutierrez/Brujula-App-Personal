@@ -69,6 +69,9 @@ const emptyBodyDraft = (): BodyDraft => ({
   body_water: null,
   bmi: null,
   basal_metabolic_rate: null,
+  height_cm: null,
+  imme: null,
+  skeletal_muscle_mass: null,
 });
 function parseBodyImport(raw: string): BodyImport {
   if (raw.length > 100000)
@@ -126,6 +129,9 @@ function parseBodyImport(raw: string): BodyImport {
       body_water: null,
       bmi: null,
       basal_metabolic_rate: null,
+      height_cm: null,
+      imme: null,
+      skeletal_muscle_mass: null,
     };
     for (const key of optional) {
       const number = row[key];
@@ -916,6 +922,7 @@ export function NutritionView({ userId }: { userId: string }) {
         0,
       )
     : 0;
+  const idealMacroDistribution = goals ? macroEnergyPercentages(goals) : null;
   const periodConclusion = (() => {
     if (!goals || !historyRecorded.length) return null;
     const calorieAverage = historyAverage.calories,
@@ -1157,31 +1164,6 @@ export function NutritionView({ userId }: { userId: string }) {
         <p role="status">Cargando nutrición…</p>
       ) : (
         <>
-          <article
-            className={`panel nutrition-status ${daily.length ? status : ""}`}
-          >
-            <h2>
-              {!daily.length
-                ? "Sin comidas registradas"
-                : !goals
-                  ? "Configura tus objetivos para comparar"
-                  : status === "within"
-                    ? "Dentro del rango calórico"
-                    : status === "below"
-                      ? "Por debajo del objetivo calórico"
-                      : "Por encima del objetivo calórico"}
-            </h2>
-            <p>
-              {daily.length
-                ? `${fmt(total.calories)} kcal registradas. ${date === today ? "El día sigue en curso." : "Balance de las comidas registradas."}`
-                : "Un día sin registros no se considera un día de consumo cero."}
-            </p>
-            <small>
-              Margen de comparación: ±10 % en calorías, carbohidratos y grasas.
-              En proteína, alcanzar o superar el objetivo cuenta como alcanzado.
-              Son criterios de seguimiento, no una valoración médica.
-            </small>
-          </article>
           <article
             className="panel nutrition-tips"
             aria-label="Consejos nutricionales del día"
@@ -2032,6 +2014,7 @@ export function NutritionView({ userId }: { userId: string }) {
                   </div>
                 );
               })}
+              {historyChart === "macros" && idealMacroDistribution && <div className="nutrition-history-ideal" aria-label="Reparto ideal de macronutrientes"><span>Ideal</span><div className="nutrition-history-track">{macroStackOrder.map((key, index) => <i className={key} key={key} style={{ height: `${idealMacroDistribution[key]}%`, bottom: `${macroStackOrder.slice(0,index).reduce((sum, previous) => sum + idealMacroDistribution[previous], 0)}%` }} />)}</div><small>Objetivo</small></div>}
             </div>
           </article>
           {historyPeriod !== "days" && periodConclusion && (
