@@ -516,6 +516,8 @@ export function NutritionView({ userId }: { userId: string }) {
   );
   const [bodyImportError, setBodyImportError] = useState("");
   const [importOpen, setImportOpen] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<NutritionImport | null>(null);
   const [importFileName, setImportFileName] = useState("");
   const [importText, setImportText] = useState("");
@@ -1088,6 +1090,7 @@ export function NutritionView({ userId }: { userId: string }) {
     setGoalDraft(null);
     setBodyDraft(null);
     setImportOpen(false);
+    setPhotoOpen(false);
     setDeleting(null);
     setEditor({ ...meal });
     setEditingId(id);
@@ -1099,6 +1102,7 @@ export function NutritionView({ userId }: { userId: string }) {
     setFavoriteEditor(null);
     setGoalDraft(null);
     setImportOpen(false);
+    setPhotoOpen(false);
     setDeleting(null);
     setFavoriteEntry({ food, type: food.type, quantity: 1 });
     setError("");
@@ -1109,6 +1113,7 @@ export function NutritionView({ userId }: { userId: string }) {
     setFavoriteEntry(null);
     setGoalDraft(null);
     setImportOpen(false);
+    setPhotoOpen(false);
     setDeleting(null);
     setFavoriteEditor({ ...food });
     setError("");
@@ -1134,6 +1139,38 @@ export function NutritionView({ userId }: { userId: string }) {
     setImportText("");
     setImportReading(false);
     setImportError("");
+  }
+  function closePhoto() {
+    setPhotoOpen(false);
+    setPhotoFile(null);
+  }
+  async function analyzePhoto() {
+    if (!photoFile) throw new Error("Selecciona una foto de comida.");
+    if (!photoFile.type.match(/^image\/(jpeg|png|webp)$/))
+      throw new Error("Usa una imagen JPG, PNG o WEBP.");
+    if (photoFile.size > 4 * 1024 * 1024)
+      throw new Error("La foto debe pesar como máximo 4 MB.");
+    const { data } = await db().auth.getSession();
+    if (!data.session) throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+    const form = new FormData();
+    form.append("photo", photoFile);
+    const response = await fetch("/api/nutrition/analyze-photo", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+      body: form,
+    });
+    const result = (await response.json().catch(() => null)) as
+      | { meals?: Meal[]; error?: string }
+      | null;
+    if (!response.ok || !result?.meals)
+      throw new Error(result?.error ?? "No se ha podido analizar la foto.");
+    inspectNutritionText(
+      JSON.stringify({ schema_version: 1, date, meals: result.meals }),
+      `Foto: ${photoFile.name || "comida"}`,
+    );
+    closePhoto();
+    setImportOpen(true);
+    setMessage("Revisa la estimación de la foto antes de guardarla.");
   }
   function loadNutritionFile(file: File | undefined) {
     if (!file) return;
@@ -1214,6 +1251,22 @@ export function NutritionView({ userId }: { userId: string }) {
             }}
           >
             Importar desde ChatGPT
+          </button>
+          <button
+            className="add-button"
+            disabled={busy || loading}
+            onClick={() => {
+              setEditor(null);
+              setFavoriteEntry(null);
+              setGoalDraft(null);
+              setBodyDraft(null);
+              setImportOpen(false);
+              setDeleting(null);
+              setPhotoOpen(true);
+              setError("");
+            }}
+          >
+            Analizar foto
           </button>
         </div>
       </section>
@@ -2754,6 +2807,50 @@ export function NutritionView({ userId }: { userId: string }) {
               </button>
             </div>
           )}
+        </section>
+      )}
+      {photoOpen && (
+        <section
+          className="panel nutrition-editor nutrition-photo"
+          aria-label="Analizar foto de comida"
+        >
+          <h2>Analizar foto de comida</h2>
+          <p>
+            Haz una foto o selecciona una imagen. La estimación se revisa antes
+            de añadirla al día.
+          </p>
+          <label className="nutrition-file-picker">
+            Foto de comida
+            <input
+              className="nutrition-file-input"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              disabled={busy}
+              onChange={(e) => setPhotoFile(e.currentTarget.files?.[0] ?? null)}
+            />
+          </label>
+          {photoFile && (
+            <p className="nutrition-file-status">
+              {photoFile.name || "Foto seleccionada"} · {fmt(photoFile.size / 1024 / 1024)} MB
+            </p>
+          )}
+          <p className="nutrition-photo-note">
+            La foto se envía solo para el análisis y no se guarda en Brújula.
+            Revisa siempre cantidades e ingredientes antes de confirmar.
+          </p>
+          <div className="nutrition-actions">
+            <button
+              type="button"
+              disabled={busy || !photoFile}
+              onClick={() => void run(analyzePhoto)}
+            >
+              {busy ? "Analizando…" : "Analizar foto"}
+            </button>
+            <button type="button" disabled={busy} onClick={closePhoto}>
+              Cancelar
+            </button>
+          </div>
         </section>
       )}
       {deleting && (
