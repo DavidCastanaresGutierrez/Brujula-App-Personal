@@ -55,6 +55,7 @@ type NutritionGoals = Macros & NutritionDetails;
 type BodyDraft = Omit<BodyComposition, "id">;
 type BodyImport = { schema_version: 1; measurements: BodyDraft[] };
 type BodyMetric =
+  | "body_score"
   | "bmi"
   | "weight"
   | "height_cm"
@@ -202,6 +203,7 @@ const detailCardOrder = [
   "iron",
 ] as const;
 const bodyMetricOrder: BodyMetric[] = [
+  "body_score",
   "bmi",
   "weight",
   "height_cm",
@@ -214,6 +216,7 @@ const bodyMetricOrder: BodyMetric[] = [
   "skeletal_muscle_mass",
 ];
 const bodyMetricMeta: Record<BodyMetric, { label: string; unit: string }> = {
+  body_score: { label: "Nota corporal", unit: "/100" },
   bmi: { label: "IMC", unit: "kg/m²" },
   weight: { label: "Peso", unit: "kg" },
   height_cm: { label: "Altura", unit: "cm" },
@@ -225,12 +228,66 @@ const bodyMetricMeta: Record<BodyMetric, { label: string; unit: string }> = {
   basal_metabolic_rate: { label: "Metabolismo basal", unit: "kcal" },
   skeletal_muscle_mass: { label: "Masa músculo-esquelética", unit: "kg" },
 };
+function rangeScore(
+  value: number,
+  minimum: number,
+  idealMinimum: number,
+  idealMaximum: number,
+  maximum: number,
+) {
+  if (value <= minimum || value >= maximum) return 0;
+  if (value < idealMinimum)
+    return ((value - minimum) / (idealMinimum - minimum)) * 100;
+  if (value > idealMaximum)
+    return ((maximum - value) / (maximum - idealMaximum)) * 100;
+  return 100;
+}
+function bodyScore(entry: BodyComposition) {
+  const bmi = entry.height_cm
+    ? entry.weight / (entry.height_cm / 100) ** 2
+    : entry.bmi;
+  const waterPercentage = entry.body_water
+    ? (entry.body_water / entry.weight) * 100
+    : null;
+  const leanPercentage = entry.lean_mass
+    ? (entry.lean_mass / entry.weight) * 100
+    : null;
+  const fatPercentageFromMass = entry.fat_mass
+    ? (entry.fat_mass / entry.weight) * 100
+    : null;
+  const basalPerKg = entry.basal_metabolic_rate
+    ? entry.basal_metabolic_rate / entry.weight
+    : null;
+  const skeletalPercentage = entry.skeletal_muscle_mass
+    ? (entry.skeletal_muscle_mass / entry.weight) * 100
+    : null;
+  const components = [
+    [bmi, 15, [18.5, 20.5, 27, 35]],
+    [entry.body_fat, 20, [6, 10, 20, 35]],
+    [fatPercentageFromMass, 7, [6, 10, 20, 35]],
+    [entry.imme, 18, [6, 8.5, 10.5, 14]],
+    [waterPercentage, 12, [45, 50, 65, 75]],
+    [leanPercentage, 15, [60, 70, 90, 97]],
+    [basalPerKg, 5, [17, 20, 26, 32]],
+    [skeletalPercentage, 8, [30, 40, 55, 65]],
+  ] as const;
+  if (components.some(([value]) => value === null)) return null;
+  const totalWeight = components.reduce((sum, [, weight]) => sum + weight, 0);
+  return Math.round(
+    components.reduce(
+      (sum, [value, weight, [minimum, idealMinimum, idealMaximum, maximum]]) =>
+        sum + rangeScore(value!, minimum, idealMinimum, idealMaximum, maximum) * weight,
+      0,
+    ) / totalWeight,
+  );
+}
 function bodyMetricValue(entry: BodyComposition, key: BodyMetric) {
+  if (key === "body_score") return bodyScore(entry);
   if (key === "lean_mass")
     return entry.lean_mass ?? entry.weight * (1 - entry.body_fat / 100);
   if (key === "skeletal_muscle_mass")
     return entry.skeletal_muscle_mass ?? entry.muscle;
-  return entry[key] ?? 0;
+  return entry[key] ?? null;
 }
 function detailText(meal: NutritionDetails) {
   return detailMetricKeys
@@ -442,7 +499,7 @@ export function NutritionView({ userId }: { userId: string }) {
   const [frequent, setFrequent] = useState<FrequentMeal[]>([]);
   const [goals, setGoals] = useState<NutritionGoals | null>(null);
   const [bodyEntries, setBodyEntries] = useState<BodyComposition[]>([]);
-  const [bodyMetric, setBodyMetric] = useState<BodyMetric>("weight");
+  const [bodyMetric, setBodyMetric] = useState<BodyMetric>("body_score");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1622,7 +1679,9 @@ export function NutritionView({ userId }: { userId: string }) {
                       <div key={key}>
                         <span>{bodyMetricMeta[key].label}</span>
                         <strong>
-                          {fmt(value)} {bodyMetricMeta[key].unit}
+                          {value === null
+                            ? "—"
+                            : `${fmt(value)} ${bodyMetricMeta[key].unit}`}
                         </strong>
                       </div>
                     );
@@ -1690,8 +1749,9 @@ export function NutritionView({ userId }: { userId: string }) {
                   ))}
                 </div>
                 <small>
-                  Se muestra la última medición de cada semana; las semanas sin
-                  medición no se estiman.
+                  {bodyMetric === "body_score"
+                    ? "La nota usa todos los valores: IMC, grasa, masa grasa y libre de grasa, IMME, agua, metabolismo y masa músculo-esquelética. Las mediciones incompletas no se puntúan."
+                    : "Se muestra la última medición de cada semana; las semanas sin medición no se estiman."}
                 </small>
               </>
             )}
