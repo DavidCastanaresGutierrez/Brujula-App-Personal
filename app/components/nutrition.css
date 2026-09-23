@@ -251,6 +251,18 @@
 .nutrition-file-picker {
   max-width: 520px;
 }
+.nutrition-photo {
+  display: grid;
+  gap: 14px;
+}
+.nutrition-photo h2,
+.nutrition-photo p {
+  margin: 0;
+}
+.nutrition-photo-note {
+  color: var(--muted);
+  font-size: 13px;
+}
 .nutrition-file-input {
   padding: 6px;
 }
