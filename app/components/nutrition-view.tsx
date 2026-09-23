@@ -1208,15 +1208,6 @@ export function NutritionView({ userId }: { userId: string }) {
                       max={target}
                     />
                   )}
-                  <p>
-                    {!target
-                      ? "Objetivo sin configurar"
-                      : key === "protein" && total[key] >= target
-                        ? "Objetivo alcanzado"
-                        : total[key] < target
-                          ? `Te quedan aproximadamente ${fmt(target - total[key])} ${unit}`
-                          : `${fmt(total[key] - target)} ${unit} por encima del objetivo`}
-                  </p>
                 </article>
               );
             })}
