@@ -31,6 +31,7 @@ import {
   type NutritionDetails,
   type NutritionImport,
 } from "../../lib/domain/nutrition";
+import { prepareFoodPhoto, suggestedMealType } from "../../lib/browser/photo";
 import "./nutrition.css";
 
 const numberFormat = new Intl.NumberFormat("es-ES", {
@@ -518,6 +519,7 @@ export function NutritionView({ userId }: { userId: string }) {
   const [importOpen, setImportOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoMealType, setPhotoMealType] = useState<Meal["type"]>(suggestedMealType);
   const [preview, setPreview] = useState<NutritionImport | null>(null);
   const [importFileName, setImportFileName] = useState("");
   const [importText, setImportText] = useState("");
@@ -572,16 +574,29 @@ export function NutritionView({ userId }: { userId: string }) {
   useEffect(() => {
     let active = true;
     const db = nutritionClient();
+    // PostgREST returns at most 1000 rows per request; a year of meals exceeds it.
+    const loadEntries = async () => {
+      const pageSize = 1000;
+      const rows: Entry[] = [];
+      for (let offset = 0; ; offset += pageSize) {
+        const page = await db
+          .from("nutrition_entries")
+          .select(
+            "id,date,type,name,quantity,unit,calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt",
+          )
+          .eq("user_id", userId)
+          .gte("date", shiftDate(today, -365))
+          .lte("date", today)
+          .order("created_at")
+          .order("id")
+          .range(offset, offset + pageSize - 1);
+        if (page.error) return { data: null, error: page.error };
+        rows.push(...((page.data ?? []) as unknown as Entry[]));
+        if ((page.data?.length ?? 0) < pageSize) return { data: rows, error: null };
+      }
+    };
     Promise.all([
-      db
-        .from("nutrition_entries")
-        .select(
-          "id,date,type,name,quantity,unit,calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt",
-        )
-        .eq("user_id", userId)
-        .gte("date", shiftDate(today, -365))
-        .lte("date", today)
-        .order("created_at"),
+      loadEntries(),
       db
         .from("nutrition_goals")
         .select(
@@ -613,7 +628,7 @@ export function NutritionView({ userId }: { userId: string }) {
           );
           return;
         }
-        setEntries((results[0].data ?? []) as unknown as Entry[]);
+        setEntries(results[0].data ?? []);
         setGoals(results[1].data as unknown as NutritionGoals | null);
         setFrequent((results[2].data ?? []) as unknown as FrequentMeal[]);
         setBodyEntries((results[3].data ?? []) as unknown as BodyComposition[]);
@@ -920,9 +935,6 @@ export function NutritionView({ userId }: { userId: string }) {
     daily.length > 0,
   );
   const week = weeklyNutrition(entries, days, today, goals);
-  const status = goals
-    ? metricStatus("calories", total.calories, goals.calories)
-    : "below";
   const chartMax = Math.max(
     goals?.calories ?? 0,
     ...days.map(
@@ -1146,14 +1158,12 @@ export function NutritionView({ userId }: { userId: string }) {
   }
   async function analyzePhoto() {
     if (!photoFile) throw new Error("Selecciona una foto de comida.");
-    if (!photoFile.type.match(/^image\/(jpeg|png|webp)$/))
-      throw new Error("Usa una imagen JPG, PNG o WEBP.");
-    if (photoFile.size > 4 * 1024 * 1024)
-      throw new Error("La foto debe pesar como máximo 4 MB.");
     const { data } = await db().auth.getSession();
     if (!data.session) throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+    const prepared = await prepareFoodPhoto(photoFile);
     const form = new FormData();
-    form.append("photo", photoFile);
+    form.append("photo", prepared);
+    form.append("mealType", photoMealType);
     const response = await fetch("/api/nutrition/analyze-photo", {
       method: "POST",
       headers: { Authorization: `Bearer ${data.session.access_token}` },
@@ -2830,14 +2840,27 @@ export function NutritionView({ userId }: { userId: string }) {
               onChange={(e) => setPhotoFile(e.currentTarget.files?.[0] ?? null)}
             />
           </label>
+          <label>
+            Tipo de comida
+            <select
+              value={photoMealType}
+              disabled={busy}
+              onChange={(e) => setPhotoMealType(e.currentTarget.value as Meal["type"])}
+            >
+              {Object.entries(mealTypes).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
           {photoFile && (
             <p className="nutrition-file-status">
               {photoFile.name || "Foto seleccionada"} · {fmt(photoFile.size / 1024 / 1024)} MB
             </p>
           )}
           <p className="nutrition-photo-note">
-            La foto se envía solo para el análisis y no se guarda en Brújula.
-            Revisa siempre cantidades e ingredientes antes de confirmar.
+            La foto se reduce en tu dispositivo, se envía solo para el análisis
+            y no se guarda en Brújula. Revisa siempre cantidades e ingredientes
+            antes de confirmar.
           </p>
           <div className="nutrition-actions">
             <button
