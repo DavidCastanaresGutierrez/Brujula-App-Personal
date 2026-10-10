@@ -468,3 +468,32 @@ export function bodyWeeklyBuckets(entries: BodyComposition[]) {
     };
   });
 }
+
+// Daily targets proposed after a body measurement: a mild deficit that preserves
+// lean mass. Every value is editable before it is saved.
+export function suggestedGoalsFromBody(saved: Pick<BodyComposition, "weight" | "body_fat">): NutritionGoals {
+  const leanMass = saved.weight * (1 - saved.body_fat / 100);
+  const calories = Math.round(((370 + 21.6 * leanMass) * 1.4 * 0.9) / 50) * 50;
+  const protein = Math.round((leanMass * 2.45) / 5) * 5;
+  const fat = Math.round((saved.weight * 0.75) / 5) * 5;
+  const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4 / 5) * 5);
+  return {
+    calories,
+    protein,
+    carbs,
+    fat,
+    ...emptyDetails(),
+    fiber: 30,
+    sugars: 50,
+    saturated_fat: Math.round((calories * 0.1) / 9),
+    trans_fat: Math.round(((calories * 0.01) / 9) * 10) / 10,
+    cholesterol: 300,
+    sodium: 2000,
+    potassium: 3500,
+    vitamin_a: 900,
+    vitamin_c: 90,
+    calcium: 1000,
+    iron: 8,
+    salt: 5,
+  };
+}

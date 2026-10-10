@@ -3,6 +3,15 @@
 Acceso desde Salud en Resumen, Tu día y Hábitos, o desde la navegación Nutrición.
 El módulo reutiliza la sesión autenticada de Supabase. Carga los últimos 365 días de comidas en páginas de 1.000 filas para los históricos y no añade polling. El único servicio externo es el análisis de fotos, que pasa por `/api/nutrition/analyze-photo` y se describe en el README.
 
+## Estructura del código
+
+- `lib/domain/nutrition.ts`: tipos, validación del JSON y cálculos básicos.
+- `lib/domain/nutrition-analysis.ts`: consejos del día, nota corporal, objetivos sugeridos, series semanales y mensuales. Funciones puras con pruebas en `nutrition-analysis.test.ts`.
+- `lib/supabase/nutrition-repository.ts`: todas las consultas a Supabase del módulo. Ningún componente habla con la base de datos directamente.
+- `app/hooks/use-nutrition-data.ts`: carga inicial y copias editables de comidas, frecuentes, objetivos y composición corporal.
+- `app/components/nutrition-view.tsx`: orquesta estado de edición y acciones.
+- `app/components/nutrition/`: un componente por bloque de pantalla y por formulario.
+
 ## Datos y criterios
 
 - `nutrition_goals`: objetivos manuales por usuario, con `goal_mode` opcional reservado para futuras modalidades.

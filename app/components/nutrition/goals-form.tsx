@@ -1,5 +1,4 @@
 import {
-  type Macros,
 } from "../../../lib/domain/nutrition";
 import {
   type NutritionGoals,

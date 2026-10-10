@@ -2,12 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  nutritionClient,
-  type BodyComposition,
-} from "../../lib/supabase/nutrition";
+  addBodyEntries,
+  addBodyEntry,
+  addFrequent,
+  currentAccessToken,
+  deleteFrequent,
+  importEntries,
+  removeEntry,
+  saveEntry,
+  updateFrequent,
+  upsertGoals,
+} from "../../lib/supabase/nutrition-repository";
+import { useNutritionData } from "../hooks/use-nutrition-data";
 import {
   detailMetricKeys,
-  emptyDetails,
   mealTypes,
   metricKeys,
   nutritionWeek,
@@ -29,6 +37,7 @@ import {
   mealTypeOrder,
   normalizedMealName,
   NutritionGoals,
+  suggestedGoalsFromBody,
 } from "../../lib/domain/nutrition-analysis";
 import { BodyCompositionPanel } from "./nutrition/body-composition-panel";
 import { BodyDraftForm } from "./nutrition/body-draft-form";
@@ -49,15 +58,15 @@ import "./nutrition.css";
 
 export function NutritionView({ userId }: { userId: string }) {
   const [date, setDate] = useState(localToday);
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [frequent, setFrequent] = useState<FrequentMeal[]>([]);
-  const [goals, setGoals] = useState<NutritionGoals | null>(null);
-  const [bodyEntries, setBodyEntries] = useState<BodyComposition[]>([]);
-  const [loading, setLoading] = useState(true);
+  const today = localToday();
+  const {
+    entries, setEntries, frequent, setFrequent, goals, setGoals,
+    bodyEntries, setBodyEntries, loading, loadError, reload,
+  } = useNutritionData(userId, today);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [actionError, setError] = useState("");
+  const error = actionError || loadError;
   const [message, setMessage] = useState("");
-  const [revision, setRevision] = useState(0);
   const [editor, setEditor] = useState<Meal | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [favoriteEntry, setFavoriteEntry] = useState<FavoriteEntryDraft | null>(null);
@@ -105,91 +114,15 @@ export function NutritionView({ userId }: { userId: string }) {
         .querySelector(".nutrition-error")
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [error]);
-  const today = localToday();
   const days = nutritionWeek(date);
-
-  useEffect(() => {
-    let active = true;
-    const db = nutritionClient();
-    // PostgREST returns at most 1000 rows per request; a year of meals exceeds it.
-    const loadEntries = async () => {
-      const pageSize = 1000;
-      const rows: Entry[] = [];
-      for (let offset = 0; ; offset += pageSize) {
-        const page = await db
-          .from("nutrition_entries")
-          .select(
-            "id,date,type,name,quantity,unit,calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt",
-          )
-          .eq("user_id", userId)
-          .gte("date", shiftDate(today, -365))
-          .lte("date", today)
-          .order("created_at")
-          .order("id")
-          .range(offset, offset + pageSize - 1);
-        if (page.error) return { data: null, error: page.error };
-        rows.push(...((page.data ?? []) as unknown as Entry[]));
-        if ((page.data?.length ?? 0) < pageSize) return { data: rows, error: null };
-      }
-    };
-    Promise.all([
-      loadEntries(),
-      db
-        .from("nutrition_goals")
-        .select(
-          "calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt",
-        )
-        .eq("user_id", userId)
-        .maybeSingle(),
-      db
-        .from("frequent_meals")
-        .select(
-          "id,type,name,unit,calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt",
-        )
-        .eq("user_id", userId)
-        .order("name"),
-      db
-        .from("body_composition_entries")
-        .select(
-          "id,recorded_at,weight,body_fat,muscle,fat_mass,lean_mass,body_water,bmi,basal_metabolic_rate,height_cm,imme,skeletal_muscle_mass",
-        )
-        .eq("user_id", userId)
-        .order("recorded_at"),
-    ])
-      .then((results) => {
-        if (!active) return;
-        const failure = results.find((result) => result.error)?.error;
-        if (failure) {
-          setError(
-            `No se han podido cargar los datos nutricionales: ${failure.message}`,
-          );
-          return;
-        }
-        setEntries(results[0].data ?? []);
-        setGoals(results[1].data as unknown as NutritionGoals | null);
-        setFrequent((results[2].data ?? []) as unknown as FrequentMeal[]);
-        setBodyEntries((results[3].data ?? []) as unknown as BodyComposition[]);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "No se pudo conectar. Comprueba tu conexión y vuelve a intentarlo.",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, [userId, today, revision]);
 
   const changeDate = (next: string) => {
     if (!next) return;
-    setLoading(true);
     setError("");
     setEditor(null);
     setEditingId(null);
     setDate(next);
-    setRevision((r) => r + 1);
+    reload();
   };
   async function run(action: () => Promise<void>) {
     if (operation.current) return;
@@ -210,27 +143,12 @@ export function NutritionView({ userId }: { userId: string }) {
       setBusy(false);
     }
   }
-  const db = () => nutritionClient();
-  function check(result: { error: { message: string } | null }) {
-    if (result.error) throw new Error(result.error.message);
-  }
   async function saveMeal() {
     if (!editor) return;
     const meal = parseNutrition(
       JSON.stringify({ schema_version: 1, date, meals: [editor] }),
     ).meals[0];
-    const row = { ...meal, date, user_id: userId };
-    const result = editingId
-      ? await db()
-          .from("nutrition_entries")
-          .update(row)
-          .eq("user_id", userId)
-          .eq("id", editingId)
-          .select()
-          .single()
-      : await db().from("nutrition_entries").insert(row).select().single();
-    check(result);
-    const saved = result.data as Entry;
+    const saved = await saveEntry(userId, { ...meal, date }, editingId);
     setEntries((current) => [
       ...current.filter((entry) => entry.id !== saved.id),
       saved,
@@ -249,13 +167,8 @@ export function NutritionView({ userId }: { userId: string }) {
         meals: [{ ...food, type, quantity }],
       }),
     ).meals[0];
-    const result = await db()
-      .from("nutrition_entries")
-      .insert({ ...meal, date, user_id: userId })
-      .select()
-      .single();
-    check(result);
-    setEntries((current) => [...current, result.data as Entry]);
+    const saved = await saveEntry(userId, { ...meal, date }, null);
+    setEntries((current) => [...current, saved]);
     setFavoriteEntry(null);
     setMessage("Comida añadida.");
   }
@@ -279,15 +192,7 @@ export function NutritionView({ userId }: { userId: string }) {
     ).meals[0];
     const { quantity: _quantity, ...row } = valid;
     void _quantity;
-    const result = await db()
-      .from("frequent_meals")
-      .update(row)
-      .eq("user_id", userId)
-      .eq("id", id)
-      .select()
-      .single();
-    check(result);
-    const saved = result.data as FrequentMeal;
+    const saved = await updateFrequent(userId, id, row);
     setFrequent((current) =>
       current
         .map((food) => (food.id === saved.id ? saved : food))
@@ -314,11 +219,7 @@ export function NutritionView({ userId }: { userId: string }) {
         goalDraft[key] > 100000
       )
         throw new Error("Revisa los objetivos de micronutrientes.");
-    check(
-      await db()
-        .from("nutrition_goals")
-        .upsert({ user_id: userId, ...goalDraft }, { onConflict: "user_id" }),
-    );
+    await upsertGoals(userId, goalDraft);
     setGoals(goalDraft);
     setGoalDraft(null);
     setMessage("Objetivos guardados.");
@@ -340,52 +241,18 @@ export function NutritionView({ userId }: { userId: string }) {
       );
     const calculatedLeanMass =
       bodyDraft.lean_mass ?? bodyDraft.weight * (1 - bodyDraft.body_fat / 100);
-    const result = await db()
-      .from("body_composition_entries")
-      .insert({
-        ...bodyDraft,
-        muscle: skeletalMuscleMass,
-        skeletal_muscle_mass: skeletalMuscleMass,
-        lean_mass: calculatedLeanMass,
-        user_id: userId,
-      })
-      .select()
-      .single();
-    check(result);
-    const saved = result.data as BodyComposition;
+    const saved = await addBodyEntry(userId, {
+      ...bodyDraft,
+      muscle: skeletalMuscleMass,
+      skeletal_muscle_mass: skeletalMuscleMass,
+      lean_mass: calculatedLeanMass,
+    });
     setBodyEntries((items) =>
       [...items, saved].sort((a, b) =>
         a.recorded_at.localeCompare(b.recorded_at),
       ),
     );
-    const leanMass = saved.weight * (1 - saved.body_fat / 100);
-    const calories =
-      Math.round(((370 + 21.6 * leanMass) * 1.4 * 0.9) / 50) * 50;
-    const protein = Math.round((leanMass * 2.45) / 5) * 5;
-    const fat = Math.round((saved.weight * 0.75) / 5) * 5;
-    const carbs = Math.max(
-      0,
-      Math.round((calories - protein * 4 - fat * 9) / 4 / 5) * 5,
-    );
-    const suggested: NutritionGoals = {
-      calories,
-      protein,
-      carbs,
-      fat,
-      ...emptyDetails(),
-      fiber: 30,
-      sugars: 50,
-      saturated_fat: Math.round((calories * 0.1) / 9),
-      trans_fat: Math.round(((calories * 0.01) / 9) * 10) / 10,
-      cholesterol: 300,
-      sodium: 2000,
-      potassium: 3500,
-      vitamin_a: 900,
-      vitamin_c: 90,
-      calcium: 1000,
-      iron: 8,
-      salt: 5,
-    };
+    const suggested = suggestedGoalsFromBody(saved);
     setBodyDraft(null);
     setGoalDraft(suggested);
     setMessage(
@@ -393,17 +260,7 @@ export function NutritionView({ userId }: { userId: string }) {
     );
   }
   async function importBodyComposition(bodyImportPreview: BodyImport) {
-    const result = await db()
-      .from("body_composition_entries")
-      .insert(
-        bodyImportPreview.measurements.map((measurement) => ({
-          ...measurement,
-          user_id: userId,
-        })),
-      )
-      .select();
-    check(result);
-    const saved = result.data as BodyComposition[];
+    const saved = await addBodyEntries(userId, bodyImportPreview.measurements);
     setBodyEntries((items) =>
       [...items, ...saved].sort((a, b) =>
         a.recorded_at.localeCompare(b.recorded_at),
@@ -416,32 +273,10 @@ export function NutritionView({ userId }: { userId: string }) {
   }
   async function importMeals() {
     if (!preview) return;
-    // Stable content keys make retries (including a lost response) idempotent.
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(JSON.stringify(preview)),
-    );
-    const hash = Array.from(new Uint8Array(digest), (b) =>
-      b.toString(16).padStart(2, "0"),
-    ).join("");
-    const rows = preview.meals.map((meal, index) => ({
-      ...meal,
-      date: preview.date,
-      user_id: userId,
-      import_key: `${hash}:${index}`,
-    }));
-    // A single PostgreSQL insert is atomic: all rows or none.
-    const result = await db()
-      .from("nutrition_entries")
-      .upsert(rows, {
-        onConflict: "user_id,import_key",
-        ignoreDuplicates: true,
-      })
-      .select("id");
-    check(result);
+    const imported = await importEntries(userId, preview);
     setMessage(
-      result.data?.length
-        ? `${result.data.length} comidas importadas.`
+      imported
+        ? `${imported} comidas importadas.`
         : "Este JSON ya estaba importado. No se han duplicado comidas.",
     );
     setImportOpen(false);
@@ -522,15 +357,15 @@ export function NutritionView({ userId }: { userId: string }) {
   }
   async function analyzePhoto() {
     if (!photoFile) throw new Error("Selecciona una foto de comida.");
-    const { data } = await db().auth.getSession();
-    if (!data.session) throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+    const accessToken = await currentAccessToken();
+    if (!accessToken) throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
     const prepared = await prepareFoodPhoto(photoFile);
     const form = new FormData();
     form.append("photo", prepared);
     form.append("mealType", photoMealType);
     const response = await fetch("/api/nutrition/analyze-photo", {
       method: "POST",
-      headers: { Authorization: `Bearer ${data.session.access_token}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       body: form,
     });
     const result = (await response.json().catch(() => null)) as
@@ -583,33 +418,16 @@ export function NutritionView({ userId }: { userId: string }) {
     )
       throw new Error("Esta comida ya está guardada en frecuentes.");
     const { name, type, unit, calories, protein, carbs, fat, fiber, sugars, saturated_fat, salt } = entry;
-    const result = await db()
-      .from("frequent_meals")
-      .insert({ user_id: userId, name, type, unit, calories, protein, carbs, fat, fiber, sugars, saturated_fat, salt })
-      .select()
-      .single();
-    check(result);
-    setFrequent((current) => [...current, result.data as FrequentMeal]);
+    const saved = await addFrequent(userId, { name, type, unit, calories, protein, carbs, fat, fiber, sugars, saturated_fat, salt });
+    setFrequent((current) => [...current, saved]);
     setMessage("Guardada como frecuente por unidad.");
   }
   async function removeFrequent(food: FrequentMeal) {
-    check(
-      await db()
-        .from("frequent_meals")
-        .delete()
-        .eq("user_id", userId)
-        .eq("id", food.id),
-    );
+    await deleteFrequent(userId, food.id);
     setFrequent((current) => current.filter((m) => m.id !== food.id));
   }
   async function deleteEntry(entry: Entry) {
-    check(
-      await db()
-        .from("nutrition_entries")
-        .delete()
-        .eq("user_id", userId)
-        .eq("id", entry.id),
-    );
+    await removeEntry(userId, entry.id);
     setEntries((current) => current.filter((e) => e.id !== entry.id));
     setDeleting(null);
   }
@@ -723,13 +541,8 @@ export function NutritionView({ userId }: { userId: string }) {
       {error && (
         <div role="alert" className="nutrition-error">
           {error}
-          {loading && (
-            <button
-              onClick={() => {
-                setError("");
-                setRevision((r) => r + 1);
-              }}
-            >
+          {loadError && (
+            <button onClick={reload}>
               Reintentar
             </button>
           )}
