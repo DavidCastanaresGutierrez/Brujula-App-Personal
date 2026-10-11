@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ServiceWorker } from "./components/service-worker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,8 +22,21 @@ export const metadata: Metadata = {
   icons: {
     icon: "/compass-mark-light.png",
     shortcut: "/compass-mark-light.png",
-    apple: "/compass-mark-light.png",
+    apple: "/icon-192.png",
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Brújula",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#08101f",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -36,6 +50,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <ServiceWorker />
       </body>
     </html>
   );

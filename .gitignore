@@ -48,3 +48,4 @@ next-env.d.ts
 /work/
 /playwright-report/
 /test-results/
+/.sites-runtime/
