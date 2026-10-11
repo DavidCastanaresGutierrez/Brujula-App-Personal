@@ -13,6 +13,18 @@ bloques y analizar la constancia mensual y anual.
 La aplicación está diseñada para funcionar en los planes gratuitos de Supabase
 y Vercel. Cada usuario solo puede leer y modificar sus propios datos.
 
+## Instalación en el móvil
+
+Brújula es una aplicación web instalable. En Android, Chrome ofrece «Instalar
+aplicación» desde el menú; en iPhone, Safari → Compartir → «Añadir a pantalla
+de inicio». Se abre a pantalla completa y, sin conexión, carga la última
+pantalla con los datos guardados en el dispositivo; los cambios se sincronizan
+al volver la red.
+
+El manifiesto se genera en `app/manifest.ts` y el service worker vive en
+`public/sw.js`: guarda la carcasa de la app y los ficheros estáticos, nunca
+datos ni llamadas a la API. Solo se registra en producción.
+
 ## Galaxy Watch 6
 
 La carpeta `wear` contiene la aplicación independiente para Wear OS. El usuario

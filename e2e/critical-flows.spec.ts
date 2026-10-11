@@ -323,3 +323,16 @@ test("nutrición: la foto se analiza, se revisa y solo se guarda al confirmar", 
   await expect(page.locator(".nutrition-meal").filter({ hasText: "Tortilla de patatas" })).toBeVisible();
   expect(rows).toHaveLength(1);
 });
+
+test("la app se puede instalar: manifiesto, iconos y service worker", async ({ page }) => {
+  const manifest = await page.request.get("/manifest.webmanifest");
+  expect(manifest.ok()).toBe(true);
+  const body = await manifest.json();
+  expect(body).toMatchObject({ name: "Brújula", display: "standalone", start_url: "/" });
+  for (const icon of body.icons as { src: string }[]) expect((await page.request.get(icon.src)).ok()).toBe(true);
+  const worker = await page.request.get("/sw.js");
+  expect(worker.ok()).toBe(true);
+  expect(await worker.text()).toContain("brujula-shell");
+  await page.goto("/");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+});
