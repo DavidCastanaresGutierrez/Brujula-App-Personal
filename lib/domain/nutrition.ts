@@ -22,6 +22,7 @@ export type Meal = FoodDefinition & { quantity: number };
 export type NutritionImport = { schema_version: 1; date: string; meals: Meal[] };
 export type Entry = Meal & { id: string; date: string };
 export type FrequentMeal = FoodDefinition & { id: string };
+export type BodyComposition = { id: string; recorded_at: string; weight: number; body_fat: number; muscle: number; fat_mass: number | null; lean_mass: number | null; body_water: number | null; bmi: number | null; basal_metabolic_rate: number | null; height_cm: number | null; imme: number | null; skeletal_muscle_mass: number | null };
 export const metricKeys = Object.keys(metrics) as Metric[];
 export const detailMetricKeys = Object.keys(detailMetrics) as DetailMetric[];
 export const emptyMacros = (): Macros => ({ calories: 0, protein: 0, carbs: 0, fat: 0 });

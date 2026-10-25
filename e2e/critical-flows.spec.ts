@@ -60,7 +60,9 @@ async function openAuthenticatedApp(page: Page, onSave?: (body: Record<string, u
 test("inicio de sesión y recuperación muestran estados accesibles", async ({ page }) => {
   await mockLogin(page);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: /Crear una cuenta/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Crear una cuenta" }).click();
+  await expect(page.getByRole("heading", { name: "Empieza a construir tu rumbo." })).toBeVisible();
+  await page.getByRole("button", { name: "Volver al inicio de sesión" }).click();
   await page.getByRole("button", { name: "¿Has olvidado tu contraseña?" }).click();
   await expect(page.getByRole("heading", { name: "Recupera el acceso a tu rumbo." })).toBeVisible();
   await page.getByRole("button", { name: "Volver al inicio de sesión" }).click();
@@ -227,7 +229,7 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
   await expect(mainNavigation.getByRole("button")).toHaveCount(6);
   await expect(mainNavigation.getByRole("button",{name:"Mi día",exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Nutrición",exact:true}).click();
-  await expect(page.getByRole("heading",{name:"Sin comidas registradas"})).toBeVisible();
+  await expect(page.getByText("Añade una comida o importa tus estimaciones desde ChatGPT.")).toBeVisible();
   await page.getByRole("button",{name:"Configurar objetivos"}).click();
   const goalForm = page.getByRole("region",{name:"Objetivos nutricionales"});
   for (const [label,value] of [["Calorías (kcal)","2300"],["Proteína (g)","170"],["Carbohidratos (g)","220"],["Grasas (g)","70"]]) await goalForm.getByLabel(label,{exact:true}).fill(value);
@@ -246,17 +248,21 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
   await form.getByRole("button",{name:"Guardar comida"}).click();
   await expect(meal).toContainText("600 kcal");
   await meal.getByRole("button",{name:"Guardar como frecuente"}).click();
-  await page.getByRole("button",{name:"Pollo de prueba · 600 kcal"}).click();
-  await form.getByLabel("Nombre de la comida").fill("Pollo repetido");
-  await form.getByLabel("Cantidad").fill("2");
+  await expect(page.getByText("Guardada como frecuente por unidad.")).toBeVisible();
+  await page.getByRole("button",{name:/^Pollo de prueba 600 kcal/}).click();
+  await page.getByRole("button",{name:"Añadir alimento"}).click();
+  const favoriteForm = page.getByRole("region",{name:"Añadir comida frecuente"});
+  await favoriteForm.getByLabel("Tipo de comida").selectOption("dinner");
+  await favoriteForm.getByLabel("Cantidad de hoy").fill("2");
+  await expect(favoriteForm.getByText("Total: 1200 kcal",{exact:false})).toBeVisible();
+  await favoriteForm.getByRole("button",{name:"Añadir 2 raciones"}).click();
+  await expect(page.locator(".nutrition-meal")).toHaveCount(2);
+  const repeated = page.locator(".nutrition-meal").filter({hasText:"2 raciones"});
+  await expect(repeated).toContainText("1200 kcal");
+  await repeated.getByRole("button",{name:"Editar",exact:true}).click();
   await form.getByText("Información nutricional adicional").click();
   await form.getByLabel("Azúcares (g)").fill("1.5");
-  await expect(form.getByText("Total: 1200 kcal",{exact:false})).toBeVisible();
   await form.getByRole("button",{name:"Guardar comida"}).click();
-  await expect(page.locator(".nutrition-meal")).toHaveCount(2);
-  const repeated = page.locator(".nutrition-meal").filter({hasText:"Pollo repetido"});
-  await expect(repeated).toContainText("2 raciones");
-  await expect(repeated).toContainText("1200 kcal");
   await expect(repeated).toContainText("Azúcares 3 g");
   await page.getByRole("button",{name:"Importar desde ChatGPT",exact:true}).click();
   const importForm = page.getByRole("region",{name:"Importación desde ChatGPT"});
@@ -279,4 +285,54 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
   await expect(page.locator("body")).not.toContainText("Application error");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({path:`test-results/nutrition-${test.info().project.name}.png`,fullPage:true});
+});
+
+test("nutrición: la foto se analiza, se revisa y solo se guarda al confirmar", async ({ page }) => {
+  const rows: Record<string, unknown>[] = [];
+  let analyzed: { mealType: string | null; photoType: string | null } | null = null;
+  await page.route("**/rest/v1/**", async route => {
+    const url = new URL(route.request().url());
+    const table = url.pathname.split("/").at(-1);
+    if (route.request().method() === "GET") return route.fulfill({ json: table === "nutrition_goals" ? null : table === "nutrition_entries" ? rows : [] });
+    const body = route.request().postDataJSON();
+    const added = (Array.isArray(body) ? body : [body]).map((r: Record<string, unknown>) => ({ ...r, id: `row-${rows.length}-${Math.random()}` }));
+    rows.push(...added);
+    return route.fulfill({ json: Array.isArray(body) ? added : added[0] });
+  });
+  await page.route("**/api/nutrition/analyze-photo", async route => {
+    const headers = route.request().headers();
+    const postData = route.request().postData() ?? "";
+    analyzed = { mealType: /name="mealType"\r\n\r\n(\w+)/.exec(postData)?.[1] ?? null, photoType: /Content-Type: (image\/\w+)/.exec(postData)?.[1] ?? null };
+    if (!headers.authorization?.startsWith("Bearer ")) return route.fulfill({ status: 401, json: { error: "Sesión no válida" } });
+    return route.fulfill({ json: { meals: [{ type: "dinner", name: "Tortilla de patatas", quantity: 1, unit: "serving", calories: 420, protein: 18, carbs: 30, fat: 25, fiber: 2, sugars: 1, saturated_fat: 6, trans_fat: 0, cholesterol: 0, sodium: 0, potassium: 0, vitamin_a: 0, vitamin_c: 0, calcium: 0, iron: 0, salt: 1.2 }] } });
+  });
+  await openAuthenticatedApp(page);
+  await page.getByRole("button", { name: "Nutrición", exact: true }).click();
+  await page.getByRole("button", { name: "Analizar foto", exact: true }).click();
+  const photoForm = page.getByRole("region", { name: "Analizar foto de comida" });
+  await photoForm.getByLabel("Tipo de comida").selectOption("dinner");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  await photoForm.getByLabel("Foto de comida").setInputFiles({ name: "cena.png", mimeType: "image/png", buffer: png });
+  await photoForm.getByRole("button", { name: "Analizar foto" }).click();
+  const importForm = page.getByRole("region", { name: "Importación desde ChatGPT" });
+  await expect(importForm).toContainText("Tortilla de patatas");
+  await expect(importForm.getByText("Total: 420 kcal", { exact: false })).toBeVisible();
+  expect(rows).toHaveLength(0);
+  expect(analyzed).toEqual({ mealType: "dinner", photoType: "image/jpeg" });
+  await importForm.getByRole("button", { name: "Confirmar importación" }).click();
+  await expect(page.locator(".nutrition-meal").filter({ hasText: "Tortilla de patatas" })).toBeVisible();
+  expect(rows).toHaveLength(1);
+});
+
+test("la app se puede instalar: manifiesto, iconos y service worker", async ({ page }) => {
+  const manifest = await page.request.get("/manifest.webmanifest");
+  expect(manifest.ok()).toBe(true);
+  const body = await manifest.json();
+  expect(body).toMatchObject({ name: "Brújula", display: "standalone", start_url: "/" });
+  for (const icon of body.icons as { src: string }[]) expect((await page.request.get(icon.src)).ok()).toBe(true);
+  const worker = await page.request.get("/sw.js");
+  expect(worker.ok()).toBe(true);
+  expect(await worker.text()).toContain("brujula-shell");
+  await page.goto("/");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
 });
