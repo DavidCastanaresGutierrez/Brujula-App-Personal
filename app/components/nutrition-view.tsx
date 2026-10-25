@@ -1,19 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  addBodyEntries,
-  addBodyEntry,
-  addFrequent,
-  currentAccessToken,
-  deleteFrequent,
-  importEntries,
-  removeEntry,
-  saveEntry,
-  updateFrequent,
-  upsertGoals,
-} from "../../lib/supabase/nutrition-repository";
-import { useNutritionData } from "../hooks/use-nutrition-data";
+import { currentAccessToken, importEntries, isNetworkError } from "../../lib/supabase/nutrition-repository";
+import type { BodyComposition } from "../../lib/supabase/nutrition";
+import type { CommitResult, NutritionController } from "../hooks/use-nutrition-data";
 import {
   detailMetricKeys,
   mealTypes,
@@ -56,13 +46,22 @@ import { SavedFoods } from "./nutrition/saved-foods";
 import { WeeklyBalance } from "./nutrition/weekly-balance";
 import "./nutrition.css";
 
-export function NutritionView({ userId }: { userId: string }) {
+export function NutritionView({
+  userId,
+  nutrition,
+  initialAction = null,
+  onActionHandled,
+}: {
+  userId: string;
+  nutrition: NutritionController;
+  initialAction?: "photo" | null;
+  onActionHandled?: () => void;
+}) {
   const [date, setDate] = useState(localToday);
   const today = localToday();
   const {
-    entries, setEntries, frequent, setFrequent, goals, setGoals,
-    bodyEntries, setBodyEntries, loading, loadError, reload,
-  } = useNutritionData(userId, today);
+    entries, frequent, goals, bodyEntries, loading, loadError, offline, pendingCount, reload, commit, flush,
+  } = nutrition;
   const [busy, setBusy] = useState(false);
   const [actionError, setError] = useState("");
   const error = actionError || loadError;
@@ -115,6 +114,14 @@ export function NutritionView({ userId }: { userId: string }) {
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [error]);
   const days = nutritionWeek(date);
+  useEffect(() => {
+    if (initialAction !== "photo") return;
+    queueMicrotask(() => {
+      setPhotoOpen(true);
+      onActionHandled?.();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAction]);
 
   const changeDate = (next: string) => {
     if (!next) return;
@@ -143,19 +150,21 @@ export function NutritionView({ userId }: { userId: string }) {
       setBusy(false);
     }
   }
+  function savedMessage(result: CommitResult, synced: string) {
+    return result === "queued"
+      ? "Guardado en este dispositivo. Se sincronizará al recuperar la conexión."
+      : synced;
+  }
   async function saveMeal() {
     if (!editor) return;
     const meal = parseNutrition(
       JSON.stringify({ schema_version: 1, date, meals: [editor] }),
     ).meals[0];
-    const saved = await saveEntry(userId, { ...meal, date }, editingId);
-    setEntries((current) => [
-      ...current.filter((entry) => entry.id !== saved.id),
-      saved,
-    ]);
+    const entry: Entry = { ...meal, date, id: editingId ?? crypto.randomUUID() };
+    const result = await commit({ kind: "entry.save", entry });
     setEditor(null);
     setEditingId(null);
-    setMessage("Comida guardada.");
+    setMessage(savedMessage(result, "Comida guardada."));
   }
   async function saveFavoriteEntry() {
     if (!favoriteEntry) return;
@@ -167,10 +176,9 @@ export function NutritionView({ userId }: { userId: string }) {
         meals: [{ ...food, type, quantity }],
       }),
     ).meals[0];
-    const saved = await saveEntry(userId, { ...meal, date }, null);
-    setEntries((current) => [...current, saved]);
+    const result = await commit({ kind: "entry.save", entry: { ...meal, date, id: crypto.randomUUID() } });
     setFavoriteEntry(null);
-    setMessage("Comida añadida.");
+    setMessage(savedMessage(result, "Comida añadida."));
   }
   async function saveFavorite() {
     if (!favoriteEditor) return;
@@ -192,14 +200,9 @@ export function NutritionView({ userId }: { userId: string }) {
     ).meals[0];
     const { quantity: _quantity, ...row } = valid;
     void _quantity;
-    const saved = await updateFrequent(userId, id, row);
-    setFrequent((current) =>
-      current
-        .map((food) => (food.id === saved.id ? saved : food))
-        .sort((a, b) => a.name.localeCompare(b.name, "es")),
-    );
+    const result = await commit({ kind: "frequent.save", food: { ...row, id } });
     setFavoriteEditor(null);
-    setMessage("Comida frecuente actualizada.");
+    setMessage(savedMessage(result, "Comida frecuente actualizada."));
   }
   async function saveGoals() {
     if (!goalDraft) return;
@@ -219,10 +222,9 @@ export function NutritionView({ userId }: { userId: string }) {
         goalDraft[key] > 100000
       )
         throw new Error("Revisa los objetivos de micronutrientes.");
-    await upsertGoals(userId, goalDraft);
-    setGoals(goalDraft);
+    const result = await commit({ kind: "goals.save", goals: goalDraft });
     setGoalDraft(null);
-    setMessage("Objetivos guardados.");
+    setMessage(savedMessage(result, "Objetivos guardados."));
   }
   async function saveBodyComposition() {
     const skeletalMuscleMass =
@@ -241,44 +243,42 @@ export function NutritionView({ userId }: { userId: string }) {
       );
     const calculatedLeanMass =
       bodyDraft.lean_mass ?? bodyDraft.weight * (1 - bodyDraft.body_fat / 100);
-    const saved = await addBodyEntry(userId, {
+    const saved: BodyComposition = {
       ...bodyDraft,
+      id: crypto.randomUUID(),
       muscle: skeletalMuscleMass,
       skeletal_muscle_mass: skeletalMuscleMass,
       lean_mass: calculatedLeanMass,
-    });
-    setBodyEntries((items) =>
-      [...items, saved].sort((a, b) =>
-        a.recorded_at.localeCompare(b.recorded_at),
-      ),
-    );
+    };
+    const result = await commit({ kind: "body.save", entries: [saved] });
     const suggested = suggestedGoalsFromBody(saved);
     setBodyDraft(null);
     setGoalDraft(suggested);
-    setMessage(
-      "Composición guardada. Revisa y confirma los objetivos propuestos.",
-    );
+    setMessage(savedMessage(result, "Composición guardada. Revisa y confirma los objetivos propuestos."));
   }
   async function importBodyComposition(bodyImportPreview: BodyImport) {
-    const saved = await addBodyEntries(userId, bodyImportPreview.measurements);
-    setBodyEntries((items) =>
-      [...items, ...saved].sort((a, b) =>
-        a.recorded_at.localeCompare(b.recorded_at),
-      ),
-    );
+    const saved: BodyComposition[] = bodyImportPreview.measurements.map((measurement) => ({ ...measurement, id: crypto.randomUUID() }));
+    const result = await commit({ kind: "body.save", entries: saved });
     setBodyImportOpen(false);
     setMessage(
-      `${saved.length} medición${saved.length === 1 ? "" : "es"} importada${saved.length === 1 ? "" : "s"}.`,
+      savedMessage(result, `${saved.length} medición${saved.length === 1 ? "" : "es"} importada${saved.length === 1 ? "" : "s"}.`),
     );
   }
   async function importMeals() {
     if (!preview) return;
-    const imported = await importEntries(userId, preview);
-    setMessage(
-      imported
-        ? `${imported} comidas importadas.`
-        : "Este JSON ya estaba importado. No se han duplicado comidas.",
-    );
+    try {
+      const imported = await importEntries(userId, preview);
+      setMessage(
+        imported
+          ? `${imported} comidas importadas.`
+          : "Este JSON ya estaba importado. No se han duplicado comidas.",
+      );
+    } catch (cause) {
+      if (!isNetworkError(cause)) throw cause;
+      // Without network the batch waits in the queue; the server dedupes it by content.
+      await commit({ kind: "entries.import", preview });
+      setMessage(savedMessage("queued", ""));
+    }
     setImportOpen(false);
     setPreview(null);
     setImportFileName("");
@@ -351,6 +351,16 @@ export function NutritionView({ userId }: { userId: string }) {
     setImportReading(false);
     setImportError("");
   }
+  function openPhoto() {
+    setEditor(null);
+    setFavoriteEntry(null);
+    setGoalDraft(null);
+    setBodyDraft(null);
+    setImportOpen(false);
+    setDeleting(null);
+    setPhotoOpen(true);
+    setError("");
+  }
   function closePhoto() {
     setPhotoOpen(false);
     setPhotoFile(null);
@@ -363,11 +373,16 @@ export function NutritionView({ userId }: { userId: string }) {
     const form = new FormData();
     form.append("photo", prepared);
     form.append("mealType", photoMealType);
-    const response = await fetch("/api/nutrition/analyze-photo", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-      body: form,
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/nutrition/analyze-photo", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: form,
+      });
+    } catch {
+      throw new Error("Sin conexión: el análisis de fotos necesita internet.");
+    }
     const result = (await response.json().catch(() => null)) as
       | { meals?: Meal[]; error?: string }
       | null;
@@ -417,18 +432,16 @@ export function NutritionView({ userId }: { userId: string }) {
       )
     )
       throw new Error("Esta comida ya está guardada en frecuentes.");
-    const { name, type, unit, calories, protein, carbs, fat, fiber, sugars, saturated_fat, salt } = entry;
-    const saved = await addFrequent(userId, { name, type, unit, calories, protein, carbs, fat, fiber, sugars, saturated_fat, salt });
-    setFrequent((current) => [...current, saved]);
-    setMessage("Guardada como frecuente por unidad.");
+    const { id: _id, date: _date, quantity: _quantity, ...definition } = entry;
+    void _id; void _date; void _quantity;
+    const result = await commit({ kind: "frequent.save", food: { ...definition, id: crypto.randomUUID() } });
+    setMessage(savedMessage(result, "Guardada como frecuente por unidad."));
   }
   async function removeFrequent(food: FrequentMeal) {
-    await deleteFrequent(userId, food.id);
-    setFrequent((current) => current.filter((m) => m.id !== food.id));
+    await commit({ kind: "frequent.delete", id: food.id });
   }
   async function deleteEntry(entry: Entry) {
-    await removeEntry(userId, entry.id);
-    setEntries((current) => current.filter((e) => e.id !== entry.id));
+    await commit({ kind: "entry.delete", id: entry.id });
     setDeleting(null);
   }
   function requestDelete(entry: Entry) {
@@ -495,16 +508,7 @@ export function NutritionView({ userId }: { userId: string }) {
           <button
             className="add-button"
             disabled={busy || loading}
-            onClick={() => {
-              setEditor(null);
-              setFavoriteEntry(null);
-              setGoalDraft(null);
-              setBodyDraft(null);
-              setImportOpen(false);
-              setDeleting(null);
-              setPhotoOpen(true);
-              setError("");
-            }}
+            onClick={openPhoto}
           >
             Analizar foto
           </button>
@@ -549,6 +553,20 @@ export function NutritionView({ userId }: { userId: string }) {
         </div>
       )}
       {message && <p role="status">{message}</p>}
+      {offline && (
+        <p role="status" className="nutrition-offline">
+          Sin conexión: mostrando los datos guardados en este dispositivo.
+        </p>
+      )}
+      {pendingCount > 0 && (
+        <p role="status" className="nutrition-pending">
+          {pendingCount} {pendingCount === 1 ? "cambio pendiente" : "cambios pendientes"} de sincronizar.
+          Se enviarán al recuperar la conexión.{" "}
+          <button type="button" onClick={() => void flush().then((sent) => sent && reload())}>
+            Reintentar ahora
+          </button>
+        </p>
+      )}
       {loading ? (
         <p role="status">Cargando nutrición…</p>
       ) : (

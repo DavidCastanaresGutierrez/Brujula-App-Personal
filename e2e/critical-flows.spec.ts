@@ -201,6 +201,7 @@ test("un error de API se distingue de estar sin internet", async ({ page }) => {
 });
 
 test("nutrición: objetivos, registro, edición, frecuentes e importación revisada", async ({ page }) => {
+  test.slow();
   const rows: Record<string, unknown>[] = [];
   const favorites: Record<string, unknown>[] = [];
   let targets: Record<string, unknown> | null = null;
@@ -215,13 +216,13 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
       return route.fulfill({ json: targets });
     }
     const records = table === "frequent_meals" ? favorites : rows;
-    if (method === "GET") return route.fulfill({ json: records });
+    if (method === "GET") return route.fulfill({ json: table === "body_composition_entries" ? [] : records });
     if (method === "DELETE") { const i = records.findIndex(r => r.id === id); if (i >= 0) records.splice(i,1); return route.fulfill({status:204}); }
     const body = route.request().postDataJSON();
     if (method === "PATCH") { const i = records.findIndex(r => r.id === id); records[i] = {...records[i],...body}; return route.fulfill({json:records[i]}); }
     insertRequests++;
-    const added = (Array.isArray(body) ? body : [body]).filter(r => !r.import_key || !records.some(old => old.import_key === r.import_key)).map(r => ({...r,id:`row-${records.length}-${Math.random()}`}));
-    records.push(...added);
+    const added = (Array.isArray(body) ? body : [body]).filter(r => !r.import_key || !records.some(old => old.import_key === r.import_key)).map(r => ({...r,id:r.id ?? `row-${records.length}-${Math.random()}`}));
+    for (const row of added) { const i = records.findIndex(r => r.id === row.id); if (i >= 0) records[i] = row; else records.push(row); }
     return route.fulfill({json:Array.isArray(body) ? added : added[0]});
   });
   await openAuthenticatedApp(page);
@@ -295,7 +296,7 @@ test("nutrición: la foto se analiza, se revisa y solo se guarda al confirmar", 
     const table = url.pathname.split("/").at(-1);
     if (route.request().method() === "GET") return route.fulfill({ json: table === "nutrition_goals" ? null : table === "nutrition_entries" ? rows : [] });
     const body = route.request().postDataJSON();
-    const added = (Array.isArray(body) ? body : [body]).map((r: Record<string, unknown>) => ({ ...r, id: `row-${rows.length}-${Math.random()}` }));
+    const added = (Array.isArray(body) ? body : [body]).map((r: Record<string, unknown>) => ({ ...r, id: r.id ?? `row-${rows.length}-${Math.random()}` }));
     rows.push(...added);
     return route.fulfill({ json: Array.isArray(body) ? added : added[0] });
   });
@@ -335,4 +336,59 @@ test("la app se puede instalar: manifiesto, iconos y service worker", async ({ p
   expect(await worker.text()).toContain("brujula-shell");
   await page.goto("/");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+});
+
+test("un acceso directo abre la vista pedida y recuerda la última visitada", async ({ page }) => {
+  await mockLogin(page);
+  await page.route("**/api/state**", async (route) => route.fulfill({ json: { state: initialState, revision: 1 } }));
+  await page.route("**/rest/v1/**", async (route) => route.fulfill({ json: route.request().url().includes("nutrition_goals") ? null : [] }));
+  await page.goto("/?view=nutrition&action=photo");
+  await page.getByLabel("Correo").fill("e2e@example.test");
+  await page.locator("#auth-password").fill("password-e2e");
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page.getByRole("region", { name: "Analizar foto de comida" })).toBeVisible();
+  expect(new URL(page.url()).search).toBe("");
+  await page.getByRole("button", { name: "Mi día", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Tu día, en una sola vista" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Tu día, en una sola vista" })).toBeVisible();
+});
+
+test("nutrición sin red: la comida se guarda en el dispositivo y se sincroniza al volver la conexión", async ({ page, context }) => {
+  const rows: Record<string, unknown>[] = [];
+  const posts: Record<string, unknown>[] = [];
+  let disconnected = false;
+  await page.route("**/rest/v1/**", async route => {
+    if (disconnected) return route.abort("internetdisconnected");
+    const url = new URL(route.request().url());
+    const table = url.pathname.split("/").at(-1);
+    const method = route.request().method();
+    if (method === "GET") return route.fulfill({ json: table === "nutrition_goals" ? null : table === "nutrition_entries" ? rows : [] });
+    const body = route.request().postDataJSON();
+    if (table === "nutrition_entries") { posts.push(body); rows.push({ ...body }); }
+    return route.fulfill({ json: body });
+  });
+  await openAuthenticatedApp(page);
+  await page.getByRole("button", { name: "Nutrición", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Comidas del día" })).toBeVisible();
+  disconnected = true;
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "+ Añadir comida" }).click();
+  const form = page.getByRole("region", { name: "Formulario de comida" });
+  await form.getByLabel("Nombre de la comida").fill("Tortilla sin red");
+  for (const [label, value] of [["Calorías (kcal)", "420"], ["Proteína (g)", "18"], ["Carbohidratos (g)", "30"], ["Grasas (g)", "25"]]) await form.getByLabel(label, { exact: true }).fill(value);
+  await form.getByRole("button", { name: "Guardar comida" }).click();
+  await expect(page.locator(".nutrition-meal").filter({ hasText: "Tortilla sin red" })).toBeVisible();
+  await expect(page.getByText("1 cambio pendiente de sincronizar", { exact: false })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  disconnected = false;
+  await context.setOffline(false);
+  await expect(page.getByText("cambio pendiente", { exact: false })).toBeHidden();
+  expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ name: "Tortilla sin red", calories: 420 });
+  expect(typeof posts[0].id).toBe("string");
+  await expect(page.locator(".nutrition-meal").filter({ hasText: "Tortilla sin red" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Nutrición", exact: true }).click();
+  await expect(page.locator(".nutrition-meal").filter({ hasText: "Tortilla sin red" })).toBeVisible();
 });

@@ -2,13 +2,15 @@ import { habitScheduledOnDate, isoDate, type HabitSchedule } from "./tracking";
 
 export type InsightHabit = { id: number; name: string; goal: number; category?: string; archived?: boolean; archivedAt?: string; weekdaysOnly?: boolean; schedule?: HabitSchedule; history?: Record<string, number[]>; skips?: Record<string, number[]> };
 export type InsightGoal = { id: number; title: string; dueDate: string; period?: "daily" | "weekly" | "monthly" | "yearly"; status: "active" | "completed" | "discarded"; archived?: boolean; currentValue: number; targetValue: number; steps?: { title: string; dueDate: string; completed: boolean }[] };
-export type ActionableInsight = { id: string; kind: "trend" | "weekday" | "habit" | "goal"; entityId?: number; title: string; detail: string; evidence: string; rule: string; period: string; action: string; severity: "attention" | "positive" | "neutral" };
+export type ActionableInsight = { id: string; kind: "trend" | "weekday" | "habit" | "goal" | "nutrition" | "body"; entityId?: number; title: string; detail: string; evidence: string; rule: string; period: string; action: string; severity: "attention" | "positive" | "neutral" };
 type Sample = { scheduled: number; completed: number };
 
 function addDays(date: Date, amount: number) { const result = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12); result.setDate(result.getDate() + amount); return result; }
 function recordFor(habit: InsightHabit, date: Date) { const key = isoDate(date.getFullYear(), date.getMonth(), date.getDate()); if (!habitScheduledOnDate(habit, key)) return null; const monthKey = key.slice(0, 7); const day = date.getDate(); if ((habit.skips?.[monthKey] ?? []).includes(day)) return null; return (habit.history?.[monthKey] ?? []).includes(day); }
 function sample(habits: InsightHabit[], start: Date, days: number, category?: string): Sample { const result = { scheduled: 0, completed: 0 }; for (let offset = 0; offset < days; offset += 1) { const date = addDays(start, offset); habits.filter((habit) => !category || habit.category === category).forEach((habit) => { const completed = recordFor(habit, date); if (completed === null) return; result.scheduled += 1; if (completed) result.completed += 1; }); } return result; }
 const percent = (value: Sample) => value.scheduled ? value.completed / value.scheduled * 100 : 0;
+// Completion of the daily habits scheduled on one date; skipped days do not count.
+export function dayCompletion(habits: InsightHabit[], date: Date): Sample { return sample(habits, date, 1); }
 
 export function generateActionableInsights(today: Date, habits: InsightHabit[], categories: { id: string; label: string }[], goals: InsightGoal[]) {
   const todayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());

@@ -1410,3 +1410,24 @@
 .nutrition .above progress::-moz-progress-bar {
   background: #e8b967;
 }
+
+.nutrition-offline,
+.nutrition-pending {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 196, 87, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 196, 87, 0.08);
+  color: var(--ink);
+  font-size: 13px;
+}
+.nutrition-pending button {
+  margin-left: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 196, 87, 0.5);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
