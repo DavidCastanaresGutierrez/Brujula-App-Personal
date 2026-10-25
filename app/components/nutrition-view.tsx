@@ -56,7 +56,15 @@ import { SavedFoods } from "./nutrition/saved-foods";
 import { WeeklyBalance } from "./nutrition/weekly-balance";
 import "./nutrition.css";
 
-export function NutritionView({ userId }: { userId: string }) {
+export function NutritionView({
+  userId,
+  initialAction = null,
+  onActionHandled,
+}: {
+  userId: string;
+  initialAction?: "photo" | null;
+  onActionHandled?: () => void;
+}) {
   const [date, setDate] = useState(localToday);
   const today = localToday();
   const {
@@ -115,6 +123,14 @@ export function NutritionView({ userId }: { userId: string }) {
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [error]);
   const days = nutritionWeek(date);
+  useEffect(() => {
+    if (initialAction !== "photo") return;
+    queueMicrotask(() => {
+      setPhotoOpen(true);
+      onActionHandled?.();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAction]);
 
   const changeDate = (next: string) => {
     if (!next) return;
@@ -351,6 +367,16 @@ export function NutritionView({ userId }: { userId: string }) {
     setImportReading(false);
     setImportError("");
   }
+  function openPhoto() {
+    setEditor(null);
+    setFavoriteEntry(null);
+    setGoalDraft(null);
+    setBodyDraft(null);
+    setImportOpen(false);
+    setDeleting(null);
+    setPhotoOpen(true);
+    setError("");
+  }
   function closePhoto() {
     setPhotoOpen(false);
     setPhotoFile(null);
@@ -495,16 +521,7 @@ export function NutritionView({ userId }: { userId: string }) {
           <button
             className="add-button"
             disabled={busy || loading}
-            onClick={() => {
-              setEditor(null);
-              setFavoriteEntry(null);
-              setGoalDraft(null);
-              setBodyDraft(null);
-              setImportOpen(false);
-              setDeleting(null);
-              setPhotoOpen(true);
-              setError("");
-            }}
+            onClick={openPhoto}
           >
             Analizar foto
           </button>

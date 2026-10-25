@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { readLaunchIntent, recallLastView, rememberLastView } from "../lib/browser/launch";
+import type { LaunchAction } from "../lib/domain/launch-intent";
 import { createTrackerBackup, MAX_BACKUP_BYTES, parseTrackerBackup, type BackupPreview } from "../lib/domain/backup";
 import { getSupabaseBrowserClient } from "../lib/supabase/client";
 import {
@@ -57,6 +59,21 @@ function normalizeState(state: TrackerState): Required<TrackerState> {
 
 export default function Home() {
   const [mainView, setMainView] = useState<MainView>("summary");
+  const [launchAction, setLaunchAction] = useState<LaunchAction | null>(null);
+  const launchHandled = useRef(false);
+  // Shortcuts (/?view=…) win over the view remembered from the last visit.
+  useEffect(() => {
+    const intent = readLaunchIntent();
+    const view = intent.view ?? recallLastView();
+    queueMicrotask(() => {
+      if (view) setMainView(view);
+      if (intent.action) setLaunchAction(intent.action);
+      launchHandled.current = true;
+    });
+  }, []);
+  useEffect(() => {
+    if (launchHandled.current) rememberLastView(mainView);
+  }, [mainView]);
   const [dayViewDate, setDayViewDate] = useState(() => new Date());
   const today = new Date();
   const {
@@ -516,7 +533,7 @@ export default function Home() {
       <AppHeader activeView={mainView} userEmail={session.user.email} onNavigate={openView} onSignOut={() => getSupabaseBrowserClient().auth.signOut()} />
 
       <div className="page-shell">
-        {mainView === "nutrition" && <NutritionView key={session.user.id} userId={session.user.id} />}
+        {mainView === "nutrition" && <NutritionView key={session.user.id} userId={session.user.id} initialAction={launchAction} onActionHandled={() => setLaunchAction(null)} />}
         {mainView === "summary" && <SummaryOverview
           motivations={motivations}
           monthName={monthNames[month]}

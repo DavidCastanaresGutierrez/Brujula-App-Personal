@@ -336,3 +336,19 @@ test("la app se puede instalar: manifiesto, iconos y service worker", async ({ p
   await page.goto("/");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
 });
+
+test("un acceso directo abre la vista pedida y recuerda la última visitada", async ({ page }) => {
+  await mockLogin(page);
+  await page.route("**/api/state**", async (route) => route.fulfill({ json: { state: initialState, revision: 1 } }));
+  await page.route("**/rest/v1/**", async (route) => route.fulfill({ json: route.request().url().includes("nutrition_goals") ? null : [] }));
+  await page.goto("/?view=nutrition&action=photo");
+  await page.getByLabel("Correo").fill("e2e@example.test");
+  await page.locator("#auth-password").fill("password-e2e");
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page.getByRole("region", { name: "Analizar foto de comida" })).toBeVisible();
+  expect(new URL(page.url()).search).toBe("");
+  await page.getByRole("button", { name: "Mi día", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Tu día, en una sola vista" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Tu día, en una sola vista" })).toBeVisible();
+});
