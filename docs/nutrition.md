@@ -34,6 +34,14 @@ Máximo 100 comidas, 100 KB de texto, nombres de 1–200 caracteres y números f
 
 Validación completa y vista previa antes de confirmar. Una sola operación PostgreSQL guarda el lote de forma atómica. El hash SHA-256 del documento normalizado y el índice de comida forman una clave única por usuario para que los reintentos no dupliquen registros. Las importaciones son aditivas; para corregir una comida ya importada se edita el registro existente. La clave de importación se conserva al editar. Borrar una comida permite que un reintento del mismo JSON la vuelva a añadir.
 
+## Sin conexión
+
+- `useNutritionData` guarda en el dispositivo la última instantánea del servidor y la muestra cuando no hay red, con el aviso «Sin conexión».
+- Cada escritura es idempotente: `upsert` por `id` generado en el cliente (`crypto.randomUUID`) para comidas, frecuentes y mediciones, y `upsert` por usuario para los objetivos. Si la petición no llega a Supabase, la operación se guarda en una cola local (`lib/domain/nutrition-outbox.ts`), se aplica en pantalla y se reenvía al recuperar la conexión o al volver a la pestaña; después se recarga desde el servidor.
+- La cola compacta guardados repetidos de la misma fila y conserva los borrados. Un cambio rechazado por el servidor (no por la red) se descarta con un error en consola para no bloquear el resto.
+- La importación de JSON se encola completa y el servidor la deduplica por contenido; el análisis de fotos necesita red y lo indica.
+- El E2E «nutrición sin red» cubre el ciclo completo: guardar sin red, indicador de pendientes, reenvío con el mismo `id` y recarga.
+
 ## Análisis de fotos
 
 - Cliente: `lib/browser/photo.ts` reduce la foto a 1280 px JPEG con `createImageBitmap` y envía además el tipo de comida elegido (sugerido por la hora).

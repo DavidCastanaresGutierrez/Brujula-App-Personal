@@ -1,7 +1,10 @@
-import { shiftDate, type Entry, type FrequentMeal, type Meal, type NutritionImport } from "../domain/nutrition";
-import type { BodyDraft, NutritionGoals } from "../domain/nutrition-analysis";
+import { shiftDate, type Entry, type FrequentMeal, type NutritionImport } from "../domain/nutrition";
+import type { NutritionGoals } from "../domain/nutrition-analysis";
+import { isNetworkFailureMessage, type NutritionData, type NutritionOperation } from "../domain/nutrition-outbox";
 import { getSupabaseBrowserClient } from "./client";
 import { nutritionClient, type BodyComposition } from "./nutrition";
+
+export type { NutritionData } from "../domain/nutrition-outbox";
 
 const nutrientColumns =
   "calories,protein,carbs,fat,fiber,sugars,saturated_fat,trans_fat,cholesterol,sodium,potassium,vitamin_a,vitamin_c,calcium,iron,salt";
@@ -20,17 +23,25 @@ export class NutritionRepositoryError extends Error {
   }
 }
 
-function unwrap<T>(result: { data: T; error: { message: string } | null }): T {
-  if (result.error) throw new NutritionRepositoryError(result.error.message);
-  return result.data;
+// The request never reached Supabase: no connection, DNS or a dropped socket.
+export class NutritionNetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NutritionNetworkError";
+  }
 }
 
-export type NutritionData = {
-  entries: Entry[];
-  goals: NutritionGoals | null;
-  frequent: FrequentMeal[];
-  bodyEntries: BodyComposition[];
-};
+export function isNetworkError(cause: unknown) {
+  return cause instanceof NutritionNetworkError || cause instanceof TypeError;
+}
+
+function unwrap<T>(result: { data: T; error: { message: string; code?: string } | null }): T {
+  if (result.error) {
+    if (isNetworkFailureMessage(result.error.message, result.error.code ?? "")) throw new NutritionNetworkError(result.error.message);
+    throw new NutritionRepositoryError(result.error.message);
+  }
+  return result.data;
+}
 
 async function loadEntries(userId: string, today: string) {
   const rows: Entry[] = [];
@@ -72,19 +83,6 @@ export async function currentAccessToken() {
   return data.session?.access_token ?? null;
 }
 
-export async function saveEntry(userId: string, meal: Meal & { date: string }, editingId: string | null): Promise<Entry> {
-  const db = nutritionClient();
-  const row = { ...meal, user_id: userId };
-  const result = editingId
-    ? await db.from("nutrition_entries").update(row).eq("user_id", userId).eq("id", editingId).select().single()
-    : await db.from("nutrition_entries").insert(row).select().single();
-  return unwrap(result) as unknown as Entry;
-}
-
-export async function removeEntry(userId: string, id: string) {
-  unwrap(await nutritionClient().from("nutrition_entries").delete().eq("user_id", userId).eq("id", id));
-}
-
 // Stable content keys make retries (including a lost response) idempotent, and a
 // single PostgreSQL upsert is atomic: all rows or none. Returns the rows added.
 export async function importEntries(userId: string, preview: NutritionImport) {
@@ -105,46 +103,35 @@ export async function importEntries(userId: string, preview: NutritionImport) {
   return inserted?.length ?? 0;
 }
 
-export type FrequentInsert = Pick<FrequentMeal, "name" | "type" | "unit" | "calories" | "protein" | "carbs" | "fat"> &
-  Partial<Pick<FrequentMeal, "fiber" | "sugars" | "saturated_fat" | "salt">>;
-
-export async function addFrequent(userId: string, food: FrequentInsert): Promise<FrequentMeal> {
-  const result = await nutritionClient().from("frequent_meals").insert({ user_id: userId, ...food }).select().single();
-  return unwrap(result) as unknown as FrequentMeal;
-}
-
-export async function updateFrequent(userId: string, id: string, food: Omit<FrequentMeal, "id">): Promise<FrequentMeal> {
-  const result = await nutritionClient()
-    .from("frequent_meals")
-    .update(food)
-    .eq("user_id", userId)
-    .eq("id", id)
-    .select()
-    .single();
-  return unwrap(result) as unknown as FrequentMeal;
-}
-
-export async function deleteFrequent(userId: string, id: string) {
-  unwrap(await nutritionClient().from("frequent_meals").delete().eq("user_id", userId).eq("id", id));
-}
-
-export async function upsertGoals(userId: string, goals: NutritionGoals) {
-  unwrap(await nutritionClient().from("nutrition_goals").upsert({ user_id: userId, ...goals }, { onConflict: "user_id" }));
-}
-
-export async function addBodyEntry(userId: string, draft: BodyDraft): Promise<BodyComposition> {
-  const result = await nutritionClient()
-    .from("body_composition_entries")
-    .insert({ ...draft, user_id: userId })
-    .select()
-    .single();
-  return unwrap(result) as unknown as BodyComposition;
-}
-
-export async function addBodyEntries(userId: string, drafts: BodyDraft[]): Promise<BodyComposition[]> {
-  const result = await nutritionClient()
-    .from("body_composition_entries")
-    .insert(drafts.map((draft) => ({ ...draft, user_id: userId })))
-    .select();
-  return unwrap(result) as unknown as BodyComposition[];
+// Every write is an idempotent upsert or delete keyed by a client-generated id, so
+// the same operation can be replayed from the offline queue without duplicates.
+export async function executeOperation(userId: string, operation: NutritionOperation): Promise<void> {
+  const db = nutritionClient();
+  switch (operation.kind) {
+    case "entry.save":
+      unwrap(await db.from("nutrition_entries").upsert({ ...operation.entry, user_id: userId }, { onConflict: "id" }));
+      return;
+    case "entry.delete":
+      unwrap(await db.from("nutrition_entries").delete().eq("user_id", userId).eq("id", operation.id));
+      return;
+    case "entries.import":
+      await importEntries(userId, operation.preview);
+      return;
+    case "frequent.save":
+      unwrap(await db.from("frequent_meals").upsert({ ...operation.food, user_id: userId }, { onConflict: "id" }));
+      return;
+    case "frequent.delete":
+      unwrap(await db.from("frequent_meals").delete().eq("user_id", userId).eq("id", operation.id));
+      return;
+    case "goals.save":
+      unwrap(await db.from("nutrition_goals").upsert({ user_id: userId, ...operation.goals }, { onConflict: "user_id" }));
+      return;
+    case "body.save":
+      unwrap(
+        await db
+          .from("body_composition_entries")
+          .upsert(operation.entries.map((entry) => ({ ...entry, user_id: userId })), { onConflict: "id" }),
+      );
+      return;
+  }
 }
