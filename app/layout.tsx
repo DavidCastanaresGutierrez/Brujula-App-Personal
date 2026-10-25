@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import "./reset.css";
 import "./globals.css";
 import { ServiceWorker } from "./components/service-worker";
 
