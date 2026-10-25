@@ -36,7 +36,12 @@ import { WeeklyHabitTracker } from "./components/weekly-habit-tracker";
 import { WeeklyPlanningView } from "./components/weekly-planning-view";
 import { TodayView } from "./components/today-view";
 import { SummaryOverview } from "./components/summary-overview";
-import { NutritionView } from "./components/nutrition-view";
+import dynamic from "next/dynamic";
+// Nutrition is a large, self-contained module: it only loads when the view opens.
+const NutritionView = dynamic(() => import("./components/nutrition-view").then((module) => module.NutritionView), {
+  ssr: false,
+  loading: () => <p role="status" className="eyebrow">CARGANDO NUTRICIÓN…</p>,
+});
 import { DailyHabitTracker } from "./components/daily-habit-tracker";
 import type { Category, Goal, Habit, HabitCategory, TrackerState, WeeklyHabit } from "../lib/domain/tracker-state";
 import { useTrackerSync } from "./hooks/use-tracker-sync";
