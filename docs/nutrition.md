@@ -34,6 +34,10 @@ Máximo 100 comidas, 100 KB de texto, nombres de 1–200 caracteres y números f
 
 Validación completa y vista previa antes de confirmar. Una sola operación PostgreSQL guarda el lote de forma atómica. El hash SHA-256 del documento normalizado y el índice de comida forman una clave única por usuario para que los reintentos no dupliquen registros. Las importaciones son aditivas; para corregir una comida ya importada se edita el registro existente. La clave de importación se conserva al editar. Borrar una comida permite que un reintento del mismo JSON la vuelva a añadir.
 
+## Avisos cruzados en Resumen
+
+`lib/domain/nutrition-insights.ts` añade a la revisión automática del Resumen reglas que cruzan comidas, objetivos, composición corporal y hábitos: registro a medias (menos de 7 de 14 días), proteína media por debajo del 85 % del objetivo, calorías medias fuera del 80–110 %, tendencia corporal frente a una medición de hace al menos 3 semanas y diferencia de calorías entre días con hábitos cumplidos y días flojos. Cada aviso muestra datos, criterio y periodo, y se puede posponer 7 días como los demás. Los datos de nutrición se cargan una vez en `app/page.tsx` y se comparten con la vista.
+
 ## Sin conexión
 
 - `useNutritionData` guarda en el dispositivo la última instantánea del servidor y la muestra cuando no hay red, con el aviso «Sin conexión».

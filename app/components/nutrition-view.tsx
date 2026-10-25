@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { currentAccessToken, importEntries, isNetworkError } from "../../lib/supabase/nutrition-repository";
 import type { BodyComposition } from "../../lib/supabase/nutrition";
-import type { CommitResult } from "../hooks/use-nutrition-data";
-import { useNutritionData } from "../hooks/use-nutrition-data";
+import type { CommitResult, NutritionController } from "../hooks/use-nutrition-data";
 import {
   detailMetricKeys,
   mealTypes,
@@ -49,10 +48,12 @@ import "./nutrition.css";
 
 export function NutritionView({
   userId,
+  nutrition,
   initialAction = null,
   onActionHandled,
 }: {
   userId: string;
+  nutrition: NutritionController;
   initialAction?: "photo" | null;
   onActionHandled?: () => void;
 }) {
@@ -60,7 +61,7 @@ export function NutritionView({
   const today = localToday();
   const {
     entries, frequent, goals, bodyEntries, loading, loadError, offline, pendingCount, reload, commit, flush,
-  } = useNutritionData(userId, today);
+  } = nutrition;
   const [busy, setBusy] = useState(false);
   const [actionError, setError] = useState("");
   const error = actionError || loadError;

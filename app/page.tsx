@@ -22,6 +22,9 @@ import {
 } from "../lib/domain/tracking";
 import { goalsForWeek, previousWeekBounds, shiftWeekBounds, summarizeWeek, weekBounds, type WeeklyReview } from "../lib/domain/weekly-review";
 import { generateActionableInsights } from "../lib/domain/insights";
+import { generateNutritionInsights } from "../lib/domain/nutrition-insights";
+import { localToday } from "../lib/domain/nutrition-analysis";
+import { useNutritionData } from "./hooks/use-nutrition-data";
 import { TrendChart } from "./components/charts";
 import { AuthGate, ResetPassword } from "./components/auth";
 import { AppHeader, ClosureNoticeCard, type MainView } from "./components/app-shell";
@@ -90,6 +93,8 @@ export default function Home() {
     fallbackMotivations: dailyMotivations,
     normalizeState,
   });
+  // Nutrition data lives here so the summary can cross it with the habits.
+  const nutrition = useNutritionData(session?.user.id ?? "", localToday());
   const {
     goalModalOpen, goalTitle, setGoalTitle, goalPeriod, setGoalPeriod, goalMeasurement, setGoalMeasurement,
     goalTarget, setGoalTarget, goalUnit, setGoalUnit, goalCategory, setGoalCategory,
@@ -444,7 +449,12 @@ export default function Home() {
   const realTodayKey = isoDate(today.getFullYear(), today.getMonth(), today.getDate());
   const visibleGoals = visibleGoalsForPeriod({ goals: resolvedGoals, period: goalFilter, category: goalCategoryFilter, todayKey: realTodayKey });
   const activeGoals = resolvedGoals.filter((goal) => goal.status === "active" && !goal.archived);
-  const actionableInsights = generateActionableInsights(today, daily, habitCategories, resolvedGoals).filter((insight) => !dismissedInsights.has(insight.id));
+  const habitInsights = generateActionableInsights(today, daily, habitCategories, resolvedGoals);
+  const nutritionInsights = generateNutritionInsights(today, nutrition.entries, nutrition.goals, nutrition.bodyEntries, daily);
+  const actionableInsights = [
+    ...(nutritionInsights.length ? habitInsights.filter((insight) => insight.id !== "stable") : habitInsights),
+    ...nutritionInsights,
+  ].filter((insight) => !dismissedInsights.has(insight.id));
   const dayViewKey = isoDate(dayViewDate.getFullYear(), dayViewDate.getMonth(), dayViewDate.getDate());
   const dayViewMonthKey = dayViewKey.slice(0, 7);
   const dayViewWeekIndex = monthCalendarWeeks(dayViewDate.getFullYear(), dayViewDate.getMonth()).findIndex((week) => week.includes(dayViewDate.getDate())) + 1;
@@ -538,7 +548,7 @@ export default function Home() {
       <AppHeader activeView={mainView} userEmail={session.user.email} onNavigate={openView} onSignOut={() => getSupabaseBrowserClient().auth.signOut()} />
 
       <div className="page-shell">
-        {mainView === "nutrition" && <NutritionView key={session.user.id} userId={session.user.id} initialAction={launchAction} onActionHandled={() => setLaunchAction(null)} />}
+        {mainView === "nutrition" && <NutritionView key={session.user.id} userId={session.user.id} nutrition={nutrition} initialAction={launchAction} onActionHandled={() => setLaunchAction(null)} />}
         {mainView === "summary" && <SummaryOverview
           motivations={motivations}
           monthName={monthNames[month]}
@@ -573,7 +583,7 @@ export default function Home() {
         <section className="panel actionable-insights" aria-labelledby="actionable-insights-title">
           <div className="panel-head"><div><p className="eyebrow">REVISIÓN AUTOMÁTICA</p><h2 id="actionable-insights-title">Qué conviene revisar ahora</h2></div><span className="insight-method">Son avisos orientativos · tú decides qué cambiar</span></div>
           <div className="insight-grid">{actionableInsights.map((insight) => <article className={`insight-card ${insight.severity}`} key={insight.id}>
-            <span>{insight.kind === "goal" ? "OBJETIVO" : insight.kind === "habit" ? "HÁBITO" : insight.kind === "weekday" ? "PATRÓN SEMANAL" : "TENDENCIA"}</span>
+            <span>{insight.kind === "goal" ? "OBJETIVO" : insight.kind === "habit" ? "HÁBITO" : insight.kind === "weekday" ? "PATRÓN SEMANAL" : insight.kind === "nutrition" ? "NUTRICIÓN" : insight.kind === "body" ? "COMPOSICIÓN CORPORAL" : "TENDENCIA"}</span>
             <strong>{insight.title}</strong>
             <p className="insight-status">{insight.detail}</p>
             <div className="insight-recommendation"><b>Qué puedes hacer</b><p>{insight.action}</p></div>
@@ -584,6 +594,7 @@ export default function Home() {
             {insight.severity !== "positive" && <div className="insight-actions">
               {insight.kind === "habit" && <button onClick={() => editInsightEntity("habit", insight.entityId)}>Revisar hábito</button>}
               {insight.kind === "goal" && <button onClick={() => editInsightEntity("goal", insight.entityId)}>Revisar objetivo</button>}
+              {(insight.kind === "nutrition" || insight.kind === "body") && <button onClick={() => openView("nutrition")}>Ir a nutrición</button>}
               <button className="quiet" onClick={() => dismissInsight(insight.id)}>Recordármelo en 7 días</button>
             </div>}
           </article>)}</div>

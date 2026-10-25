@@ -216,7 +216,7 @@ test("nutrición: objetivos, registro, edición, frecuentes e importación revis
       return route.fulfill({ json: targets });
     }
     const records = table === "frequent_meals" ? favorites : rows;
-    if (method === "GET") return route.fulfill({ json: records });
+    if (method === "GET") return route.fulfill({ json: table === "body_composition_entries" ? [] : records });
     if (method === "DELETE") { const i = records.findIndex(r => r.id === id); if (i >= 0) records.splice(i,1); return route.fulfill({status:204}); }
     const body = route.request().postDataJSON();
     if (method === "PATCH") { const i = records.findIndex(r => r.id === id); records[i] = {...records[i],...body}; return route.fulfill({json:records[i]}); }

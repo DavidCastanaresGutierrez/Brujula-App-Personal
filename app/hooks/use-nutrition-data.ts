@@ -6,6 +6,7 @@ import { appendOperation, applyOperation, applyOutbox, emptyNutritionData, type 
 import { executeOperation, isNetworkError, loadNutritionData, NutritionRepositoryError } from "../../lib/supabase/nutrition-repository";
 
 export type CommitResult = "synced" | "queued";
+export type NutritionController = ReturnType<typeof useNutritionData>;
 
 // Loads the last year of nutrition data and keeps it usable without network: the
 // last server snapshot is cached on the device and writes that cannot reach
@@ -49,6 +50,7 @@ export function useNutritionData(userId: string, today: string) {
   }, [setQueue, userId]);
 
   useEffect(() => {
+    if (!userId) return;
     let active = true;
     const queued = readNutritionOutbox(userId);
     const cached = readNutritionCache(userId);
@@ -96,6 +98,7 @@ export function useNutritionData(userId: string, today: string) {
 
   // Replays the queue as soon as the connection returns, then refreshes from the server.
   useEffect(() => {
+    if (!userId) return;
     const sync = () => {
       if (!readNutritionOutbox(userId).length) return;
       void flush().then((sent) => sent && reload());
